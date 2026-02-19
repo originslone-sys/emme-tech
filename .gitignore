@@ -1,0 +1,15 @@
+# Environment
+.env
+
+# Storage (logs, uploads — track structure only)
+storage/logs/*.log
+storage/uploads/
+storage/cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PHP
+*.swp
+*.swo
