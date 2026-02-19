@@ -135,9 +135,9 @@ $router->post('/app/settings/password',            [\App\Controllers\App\Setting
 $router->post('/app/settings/openrouter-token',    [\App\Controllers\App\SettingsController::class, 'updateOpenRouterToken']);
 
 // ----------------------------------------------------------------
-// Root redirect
+// Landing page (homepage)
 // ----------------------------------------------------------------
-$router->get('/', fn() => \App\Core\Response::redirect('/app/login'));
+$router->get('/', [\App\Controllers\LandingController::class, 'index']);
 
 // ----------------------------------------------------------------
 // Run!
