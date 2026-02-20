@@ -3,15 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= htmlspecialchars($pageTitle ?? 'Admin') ?> — WAMS Admin</title>
+<title><?= htmlspecialchars($pageTitle ?? 'Admin') ?> — EMME Tech Admin</title>
 <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="layout-admin">
 
 <nav class="sidebar">
     <div class="sidebar-brand">
-        <span class="brand-icon">🤖</span>
-        <span class="brand-text">WAMS Admin</span>
+        <span class="brand-text"><span class="brand-emme">EMME</span> Tech Admin</span>
     </div>
     <ul class="sidebar-nav">
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/dashboard') ? 'active' : '' ?>">

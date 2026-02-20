@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Login — WAMS</title>
+<title>Admin Login — EMME Tech</title>
 <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="layout-auth">
 <div class="auth-container">
     <div class="auth-card">
-        <div class="auth-logo">🤖 WAMS Admin</div>
+        <div class="auth-logo"><span class="brand-emme">EMME</span> Tech Admin</div>
         <h2>Acesso Administrativo</h2>
 
         <?php if ($flash = \App\Core\Session::flash('error')): ?>

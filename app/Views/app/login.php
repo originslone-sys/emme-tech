@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= $mode === 'register' ? 'Criar Conta' : 'Entrar' ?> — WAMS</title>
+<title><?= $mode === 'register' ? 'Criar Conta' : 'Entrar' ?> — EMME Tech</title>
 <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="layout-auth">
 <div class="auth-container">
     <div class="auth-card">
-        <div class="auth-logo">🤖 WAMS</div>
+        <div class="auth-logo"><span class="brand-emme">EMME</span> Tech</div>
         <div class="auth-tabs">
             <a href="/app/login" class="<?= $mode === 'login' ? 'active' : '' ?>">Entrar</a>
             <a href="/app/register" class="<?= $mode === 'register' ? 'active' : '' ?>">Criar conta</a>
