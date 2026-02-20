@@ -6,8 +6,9 @@ Options -Indexes
 RewriteEngine On
 
 # ----------------------------------------------------------------
-# Bloqueia acesso direto a pastas sensíveis
+# Bloqueia acesso direto a pastas sensíveis (apenas se for diretório real)
 # ----------------------------------------------------------------
+RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^(app|bin|database|storage)(/|$) - [F,L]
 
 # ----------------------------------------------------------------
