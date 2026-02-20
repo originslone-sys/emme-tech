@@ -29,7 +29,8 @@ function releaseLock(string $file): void {
 register_shutdown_function('releaseLock', $lockFile);
 
 spl_autoload_register(function (string $class): void {
-    $file = APP_ROOT . '/' . str_replace(['App\\', '\\'], ['app/', '/'], $class) . '.php';
+    $path = str_replace('\\', '/', $class);
+    $file = APP_ROOT . '/app/' . substr($path, 4) . '.php';
     if (file_exists($file)) require_once $file;
 });
 
