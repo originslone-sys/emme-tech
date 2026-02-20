@@ -37,15 +37,13 @@ class DocsController
             $params
         );
         $agents = DB::fetchAll('SELECT id, name FROM agents WHERE tenant_id = ?', [$tid]);
-        $plan   = Auth::tenantPlan();
 
         Response::view('app/docs/index', [
-            'user'         => Auth::tenantUser(),
-            'docs'         => $docs,
-            'agents'       => $agents,
-            'plan'         => $plan,
+            'user'           => Auth::tenantUser(),
+            'docs'           => $docs,
+            'agents'         => $agents,
             'selected_agent' => $agId,
-            'csrf'         => CSRF::field(),
+            'csrf'           => CSRF::field(),
         ]);
     }
 

@@ -17,13 +17,7 @@ class CronsController
     public function index(): void
     {
         Auth::requireTenant();
-        $tid  = Auth::tenantId();
-        $plan = Auth::tenantPlan();
-
-        if (!$plan || !$plan['feature_crons']) {
-            Session::flash('error', 'Seu plano não inclui automações/crons. Faça upgrade.');
-            Response::redirect('/app/dashboard');
-        }
+        $tid = Auth::tenantId();
 
         $crons = DB::fetchAll(
             'SELECT c.*, a.name AS agent_name
@@ -48,7 +42,6 @@ class CronsController
             'user'       => Auth::tenantUser(),
             'crons'      => $crons,
             'recentRuns' => $recentRuns,
-            'plan'       => $plan,
             'csrf'       => CSRF::field(),
         ]);
     }
@@ -56,18 +49,7 @@ class CronsController
     public function create(): void
     {
         Auth::requireTenant();
-        $tid  = Auth::tenantId();
-        $plan = Auth::tenantPlan();
-
-        if (!$plan || !$plan['feature_crons']) {
-            Response::redirect('/app/dashboard');
-        }
-
-        if (!Auth::canCreateCron()) {
-            Session::flash('error', 'Limite de crons do plano atingido.');
-            Response::redirect('/app/crons');
-        }
-
+        $tid    = Auth::tenantId();
         $agents = DB::fetchAll('SELECT id, name FROM agents WHERE tenant_id = ?', [$tid]);
         Response::view('app/crons/form', [
             'user'   => Auth::tenantUser(),
@@ -84,11 +66,6 @@ class CronsController
 
         $tid  = Auth::tenantId();
         $user = Auth::tenantUser();
-
-        if (!Auth::canCreateCron()) {
-            Session::flash('error', 'Limite de crons do plano atingido.');
-            Response::redirect('/app/crons');
-        }
 
         $data = $this->collectData($tid);
         if (!$data['name'] || !$data['agent_id']) {
