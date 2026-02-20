@@ -14,38 +14,37 @@ class DashboardController
     {
         Auth::requireTenant();
 
-        $user  = Auth::tenantUser();
-        $tid   = $user['tenant_id'];
-        $plan  = Auth::tenantPlan();
+        $user = Auth::tenantUser();
+        $tid  = $user['tenant_id'];
 
         $tenant = DB::fetchOne('SELECT * FROM tenants WHERE id = ?', [$tid]);
 
         $stats = [
-            'agents'   => (int)DB::fetchColumn('SELECT COUNT(*) FROM agents WHERE tenant_id = ?', [$tid]),
-            'contacts' => (int)DB::fetchColumn('SELECT COUNT(*) FROM contacts WHERE tenant_id = ?', [$tid]),
+            'agents'         => (int)DB::fetchColumn('SELECT COUNT(*) FROM agents WHERE tenant_id = ?', [$tid]),
+            'contacts'       => (int)DB::fetchColumn('SELECT COUNT(*) FROM contacts WHERE tenant_id = ?', [$tid]),
             'messages_today' => (int)DB::fetchColumn(
                 "SELECT COUNT(*) FROM messages WHERE tenant_id = ? AND DATE(created_at) = CURDATE()",
                 [$tid]
             ),
-            'threads_open' => (int)DB::fetchColumn(
+            'threads_open'   => (int)DB::fetchColumn(
                 "SELECT COUNT(*) FROM threads WHERE tenant_id = ? AND status = 'open'",
                 [$tid]
             ),
         ];
 
-        // Onboarding checklist
         $agents = DB::fetchAll(
-            'SELECT id, name, status, whatsapp_phone_number_id, persona_id FROM agents WHERE tenant_id = ?',
+            'SELECT id, name, status, whatsapp_mode, whatsapp_phone_number_id, evo_instance_name, persona_id
+             FROM agents WHERE tenant_id = ?',
             [$tid]
         );
 
         $hasWA      = false;
         $hasPersona = false;
         foreach ($agents as $a) {
-            if ($a['whatsapp_phone_number_id']) $hasWA = true;
+            if ($a['whatsapp_phone_number_id'] || $a['evo_instance_name']) $hasWA = true;
             if ($a['persona_id']) $hasPersona = true;
         }
-        $hasDocs = DB::fetchColumn(
+        $hasDocs = (int)DB::fetchColumn(
             "SELECT COUNT(*) FROM kb_docs WHERE tenant_id = ? AND status = 'ready'",
             [$tid]
         ) > 0;
@@ -57,24 +56,13 @@ class DashboardController
             'message'  => $stats['messages_today'] > 0,
         ];
 
-        // Stripe subscription info
-        $subscription = DB::fetchOne(
-            'SELECT ss.*, p.name AS plan_name
-             FROM stripe_subscriptions ss
-             LEFT JOIN plans p ON p.stripe_price_monthly_id = ss.stripe_subscription_id
-             WHERE ss.tenant_id = ?
-             ORDER BY ss.id DESC LIMIT 1',
-            [$tid]
-        );
-
         Response::view('app/dashboard', [
-            'user'         => $user,
-            'tenant'       => $tenant,
-            'plan'         => $plan,
-            'stats'        => $stats,
-            'agents'       => $agents,
-            'checklist'    => $checklist,
-            'subscription' => $subscription,
+            'user'      => $user,
+            'tenant'    => $tenant,
+            'credits'   => (int)($tenant['credits'] ?? 0),
+            'stats'     => $stats,
+            'agents'    => $agents,
+            'checklist' => $checklist,
         ]);
     }
 }
