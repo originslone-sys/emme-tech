@@ -1,8 +1,8 @@
 #!/usr/bin/env php
 <?php
 /**
- * outbox-sender.php — Sends pending messages from the outbox table.
- * Run every minute via system cron.
+ * outbox-sender.php — Envia mensagens pendentes da tabela outbox.
+ * Suporta WhatsApp Cloud API e WhatsApp Web (Evolution API).
  *
  * Crontab: * * * * * php /var/www/emme-tech/bin/outbox-sender.php
  */
@@ -14,6 +14,7 @@ require APP_ROOT . '/app/Config/config.php';
 
 use App\Core\DB;
 use App\Lib\Crypto;
+use App\Lib\EvolutionAPI;
 use App\Lib\Logger;
 use App\Lib\WhatsApp;
 
@@ -25,7 +26,6 @@ spl_autoload_register(function (string $class): void {
 
 $maxSend     = 50;
 $maxAttempts = 3;
-$retryDelay  = 60;
 $sent        = 0;
 $failed      = 0;
 
@@ -37,9 +37,12 @@ if (file_exists($lockFile) && (time() - filemtime($lockFile)) < 120) {
 }
 touch($lockFile);
 
-// Get pending outbox items
 $items = DB::fetchAll(
-    "SELECT o.*, a.whatsapp_phone_number_id, a.whatsapp_access_token_encrypted
+    "SELECT o.*,
+            a.whatsapp_mode,
+            a.whatsapp_phone_number_id,
+            a.whatsapp_access_token_encrypted,
+            a.evo_instance_name
      FROM outbox o
      JOIN agents a ON a.id = o.agent_id
      WHERE o.status = 'pending'
@@ -52,65 +55,78 @@ $items = DB::fetchAll(
 foreach ($items as $item) {
     $itemId = (int)$item['id'];
 
-    // Mark attempt
     DB::query(
         'UPDATE outbox SET attempts = attempts + 1, last_attempt_at = NOW() WHERE id = ?',
         [$itemId]
     );
 
     try {
-        $phoneId  = $item['whatsapp_phone_number_id'] ?? '';
-        $tokenEnc = $item['whatsapp_access_token_encrypted'] ?? '';
+        $mode = $item['whatsapp_mode'] ?? 'cloud_api';
 
-        if (!$phoneId || !$tokenEnc) {
-            throw new \RuntimeException("Agent missing WhatsApp credentials");
-        }
-
-        $token = Crypto::tryDecrypt($tokenEnc);
-        if (!$token) {
-            throw new \RuntimeException("Cannot decrypt WhatsApp token");
-        }
-
-        $wa = new WhatsApp($phoneId, $token);
-
-        if ($item['message_type'] === 'template') {
-            // Parse template vars
-            $vars = [];
-            if ($item['template_vars']) {
-                $decoded = json_decode($item['template_vars'], true);
-                $vars    = is_array($decoded) ? $decoded : [];
+        if ($mode === 'whatsapp_web') {
+            // ---- Evolution API ----
+            $instanceName = $item['evo_instance_name'] ?? '';
+            if (!$instanceName) {
+                throw new \RuntimeException("Agent missing Evolution API instance name");
             }
 
-            if (!$item['template_name']) {
-                throw new \RuntimeException("Template name is required for template messages");
-            }
+            $evo = EvolutionAPI::fromSettings();
+            $evo->sendText($instanceName, $item['phone'], $item['content']);
 
-            $result = $wa->sendTemplate($item['phone'], $item['template_name'], $vars);
         } else {
-            // Free text
-            $result = $wa->sendText($item['phone'], $item['content']);
-        }
+            // ---- WhatsApp Cloud API ----
+            $phoneId  = $item['whatsapp_phone_number_id'] ?? '';
+            $tokenEnc = $item['whatsapp_access_token_encrypted'] ?? '';
 
-        // Extract WhatsApp message ID from response
-        $waMessageId = $result['messages'][0]['id'] ?? null;
+            if (!$phoneId || !$tokenEnc) {
+                throw new \RuntimeException("Agent missing WhatsApp Cloud API credentials");
+            }
+
+            $token = Crypto::tryDecrypt($tokenEnc);
+            if (!$token) {
+                throw new \RuntimeException("Cannot decrypt WhatsApp token");
+            }
+
+            $wa = new WhatsApp($phoneId, $token);
+
+            if ($item['message_type'] === 'template') {
+                $vars = [];
+                if ($item['template_vars']) {
+                    $decoded = json_decode($item['template_vars'], true);
+                    $vars    = is_array($decoded) ? $decoded : [];
+                }
+                if (!$item['template_name']) {
+                    throw new \RuntimeException("Template name is required for template messages");
+                }
+                $result = $wa->sendTemplate($item['phone'], $item['template_name'], $vars);
+            } else {
+                $result = $wa->sendText($item['phone'], $item['content']);
+            }
+
+            $waMessageId = $result['messages'][0]['id'] ?? null;
+            if ($item['message_id'] && $waMessageId) {
+                DB::query(
+                    'UPDATE messages SET whatsapp_message_id = ? WHERE id = ?',
+                    [$waMessageId, $item['message_id']]
+                );
+            }
+        }
 
         DB::query(
             "UPDATE outbox SET status = 'sent', sent_at = NOW(), error = NULL WHERE id = ?",
             [$itemId]
         );
 
-        // Update the corresponding message record
         if ($item['message_id']) {
-            DB::query(
-                'UPDATE messages SET status = ?, whatsapp_message_id = ? WHERE id = ?',
-                ['sent', $waMessageId, $item['message_id']]
-            );
+            DB::query("UPDATE messages SET status = 'sent' WHERE id = ?", [$item['message_id']]);
         }
 
         $sent++;
-        Logger::info('outbox-sender: sent', ['outbox_id' => $itemId, 'phone' => $item['phone']]);
-
-        // Small delay to respect API rate limits
+        Logger::info('outbox-sender: sent', [
+            'outbox_id' => $itemId,
+            'phone'     => $item['phone'],
+            'mode'      => $mode,
+        ]);
         usleep(100000); // 100ms
 
     } catch (\Throwable $e) {
@@ -123,10 +139,7 @@ foreach ($items as $item) {
         );
 
         if ($item['message_id']) {
-            DB::query(
-                "UPDATE messages SET status = 'failed' WHERE id = ?",
-                [$item['message_id']]
-            );
+            DB::query("UPDATE messages SET status = 'failed' WHERE id = ?", [$item['message_id']]);
         }
 
         $failed++;

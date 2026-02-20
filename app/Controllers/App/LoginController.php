@@ -41,11 +41,9 @@ class LoginController
         if (Auth::tenantUser()) {
             Response::redirect('/app/dashboard');
         }
-        $plans = DB::fetchAll('SELECT * FROM plans WHERE is_active = 1 ORDER BY sort_order');
         Response::view('app/login', [
-            'csrf'  => CSRF::field(),
-            'mode'  => 'register',
-            'plans' => $plans,
+            'csrf' => CSRF::field(),
+            'mode' => 'register',
         ]);
     }
 
@@ -73,7 +71,6 @@ class LoginController
             Response::redirect('/app/register');
         }
 
-        // Check email uniqueness
         $exists = DB::fetchColumn('SELECT id FROM tenant_users WHERE email = ?', [$email]);
         if ($exists) {
             Session::flash('error', 'Este e-mail já está em uso.');
@@ -84,12 +81,15 @@ class LoginController
         try {
             $slug = $this->makeSlug($name);
 
+            // Novos clientes recebem 50 créditos grátis para testar
+            $freeCredits = 50;
+
             $tenantId = DB::insert('tenants', [
-                'name'          => $name,
-                'slug'          => $slug,
-                'email'         => $email,
-                'status'        => 'trial',
-                'trial_ends_at' => date('Y-m-d H:i:s', strtotime('+14 days')),
+                'name'    => $name,
+                'slug'    => $slug,
+                'email'   => $email,
+                'status'  => 'trial',
+                'credits' => $freeCredits,
             ]);
 
             DB::insert('tenant_users', [
@@ -98,6 +98,14 @@ class LoginController
                 'email'         => $email,
                 'password_hash' => password_hash($password, PASSWORD_BCRYPT),
                 'role'          => 'owner',
+            ]);
+
+            // Registra a transação de bônus
+            DB::insert('credit_transactions', [
+                'tenant_id'   => $tenantId,
+                'amount'      => $freeCredits,
+                'type'        => 'bonus',
+                'description' => 'Bônus de boas-vindas — 50 créditos grátis',
             ]);
 
             DB::commit();
@@ -119,9 +127,9 @@ class LoginController
 
     private function makeSlug(string $name): string
     {
-        $slug = strtolower(trim($name));
-        $slug = preg_replace('/[^a-z0-9]+/', '-', iconv('UTF-8', 'ASCII//TRANSLIT', $slug) ?: $slug);
-        $slug = trim($slug, '-');
+        $slug  = strtolower(trim($name));
+        $slug  = preg_replace('/[^a-z0-9]+/', '-', iconv('UTF-8', 'ASCII//TRANSLIT', $slug) ?: $slug);
+        $slug  = trim($slug, '-');
         $base  = $slug;
         $count = 1;
         while (DB::fetchColumn('SELECT COUNT(*) FROM tenants WHERE slug = ?', [$slug]) > 0) {

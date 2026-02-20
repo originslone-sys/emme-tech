@@ -52,7 +52,7 @@
                 <label>Confirmar senha *</label>
                 <input type="password" name="password_confirm" required placeholder="••••••••">
             </div>
-            <p class="text-muted text-sm">Ao se registrar, você inicia um trial gratuito de 14 dias.</p>
+            <p class="text-muted text-sm">Ao se registrar você recebe <strong>50 créditos grátis</strong> para testar a plataforma.</p>
             <button type="submit" class="btn btn-primary btn-block">Criar conta grátis</button>
         </form>
         <?php endif; ?>

@@ -1,6 +1,7 @@
 -- ============================================================
--- SaaS WhatsApp AI Agent Manager
--- Schema v1.0 — MySQL 8+ / MariaDB 10.5+
+-- EMME Tech — SaaS WhatsApp AI Agent Manager
+-- Schema v2.0 — MySQL 8+ / MariaDB 10.5+
+-- Sistema de créditos + WhatsApp Web + Mercado Pago
 -- ============================================================
 
 SET NAMES utf8mb4;
@@ -25,34 +26,34 @@ CREATE TABLE IF NOT EXISTS `admin_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- PLANS
+-- CONFIGURAÇÕES GLOBAIS (admin configura)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS `plans` (
-  `id`                       INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name`                     VARCHAR(80) NOT NULL,
-  `slug`                     VARCHAR(80) NOT NULL,
-  `description`              TEXT NULL,
-  `price_monthly`            DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  `price_yearly`             DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  `max_agents`               INT NOT NULL DEFAULT 1,
-  `max_messages_per_month`   INT NOT NULL DEFAULT 1000,
-  `max_crons`                INT NOT NULL DEFAULT 0,
-  `max_docs`                 INT NOT NULL DEFAULT 5,
-  `storage_limit_mb`         INT NOT NULL DEFAULT 50,
-  `feature_crons`            TINYINT(1) NOT NULL DEFAULT 0,
-  `feature_docs`             TINYINT(1) NOT NULL DEFAULT 1,
-  `feature_api_access`       TINYINT(1) NOT NULL DEFAULT 0,
-  `feature_custom_persona`   TINYINT(1) NOT NULL DEFAULT 1,
-  `stripe_product_id`        VARCHAR(120) NULL,
-  `stripe_price_monthly_id`  VARCHAR(120) NULL,
-  `stripe_price_yearly_id`   VARCHAR(120) NULL,
-  `is_active`                TINYINT(1) NOT NULL DEFAULT 1,
-  `sort_order`               INT NOT NULL DEFAULT 0,
-  `created_at`               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS `global_settings` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `key`         VARCHAR(100) NOT NULL,
+  `value`       TEXT NULL,
+  `description` VARCHAR(255) NULL,
+  `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_plan_slug` (`slug`)
+  UNIQUE KEY `uq_setting_key` (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- PACOTES DE CRÉDITOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `credit_packages` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`        VARCHAR(80) NOT NULL,
+  `credits`     INT UNSIGNED NOT NULL DEFAULT 100,
+  `price_brl`   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `description` TEXT NULL,
+  `is_active`   TINYINT(1) NOT NULL DEFAULT 1,
+  `sort_order`  INT NOT NULL DEFAULT 0,
+  `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -64,9 +65,8 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   `name`            VARCHAR(150) NOT NULL,
   `slug`            VARCHAR(80) NOT NULL,
   `email`           VARCHAR(180) NOT NULL,
-  `plan_id`         INT UNSIGNED NULL,
-  `status`          ENUM('active','inactive','trial','past_due','canceled') NOT NULL DEFAULT 'trial',
-  `trial_ends_at`   DATETIME NULL,
+  `status`          ENUM('active','inactive','trial') NOT NULL DEFAULT 'trial',
+  `credits`         INT NOT NULL DEFAULT 0,
   `timezone`        VARCHAR(60) NOT NULL DEFAULT 'America/Sao_Paulo',
   `business_name`   VARCHAR(150) NULL,
   `business_phone`  VARCHAR(30) NULL,
@@ -75,9 +75,7 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_tenant_slug` (`slug`),
-  UNIQUE KEY `uq_tenant_email` (`email`),
-  KEY `fk_tenant_plan` (`plan_id`),
-  CONSTRAINT `fk_tenant_plan` FOREIGN KEY (`plan_id`) REFERENCES `plans` (`id`) ON DELETE SET NULL
+  UNIQUE KEY `uq_tenant_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `tenant_users` (
@@ -95,6 +93,46 @@ CREATE TABLE IF NOT EXISTS `tenant_users` (
   UNIQUE KEY `uq_tenant_user_email` (`tenant_id`, `email`),
   KEY `fk_tuser_tenant` (`tenant_id`),
   CONSTRAINT `fk_tuser_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- TRANSAÇÕES DE CRÉDITOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `credit_transactions` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tenant_id`    INT UNSIGNED NOT NULL,
+  `amount`       INT NOT NULL COMMENT 'Positivo = adicionado, negativo = consumido',
+  `type`         ENUM('bonus','purchase','usage','manual') NOT NULL DEFAULT 'usage',
+  `description`  VARCHAR(255) NULL,
+  `reference_id` VARCHAR(80) NULL COMMENT 'ID pagamento MP ou mensagem',
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `fk_ct_tenant` (`tenant_id`),
+  KEY `idx_ct_created` (`created_at`),
+  CONSTRAINT `fk_ct_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- PAGAMENTOS MERCADO PAGO
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `mp_payments` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tenant_id`     INT UNSIGNED NOT NULL,
+  `package_id`    INT UNSIGNED NOT NULL,
+  `mp_payment_id` VARCHAR(80) NULL,
+  `mp_pref_id`    VARCHAR(120) NULL,
+  `amount_brl`    DECIMAL(10,2) NOT NULL,
+  `credits`       INT UNSIGNED NOT NULL,
+  `status`        ENUM('pending','approved','rejected','cancelled') NOT NULL DEFAULT 'pending',
+  `paid_at`       DATETIME NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `fk_mp_tenant` (`tenant_id`),
+  KEY `idx_mp_payment_id` (`mp_payment_id`),
+  CONSTRAINT `fk_mp_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -117,7 +155,7 @@ CREATE TABLE IF NOT EXISTS `sessions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- MODEL CATALOG
+-- MODEL CATALOG (apenas admin configura)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `model_catalog` (
@@ -136,23 +174,6 @@ CREATE TABLE IF NOT EXISTS `model_catalog` (
   `updated_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_model_id` (`model_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- OPENROUTER TOKENS (per tenant, encrypted)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS `openrouter_tokens` (
-  `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id`       INT UNSIGNED NOT NULL,
-  `token_encrypted` TEXT NOT NULL,
-  `label`           VARCHAR(80) NULL,
-  `is_default`      TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `fk_ortoken_tenant` (`tenant_id`),
-  CONSTRAINT `fk_ortoken_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -190,13 +211,19 @@ CREATE TABLE IF NOT EXISTS `agents` (
   `max_tokens`                       INT NOT NULL DEFAULT 1024,
   `system_prompt`                    LONGTEXT NULL,
   `persona_id`                       INT UNSIGNED NULL,
+  -- WhatsApp: modo de conexão
+  `whatsapp_mode`                    ENUM('cloud_api','whatsapp_web') NOT NULL DEFAULT 'cloud_api',
+  -- Cloud API (Meta)
   `whatsapp_phone_number_id`         VARCHAR(60) NULL,
   `whatsapp_access_token_encrypted`  TEXT NULL,
   `whatsapp_verify_token`            VARCHAR(80) NULL,
   `whatsapp_waba_id`                 VARCHAR(60) NULL,
-  `openrouter_token_override_enc`    TEXT NULL,
+  -- WhatsApp Web (Evolution API)
+  `evo_instance_name`                VARCHAR(80) NULL,
+  -- Knowledge Base
   `enable_kb`                        TINYINT(1) NOT NULL DEFAULT 1,
   `kb_top_k`                         INT NOT NULL DEFAULT 3,
+  -- Palavras-chave
   `handoff_keyword`                  VARCHAR(80) NULL DEFAULT 'humano',
   `optout_keyword`                   VARCHAR(80) NULL DEFAULT 'sair',
   `created_at`                       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -441,58 +468,31 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- STRIPE
+-- SEED: Configurações globais padrão
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS `stripe_customers` (
-  `id`                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id`           INT UNSIGNED NOT NULL,
-  `stripe_customer_id`  VARCHAR(60) NOT NULL,
-  `created_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_stripe_customer` (`stripe_customer_id`),
-  UNIQUE KEY `uq_stripe_tenant` (`tenant_id`),
-  CONSTRAINT `fk_sc_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `stripe_subscriptions` (
-  `id`                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `tenant_id`               INT UNSIGNED NOT NULL,
-  `stripe_subscription_id`  VARCHAR(60) NOT NULL,
-  `stripe_customer_id`      VARCHAR(60) NOT NULL,
-  `plan_id`                 INT UNSIGNED NULL,
-  `status`                  VARCHAR(30) NOT NULL DEFAULT 'active',
-  `current_period_start`    DATETIME NULL,
-  `current_period_end`      DATETIME NULL,
-  `cancel_at_period_end`    TINYINT(1) NOT NULL DEFAULT 0,
-  `created_at`              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_stripe_sub` (`stripe_subscription_id`),
-  KEY `fk_ss_tenant` (`tenant_id`),
-  CONSTRAINT `fk_ss_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `stripe_events` (
-  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `stripe_event_id` VARCHAR(80) NOT NULL,
-  `event_type`      VARCHAR(80) NOT NULL,
-  `payload`         LONGTEXT NOT NULL,
-  `processed_at`    DATETIME NULL,
-  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_stripe_event` (`stripe_event_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT IGNORE INTO `global_settings` (`key`, `value`, `description`) VALUES
+('openrouter_api_key', '', 'Chave de API do OpenRouter (global)'),
+('openrouter_api_url', 'https://openrouter.ai/api/v1', 'URL base do OpenRouter'),
+('mp_access_token', '', 'Mercado Pago — Access Token de produção'),
+('mp_public_key', '', 'Mercado Pago — Public Key de produção'),
+('mp_webhook_secret', '', 'Mercado Pago — Secret para validar webhooks'),
+('evo_api_url', '', 'Evolution API — URL base (ex: https://evo.seudominio.com)'),
+('evo_api_key', '', 'Evolution API — Global API Key');
 
 -- ============================================================
--- SEED: Default plan + model catalog
+-- SEED: Pacotes de créditos padrão
 -- ============================================================
 
-INSERT IGNORE INTO `plans` (`name`,`slug`,`description`,`price_monthly`,`price_yearly`,`max_agents`,`max_messages_per_month`,`max_crons`,`max_docs`,`storage_limit_mb`,`feature_crons`,`feature_docs`,`is_active`,`sort_order`) VALUES
-('Starter','starter','1 agente, documentos básicos',49.00,490.00,1,500,0,5,20,0,1,1,1),
-('Pro','pro','3 agentes, crons e documentos',149.00,1490.00,3,5000,5,20,100,1,1,1,2),
-('Business','business','5 agentes, tudo ilimitado',299.00,2990.00,5,0,20,100,500,1,1,1,3);
+INSERT IGNORE INTO `credit_packages` (`name`, `credits`, `price_brl`, `description`, `is_active`, `sort_order`) VALUES
+('Inicial',  500,  29.90, '500 respostas do agente', 1, 1),
+('Básico',  1000,  49.90, '1.000 respostas do agente', 1, 2),
+('Pro',     3000, 129.90, '3.000 respostas do agente', 1, 3),
+('Business',10000, 349.90, '10.000 respostas do agente', 1, 4);
+
+-- ============================================================
+-- SEED: Model catalog
+-- ============================================================
 
 INSERT IGNORE INTO `model_catalog` (`provider`,`model_id`,`display_name`,`description`,`context_length`,`default_temperature`,`default_max_tokens`,`is_active`,`sort_order`) VALUES
 ('openrouter','openai/gpt-4o-mini','GPT-4o Mini','Rápido e eficiente da OpenAI',128000,0.70,1024,1,1),

@@ -7,34 +7,25 @@ namespace App\Lib;
 use RuntimeException;
 
 /**
- * OpenRouter — Chat Completions client via cURL.
+ * OpenRouter — cliente via cURL.
+ * O token é sempre o global configurado pelo admin em global_settings.
  */
 class OpenRouter
 {
     private string $apiKey;
     private string $apiUrl;
 
-    public function __construct(string $apiKey)
+    public function __construct(string $apiKey, string $apiUrl = 'https://openrouter.ai/api/v1')
     {
         $this->apiKey = $apiKey;
-        $this->apiUrl = (string)env('OPENROUTER_API_URL', 'https://openrouter.ai/api/v1/chat/completions');
+        $this->apiUrl = rtrim($apiUrl, '/');
     }
 
     /**
-     * Send a chat completion request.
-     *
-     * @param string $model     OpenRouter model ID (e.g. openai/gpt-4o-mini)
-     * @param array  $messages  Array of {role, content} messages
-     * @param float  $temperature
-     * @param int    $maxTokens
-     * @return string           The assistant reply text
+     * Envia uma requisição de chat completion.
      */
-    public function chat(
-        string $model,
-        array  $messages,
-        float  $temperature = 0.7,
-        int    $maxTokens   = 1024
-    ): string {
+    public function chat(string $model, array $messages, float $temperature = 0.7, int $maxTokens = 1024): string
+    {
         $payload = [
             'model'       => $model,
             'messages'    => $messages,
@@ -42,22 +33,24 @@ class OpenRouter
             'max_tokens'  => $maxTokens,
         ];
 
-        $response = $this->request($payload);
+        $data = $this->request($payload);
 
-        $text = $response['choices'][0]['message']['content'] ?? null;
-        if ($text === null) {
-            throw new RuntimeException('OpenRouter returned no content. Response: ' . json_encode($response));
+        $content = $data['choices'][0]['message']['content'] ?? '';
+        if (!$content) {
+            throw new RuntimeException('OpenRouter returned empty response. Raw: ' . json_encode($data));
         }
 
-        return trim($text);
+        return $content;
     }
 
     /**
-     * Raw HTTP POST to OpenRouter API.
+     * POST direto para a API do OpenRouter.
      */
     public function request(array $payload): array
     {
-        $ch = curl_init($this->apiUrl);
+        $url = $this->apiUrl . '/chat/completions';
+
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
@@ -65,8 +58,8 @@ class OpenRouter
             CURLOPT_HTTPHEADER     => [
                 'Authorization: Bearer ' . $this->apiKey,
                 'Content-Type: application/json',
-                'HTTP-Referer: ' . APP_URL,
-                'X-Title: WhatsApp AI Manager',
+                'HTTP-Referer: ' . env('APP_URL', 'https://emmetech.digital'),
+                'X-Title: EMME Tech Agent',
             ],
             CURLOPT_TIMEOUT        => 60,
             CURLOPT_CONNECTTIMEOUT => 10,
@@ -78,47 +71,16 @@ class OpenRouter
         curl_close($ch);
 
         if ($error) {
-            throw new RuntimeException("cURL error: $error");
+            throw new RuntimeException("OpenRouter cURL error: $error");
         }
 
-        $data = json_decode($raw ?: '{}', true);
+        $data = json_decode($raw ?: '{}', true) ?? [];
 
         if ($status >= 400) {
             $msg = $data['error']['message'] ?? $raw;
             throw new RuntimeException("OpenRouter API error ($status): $msg");
         }
 
-        return $data ?? [];
-    }
-
-    /**
-     * Build the OpenRouter client for an agent, resolving the token priority:
-     * 1. Agent override token (encrypted)
-     * 2. Tenant default token (encrypted)
-     * 3. Global default token from .env
-     */
-    public static function forAgent(array $agent, int $tenantId): self
-    {
-        // Agent-level override
-        if (!empty($agent['openrouter_token_override_enc'])) {
-            $token = Crypto::tryDecrypt($agent['openrouter_token_override_enc']);
-            if ($token) return new self($token);
-        }
-
-        // Tenant default token
-        $row = \App\Core\DB::fetchOne(
-            'SELECT token_encrypted FROM openrouter_tokens WHERE tenant_id = ? AND is_default = 1 LIMIT 1',
-            [$tenantId]
-        );
-        if ($row) {
-            $token = Crypto::tryDecrypt($row['token_encrypted']);
-            if ($token) return new self($token);
-        }
-
-        // Global fallback
-        $global = env('OPENROUTER_DEFAULT_TOKEN', '');
-        if ($global) return new self($global);
-
-        throw new RuntimeException("No OpenRouter token configured for tenant $tenantId.");
+        return $data;
     }
 }

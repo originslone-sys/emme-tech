@@ -17,13 +17,16 @@
             <a href="/admin/dashboard">📊 Dashboard</a>
         </li>
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/tenants') ? 'active' : '' ?>">
-            <a href="/admin/tenants">🏢 Tenants</a>
+            <a href="/admin/tenants">🏢 Clientes</a>
         </li>
-        <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/plans') ? 'active' : '' ?>">
-            <a href="/admin/plans">💳 Planos</a>
+        <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/credits') ? 'active' : '' ?>">
+            <a href="/admin/credits">🎁 Pacotes de Créditos</a>
         </li>
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/models') ? 'active' : '' ?>">
             <a href="/admin/models">🧠 Modelos de IA</a>
+        </li>
+        <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/settings') ? 'active' : '' ?>">
+            <a href="/admin/settings">⚙️ Configurações</a>
         </li>
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/admin/audit') ? 'active' : '' ?>">
             <a href="/admin/audit">📋 Auditoria</a>

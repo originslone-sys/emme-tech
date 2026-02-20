@@ -15,18 +15,18 @@ class DashboardController
         Auth::requireAdmin();
 
         $stats = [
-            'tenants'  => (int)DB::fetchColumn('SELECT COUNT(*) FROM tenants'),
-            'active'   => (int)DB::fetchColumn("SELECT COUNT(*) FROM tenants WHERE status = 'active'"),
-            'agents'   => (int)DB::fetchColumn('SELECT COUNT(*) FROM agents'),
-            'messages' => (int)DB::fetchColumn('SELECT COUNT(*) FROM messages'),
+            'tenants'      => (int)DB::fetchColumn('SELECT COUNT(*) FROM tenants'),
+            'active'       => (int)DB::fetchColumn("SELECT COUNT(*) FROM tenants WHERE status = 'active'"),
+            'agents'       => (int)DB::fetchColumn('SELECT COUNT(*) FROM agents'),
+            'messages'     => (int)DB::fetchColumn('SELECT COUNT(*) FROM messages'),
             'jobs_pending' => (int)DB::fetchColumn("SELECT COUNT(*) FROM jobs WHERE status = 'pending'"),
             'jobs_failed'  => (int)DB::fetchColumn("SELECT COUNT(*) FROM jobs WHERE status = 'failed'"),
         ];
 
         $recentTenants = DB::fetchAll(
-            'SELECT t.*, p.name AS plan_name FROM tenants t
-             LEFT JOIN plans p ON p.id = t.plan_id
-             ORDER BY t.created_at DESC LIMIT 10'
+            'SELECT id, company_name, email, status, credits, created_at
+             FROM tenants
+             ORDER BY created_at DESC LIMIT 10'
         );
 
         Response::view('admin/dashboard', [
