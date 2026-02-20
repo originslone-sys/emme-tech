@@ -1,5 +1,5 @@
 /**
- * WAMS — WhatsApp AI Agent Manager
+ * EMME Tech — WhatsApp AI Agent Manager
  * Main JS — lightweight, no dependencies
  */
 

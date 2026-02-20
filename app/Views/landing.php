@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Crie agentes de IA para WhatsApp em minutos. Automatize atendimento, vendas e suporte com IA de ponta — sem código.">
-<meta property="og:title" content="WAMS — Agentes de IA para WhatsApp">
+<meta property="og:title" content="EMME Tech — Agentes de IA para WhatsApp">
 <meta property="og:description" content="A plataforma SaaS para criar, configurar e escalar agentes de IA no WhatsApp. Com OpenRouter, RAG e automações.">
 <meta property="og:type" content="website">
-<title>WAMS — Agentes de IA para WhatsApp | Atendimento Inteligente 24/7</title>
+<title>EMME Tech — Agentes de IA para WhatsApp | Atendimento Inteligente 24/7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -80,9 +80,16 @@ body::before {
   height: 70px;
 }
 .nav-logo {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 4px;
   font-size: 22px; font-weight: 800;
   letter-spacing: -.5px;
+}
+.nav-logo-emme {
+  background: var(--grad-hero);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-style: italic;
 }
 .nav-logo-icon {
   width: 36px; height: 36px; border-radius: 10px;
@@ -659,8 +666,7 @@ section { position: relative; z-index: 1; }
 <nav class="nav" id="mainNav">
   <div class="nav-inner">
     <a href="/" class="nav-logo">
-      <div class="nav-logo-icon">🤖</div>
-      WAMS
+      <span class="nav-logo-emme">EMME</span>&nbsp;Tech
     </a>
     <ul class="nav-links" id="navLinks">
       <li><a href="#features">Funcionalidades</a></li>
@@ -1126,7 +1132,7 @@ section { position: relative; z-index: 1; }
         ['Como funciona a integração com o WhatsApp?', 'Usamos a WhatsApp Cloud API oficial da Meta. Você cria um App no Meta Developer Console, obtém o Phone Number ID e o Access Token, e cola no painel. O webhook já está configurado — basta apontar a URL.'],
         ['Posso usar qualquer modelo de IA?', 'O administrador da plataforma mantém um catálogo de modelos via OpenRouter (GPT-4o, Claude, Llama, Gemini, etc.). Você escolhe o modelo disponível para cada agente.'],
         ['O que é a "Memória de Documentos" (RAG)?', 'Você pode subir documentos (txt, md, pdf). O sistema os divide em partes (chunks), indexa com FULLTEXT e, a cada mensagem recebida, busca os trechos mais relevantes e os injeta no contexto da IA — como dar uma "cola" para o bot responder com as suas informações.'],
-        ['O que acontece fora da janela de 24h do WhatsApp?', 'A política da Meta exige o uso de Templates aprovados para contatos que não enviaram mensagem nas últimas 24h. O WAMS detecta isso automaticamente e as automações/crons usam templates para esse caso.'],
+        ['O que acontece fora da janela de 24h do WhatsApp?', 'A política da Meta exige o uso de Templates aprovados para contatos que não enviaram mensagem nas últimas 24h. O EMME Tech detecta isso automaticamente e as automações/crons usam templates para esse caso.'],
         ['Posso cancelar a qualquer momento?', 'Sim. O cancelamento é feito direto no portal do Stripe, sem burocracia. Você mantém acesso até o fim do período pago.'],
         ['Meus dados e tokens ficam seguros?', 'Todos os tokens (WhatsApp, OpenRouter) são armazenados criptografados com AES-256-GCM no banco. Sua chave mestra fica apenas no .env do seu servidor — nunca é enviada a terceiros.'],
       ];
@@ -1177,8 +1183,7 @@ section { position: relative; z-index: 1; }
     <div class="footer-grid">
       <div class="footer-brand">
         <div class="nav-logo" style="font-size:20px;display:inline-flex">
-          <div class="nav-logo-icon">🤖</div>
-          WAMS
+          <span class="nav-logo-emme">EMME</span>&nbsp;Tech
         </div>
         <p>A plataforma completa para criar e gerenciar agentes de IA no WhatsApp. Simples para quem começa, poderoso para quem escala.</p>
         <div class="footer-social">
@@ -1216,7 +1221,7 @@ section { position: relative; z-index: 1; }
       </div>
     </div>
     <div class="footer-bottom">
-      <p>© <?= date('Y') ?> WAMS. Todos os direitos reservados.</p>
+      <p>© <?= date('Y') ?> EMME Tech. Todos os direitos reservados.</p>
       <div class="footer-badges">
         <span class="footer-badge">🔒 AES-256-GCM</span>
         <span class="footer-badge">⚡ PHP 8.1+</span>

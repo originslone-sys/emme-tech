@@ -1,5 +1,5 @@
 /* ============================================================
-   WAMS — WhatsApp AI Agent Manager
+   EMME Tech — WhatsApp AI Agent Manager
    Main stylesheet
    ============================================================ */
 
@@ -65,6 +65,10 @@ pre  { font-family: monospace; font-size: 12px; }
   align-items: center;
   gap: 8px;
 }
+
+/* ---- Brand text logo ---- */
+.brand-emme { color: #818cf8; font-style: italic; }
+.auth-logo .brand-emme { color: var(--color-primary); }
 
 .sidebar-nav {
   list-style: none;
