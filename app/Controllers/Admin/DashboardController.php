@@ -24,7 +24,7 @@ class DashboardController
         ];
 
         $recentTenants = DB::fetchAll(
-            'SELECT id, company_name, email, status, credits, created_at
+            'SELECT id, name, email, status, credits, created_at
              FROM tenants
              ORDER BY created_at DESC LIMIT 10'
         );

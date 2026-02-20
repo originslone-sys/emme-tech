@@ -51,7 +51,7 @@ require APP_ROOT . '/app/Views/layouts/admin.php';
         <?php foreach ($recentTenants as $t): ?>
         <tr>
             <td><?= $t['id'] ?></td>
-            <td><?= htmlspecialchars($t['company_name'] ?? $t['name'] ?? '') ?></td>
+            <td><?= htmlspecialchars($t['name'] ?? '') ?></td>
             <td><?= htmlspecialchars($t['email']) ?></td>
             <td><?= number_format((int)$t['credits']) ?></td>
             <td><span class="badge badge-<?= $t['status'] ?>"><?= $t['status'] ?></span></td>

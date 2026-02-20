@@ -1,14 +1,12 @@
 <?php
 $pageTitle = 'Documentos / Memória';
 require APP_ROOT . '/app/Views/layouts/app.php';
-$canUpload = \App\Core\Auth::canUploadDoc();
 ?>
 
 <div class="card mb-4">
     <div class="card-header">
         <h3>Upload de Documento</h3>
     </div>
-    <?php if ($canUpload): ?>
     <div class="card-body">
         <form method="POST" action="/app/docs/upload" enctype="multipart/form-data">
             <?= $csrf ?>
@@ -32,11 +30,6 @@ $canUpload = \App\Core\Auth::canUploadDoc();
             <button type="submit" class="btn btn-primary">Enviar e Processar</button>
         </form>
     </div>
-    <?php else: ?>
-    <div class="card-body">
-        <p class="text-warning">Limite de documentos atingido. <a href="/app/billing">Faça upgrade</a>.</p>
-    </div>
-    <?php endif; ?>
 </div>
 
 <div class="card">
@@ -89,11 +82,5 @@ $canUpload = \App\Core\Auth::canUploadDoc();
     </table>
     <?php endif; ?>
 </div>
-
-<?php if ($plan): ?>
-<p class="text-muted mt-2">
-    Documentos: <?= count($docs) ?> / <?= $plan['max_docs'] ?> | Storage: <?= $plan['storage_limit_mb'] ?>MB
-</p>
-<?php endif; ?>
 
 <?php require APP_ROOT . '/app/Views/layouts/app_end.php'; ?>
