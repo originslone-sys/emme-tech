@@ -671,7 +671,7 @@ section { position: relative; z-index: 1; }
     <ul class="nav-links" id="navLinks">
       <li><a href="#features">Funcionalidades</a></li>
       <li><a href="#como-funciona">Como funciona</a></li>
-      <li><a href="#pricing">Planos</a></li>
+      <li><a href="#pricing">Preços</a></li>
       <li><a href="#faq">FAQ</a></li>
     </ul>
     <div class="nav-cta">
@@ -697,7 +697,7 @@ section { position: relative; z-index: 1; }
     <div class="hero-content">
       <div class="hero-badge fade-up">
         <span class="hero-badge-dot"></span>
-        Trial gratuito de 14 dias · Sem cartão de crédito
+        50 créditos grátis para começar · Sem cartão de crédito
       </div>
       <h1 class="fade-up delay-1">
         Agentes de IA no<br>
@@ -742,7 +742,7 @@ section { position: relative; z-index: 1; }
           <div class="mockup-dots">
             <span class="d1"></span><span class="d2"></span><span class="d3"></span>
           </div>
-          <div class="mockup-url">app.wams.io/dashboard</div>
+          <div class="mockup-url">app.emmetech.digital/dashboard</div>
         </div>
         <div class="mockup-body">
           <div class="mockup-sidebar">
@@ -751,7 +751,7 @@ section { position: relative; z-index: 1; }
             <div class="mockup-sidebar-item">📚 Documentos</div>
             <div class="mockup-sidebar-item">💬 Conversas</div>
             <div class="mockup-sidebar-item">⏰ Automações</div>
-            <div class="mockup-sidebar-item">💳 Assinatura</div>
+            <div class="mockup-sidebar-item">🪙 Créditos</div>
           </div>
           <div class="mockup-main">
             <div class="mockup-agent-card">
@@ -844,9 +844,9 @@ section { position: relative; z-index: 1; }
         <p>Agende envios automáticos com expressões cron. Envie templates fora da janela de 24h, lembretes, promoções e notificações recorrentes.</p>
       </div>
       <div class="feature-cell">
-        <div class="feature-icon ic-orange">💳</div>
-        <h3>Billing com Stripe</h3>
-        <p>Checkout e portal de gerenciamento integrados. Planos configuráveis, pagamento recorrente, webhook automático — tudo pronto para produção.</p>
+        <div class="feature-icon ic-orange">📱</div>
+        <h3>WhatsApp Web ou Cloud API</h3>
+        <p>Escolha entre a Cloud API oficial da Meta (número verificado) ou conecte qualquer número via WhatsApp Web com QR Code — sem precisar de conta Business.</p>
       </div>
       <div class="feature-cell">
         <div class="feature-icon ic-pink">🛡️</div>
@@ -876,8 +876,8 @@ section { position: relative; z-index: 1; }
         <div class="step" data-step="1">
           <div class="step-num">2</div>
           <div class="step-body">
-            <h4>Conecte seu WhatsApp Business</h4>
-            <p>Cole o Phone Number ID e o Access Token da WhatsApp Cloud API. O webhook já está pronto — basta apontar a URL no Meta Developer Console.</p>
+            <h4>Conecte seu WhatsApp</h4>
+            <p>Escolha Cloud API (número verificado pelo Meta) ou WhatsApp Web com QR Code. Para o QR Code basta escanear com o celular — sem configuração técnica.</p>
           </div>
         </div>
         <div class="step" data-step="2">
@@ -925,7 +925,7 @@ section { position: relative; z-index: 1; }
               </div>
               <div style="background:rgba(255,255,255,.04);border:1px solid var(--c-border);border-radius:8px;padding:14px">
                 <div style="font-size:11px;color:var(--c-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Webhook WhatsApp</div>
-                <code style="font-size:11px;color:var(--c-accent2);background:rgba(99,102,241,.1);padding:6px 10px;border-radius:6px;display:block;word-break:break-all">https://app.wams.io/webhook/whatsapp</code>
+                <code style="font-size:11px;color:var(--c-accent2);background:rgba(99,102,241,.1);padding:6px 10px;border-radius:6px;display:block;word-break:break-all">https://app.emmetech.digital/webhook/whatsapp</code>
               </div>
             </div>
           </div>
@@ -974,28 +974,17 @@ section { position: relative; z-index: 1; }
 <section class="pricing" id="pricing">
   <div class="container">
     <div class="pricing-header">
-      <div class="section-label">💳 Planos</div>
-      <h2 class="section-title">Preço justo para<br><span class="grad">qualquer tamanho de negócio</span></h2>
-      <p class="section-sub" style="margin:0 auto;text-align:center">Comece grátis por 14 dias. Sem cartão de crédito. Cancele quando quiser.</p>
+      <div class="section-label">🪙 Créditos</div>
+      <h2 class="section-title">Pague só pelo que<br><span class="grad">seu agente responder</span></h2>
+      <p class="section-sub" style="margin:0 auto;text-align:center">1 crédito = 1 resposta do agente. Comece com 50 créditos grátis. Sem assinatura mensal.</p>
     </div>
 
-    <?php if (!empty($plans)): ?>
+    <?php if (!empty($packages)): ?>
     <div class="pricing-grid">
       <?php
-      $planCount = count($plans);
-      foreach ($plans as $i => $p):
-        $isFeatured = $planCount >= 2 && $i === 1;
-        $features = [
-          "{$p['max_agents']} agente" . ($p['max_agents'] > 1 ? 's' : '') . ' de IA',
-          $p['max_messages_per_month'] > 0 ? number_format($p['max_messages_per_month']) . ' mensagens/mês' : 'Mensagens ilimitadas',
-          $p['feature_docs']  ? "Até {$p['max_docs']} documentos / RAG" : null,
-          $p['feature_crons'] ? "Até {$p['max_crons']} automações/crons" : null,
-          'WhatsApp Cloud API oficial',
-          'Suporte por e-mail',
-          $isFeatured ? 'Painel multi-agente' : null,
-          $p['feature_api_access'] ? 'Acesso à API REST' : null,
-        ];
-        $features = array_values(array_filter($features));
+      $pkgCount = count($packages);
+      foreach ($packages as $i => $p):
+        $isFeatured = (bool)$p['is_featured'];
       ?>
       <div class="plan-card <?= $isFeatured ? 'featured' : '' ?>">
         <?php if ($isFeatured): ?>
@@ -1004,39 +993,36 @@ section { position: relative; z-index: 1; }
         <div class="plan-name"><?= htmlspecialchars($p['name']) ?></div>
         <div class="plan-price-wrap">
           <div class="plan-price">
-            <sup>R$</sup><?= number_format($p['price_monthly'], 0, ',', '.') ?>
+            <sup>R$</sup><?= number_format((float)$p['price'], 0, ',', '.') ?>
           </div>
         </div>
-        <div class="plan-period">por mês · cobrado mensalmente</div>
-        <?php if ($p['price_yearly'] > 0): ?>
-        <div style="font-size:12px;color:var(--c-green);margin-top:-8px;margin-bottom:12px">
-          💡 R$ <?= number_format($p['price_yearly'], 0, ',', '.') ?>/ano — economize <?= round((1 - $p['price_yearly'] / ($p['price_monthly'] * 12)) * 100) ?>%
-        </div>
+        <div class="plan-period"><?= number_format((int)$p['credits']) ?> créditos · pagamento único</div>
+        <?php if ($p['description']): ?>
+        <div style="font-size:13px;color:var(--c-muted);margin:8px 0 4px"><?= htmlspecialchars($p['description']) ?></div>
         <?php endif; ?>
         <hr class="plan-divider">
         <ul class="plan-features-list">
-          <?php foreach ($features as $f): ?>
-          <li>
-            <span class="check">✓</span>
-            <?= htmlspecialchars($f) ?>
-          </li>
-          <?php endforeach; ?>
+          <li><span class="check">✓</span> <?= number_format((int)$p['credits']) ?> respostas do agente</li>
+          <li><span class="check">✓</span> Todos os agentes compartilham</li>
+          <li><span class="check">✓</span> Cloud API ou WhatsApp Web</li>
+          <li><span class="check">✓</span> Créditos sem prazo de validade</li>
+          <li><span class="check">✓</span> Suporte por e-mail</li>
         </ul>
         <a href="/app/register" class="plan-cta <?= $isFeatured ? 'plan-cta-primary' : 'plan-cta-secondary' ?>">
-          <?= $isFeatured ? '🚀 Começar agora' : 'Escolher plano' ?>
+          <?= $isFeatured ? '🚀 Começar agora' : 'Comprar créditos' ?>
         </a>
       </div>
       <?php endforeach; ?>
     </div>
 
     <?php else: ?>
-    <!-- Fallback pricing (quando DB indisponível) -->
+    <!-- Fallback (quando DB indisponível) -->
     <div class="pricing-grid">
       <?php
       $fallback = [
-        ['name'=>'Starter','price'=>'49','agents'=>1,'msgs'=>'500','docs'=>5,'crons'=>false,'featured'=>false],
-        ['name'=>'Pro',    'price'=>'149','agents'=>3,'msgs'=>'5.000','docs'=>20,'crons'=>true,'featured'=>true],
-        ['name'=>'Business','price'=>'299','agents'=>5,'msgs'=>'Ilimitadas','docs'=>100,'crons'=>true,'featured'=>false],
+        ['name'=>'Básico',    'price'=>'29,90', 'credits'=>'100',  'featured'=>false],
+        ['name'=>'Crescimento','price'=>'79,90', 'credits'=>'350',  'featured'=>true],
+        ['name'=>'Escala',    'price'=>'149,90','credits'=>'800',  'featured'=>false],
       ];
       foreach ($fallback as $p):
       ?>
@@ -1044,18 +1030,17 @@ section { position: relative; z-index: 1; }
         <?php if ($p['featured']): ?><div class="plan-popular">⭐ Mais popular</div><?php endif; ?>
         <div class="plan-name"><?= $p['name'] ?></div>
         <div class="plan-price-wrap"><div class="plan-price"><sup>R$</sup><?= $p['price'] ?></div></div>
-        <div class="plan-period">por mês</div>
+        <div class="plan-period"><?= $p['credits'] ?> créditos · pagamento único</div>
         <hr class="plan-divider">
         <ul class="plan-features-list">
-          <li><span class="check">✓</span> <?= $p['agents'] ?> agente<?= $p['agents']>1?'s':'' ?> de IA</li>
-          <li><span class="check">✓</span> <?= $p['msgs'] ?> mensagens/mês</li>
-          <li><span class="check">✓</span> <?= $p['docs'] ?> documentos / RAG</li>
-          <li><?= $p['crons'] ? '<span class="check">✓</span>' : '<span class="cross">✗</span>' ?> Automações e crons</li>
-          <li><span class="check">✓</span> WhatsApp Cloud API</li>
-          <li><span class="check">✓</span> Suporte prioritário</li>
+          <li><span class="check">✓</span> <?= $p['credits'] ?> respostas do agente</li>
+          <li><span class="check">✓</span> Todos os agentes compartilham</li>
+          <li><span class="check">✓</span> Cloud API ou WhatsApp Web</li>
+          <li><span class="check">✓</span> Créditos sem prazo de validade</li>
+          <li><span class="check">✓</span> Suporte por e-mail</li>
         </ul>
         <a href="/app/register" class="plan-cta <?= $p['featured'] ? 'plan-cta-primary' : 'plan-cta-secondary' ?>">
-          <?= $p['featured'] ? '🚀 Começar agora' : 'Escolher plano' ?>
+          <?= $p['featured'] ? '🚀 Começar agora' : 'Comprar créditos' ?>
         </a>
       </div>
       <?php endforeach; ?>
@@ -1063,8 +1048,8 @@ section { position: relative; z-index: 1; }
     <?php endif; ?>
 
     <p class="pricing-note">
-      🔒 Pagamento 100% seguro via Stripe · Cancele a qualquer momento ·
-      <a href="/app/register">Trial grátis de 14 dias</a>
+      🔒 Pagamento seguro via Mercado Pago · Créditos sem expiração ·
+      <a href="/app/register">50 créditos grátis ao criar conta</a>
     </p>
   </div>
 </section>
@@ -1129,11 +1114,11 @@ section { position: relative; z-index: 1; }
       <?php
       $faqs = [
         ['Preciso de conhecimento técnico para usar?', 'Não. A interface é totalmente visual. Você configura o agente, sobe os documentos e conecta o WhatsApp em poucos cliques, sem escrever código.'],
-        ['Como funciona a integração com o WhatsApp?', 'Usamos a WhatsApp Cloud API oficial da Meta. Você cria um App no Meta Developer Console, obtém o Phone Number ID e o Access Token, e cola no painel. O webhook já está configurado — basta apontar a URL.'],
+        ['Como funciona a integração com o WhatsApp?', 'Você escolhe o modo: Cloud API oficial da Meta (número verificado, melhor para empresas) ou WhatsApp Web via QR Code (qualquer número, mais simples de começar). No modo QR Code, basta escanear o código com seu celular e o agente já começa a responder.'],
         ['Posso usar qualquer modelo de IA?', 'O administrador da plataforma mantém um catálogo de modelos via OpenRouter (GPT-4o, Claude, Llama, Gemini, etc.). Você escolhe o modelo disponível para cada agente.'],
         ['O que é a "Memória de Documentos" (RAG)?', 'Você pode subir documentos (txt, md, pdf). O sistema os divide em partes (chunks), indexa com FULLTEXT e, a cada mensagem recebida, busca os trechos mais relevantes e os injeta no contexto da IA — como dar uma "cola" para o bot responder com as suas informações.'],
         ['O que acontece fora da janela de 24h do WhatsApp?', 'A política da Meta exige o uso de Templates aprovados para contatos que não enviaram mensagem nas últimas 24h. O EMME Tech detecta isso automaticamente e as automações/crons usam templates para esse caso.'],
-        ['Posso cancelar a qualquer momento?', 'Sim. O cancelamento é feito direto no portal do Stripe, sem burocracia. Você mantém acesso até o fim do período pago.'],
+        ['Como funciona o sistema de créditos?', '1 crédito = 1 mensagem respondida pelo agente. Ao criar a conta você já recebe 50 créditos grátis para testar. Quando quiser mais, compra um pacote avulso via Mercado Pago — sem mensalidade, sem fidelidade. Os créditos não expiram.'],
         ['Meus dados e tokens ficam seguros?', 'Todos os tokens (WhatsApp, OpenRouter) são armazenados criptografados com AES-256-GCM no banco. Sua chave mestra fica apenas no .env do seu servidor — nunca é enviada a terceiros.'],
       ];
       foreach ($faqs as $f): ?>
@@ -1159,7 +1144,7 @@ section { position: relative; z-index: 1; }
       <p>Junte-se a centenas de empresas que já automatizaram o atendimento no WhatsApp. Comece grátis hoje.</p>
       <div class="cta-actions">
         <a href="/app/register" class="btn-hero">
-          🚀 Criar conta grátis — 14 dias sem cartão
+          🚀 Criar conta grátis — 50 créditos inclusos
         </a>
         <a href="/app/login" class="btn-hero-outline">
           Já tenho conta
@@ -1167,8 +1152,8 @@ section { position: relative; z-index: 1; }
       </div>
       <div class="cta-trust">
         <span>🔒 SSL &amp; dados protegidos</span>
-        <span>✅ Trial de 14 dias grátis</span>
-        <span>🚫 Sem cartão de crédito</span>
+        <span>✅ 50 créditos grátis ao se registrar</span>
+        <span>🚫 Sem assinatura mensal</span>
         <span>⚡ Ativo em minutos</span>
       </div>
     </div>
@@ -1196,7 +1181,7 @@ section { position: relative; z-index: 1; }
         <h4>Produto</h4>
         <ul>
           <li><a href="#features">Funcionalidades</a></li>
-          <li><a href="#pricing">Planos e Preços</a></li>
+          <li><a href="#pricing">Pacotes de Créditos</a></li>
           <li><a href="#como-funciona">Como funciona</a></li>
           <li><a href="#depoimentos">Cases</a></li>
         </ul>
@@ -1214,7 +1199,7 @@ section { position: relative; z-index: 1; }
         <h4>Suporte</h4>
         <ul>
           <li><a href="#faq">FAQ</a></li>
-          <li><a href="mailto:suporte@wams.io">E-mail suporte</a></li>
+          <li><a href="mailto:suporte@emmetech.digital">E-mail suporte</a></li>
           <li><a href="#" onclick="event.preventDefault();showToast('📖 Documentação em breve!')">Documentação</a></li>
           <li><a href="#" onclick="event.preventDefault();showToast('📬 Status: 100% operacional ✅')">Status da API</a></li>
         </ul>
@@ -1225,7 +1210,7 @@ section { position: relative; z-index: 1; }
       <div class="footer-badges">
         <span class="footer-badge">🔒 AES-256-GCM</span>
         <span class="footer-badge">⚡ PHP 8.1+</span>
-        <span class="footer-badge">💳 Stripe</span>
+        <span class="footer-badge">💚 Mercado Pago</span>
         <span class="footer-badge">🤖 OpenRouter</span>
       </div>
     </div>

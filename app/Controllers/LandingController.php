@@ -12,13 +12,13 @@ class LandingController
     public function index(): void
     {
         try {
-            $plans = DB::fetchAll(
-                'SELECT * FROM plans WHERE is_active = 1 ORDER BY sort_order, price_monthly ASC'
+            $packages = DB::fetchAll(
+                'SELECT * FROM credit_packages WHERE is_active = 1 ORDER BY sort_order, price ASC'
             );
         } catch (\Throwable) {
-            $plans = [];
+            $packages = [];
         }
 
-        Response::view('landing', ['plans' => $plans]);
+        Response::view('landing', ['packages' => $packages]);
     }
 }
