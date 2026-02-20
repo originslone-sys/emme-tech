@@ -64,25 +64,4 @@ require APP_ROOT . '/app/Views/layouts/app.php';
 
 </div><!-- .grid-2 -->
 
-<!-- OpenRouter Token -->
-<div class="card mt-4">
-    <div class="card-header"><h3>Token OpenRouter (padrão do tenant)</h3></div>
-    <div class="card-body">
-        <?php if ($hasToken): ?>
-        <p class="text-muted">Token configurado: <code><?= htmlspecialchars($tokenPreview) ?></code></p>
-        <?php else: ?>
-        <p class="text-warning">Nenhum token configurado. Obtenha em <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>.</p>
-        <?php endif; ?>
-        <form method="POST" action="/app/settings/openrouter-token">
-            <?= $csrf ?>
-            <div class="form-group">
-                <label><?= $hasToken ? 'Novo token (substituir)' : 'Token OpenRouter' ?></label>
-                <input type="password" name="openrouter_token" required
-                       placeholder="sk-or-v1-...">
-            </div>
-            <button type="submit" class="btn btn-primary">Salvar token</button>
-        </form>
-    </div>
-</div>
-
 <?php require APP_ROOT . '/app/Views/layouts/app_end.php'; ?>

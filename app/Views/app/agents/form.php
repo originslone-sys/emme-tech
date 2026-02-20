@@ -1,6 +1,7 @@
 <?php
 $pageTitle = $agent ? 'Editar Agente' : 'Novo Agente';
 $action    = $agent ? "/app/agents/{$agent['id']}/update" : '/app/agents';
+$waMode    = $agent['whatsapp_mode'] ?? 'cloud_api';
 require APP_ROOT . '/app/Views/layouts/app.php';
 ?>
 
@@ -74,41 +75,90 @@ require APP_ROOT . '/app/Views/layouts/app.php';
                           placeholder="Você é um assistente de suporte da empresa..."><?= htmlspecialchars($agent['system_prompt'] ?? '') ?></textarea>
             </div>
 
-            <h4>WhatsApp Cloud API</h4>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Phone Number ID</label>
-                    <input type="text" name="whatsapp_phone_number_id"
-                           value="<?= htmlspecialchars($agent['whatsapp_phone_number_id'] ?? '') ?>"
-                           placeholder="123456789012345">
-                </div>
-                <div class="form-group">
-                    <label>WABA ID</label>
-                    <input type="text" name="whatsapp_waba_id"
-                           value="<?= htmlspecialchars($agent['whatsapp_waba_id'] ?? '') ?>">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Access Token <?= $agent && $agent['whatsapp_access_token_encrypted'] ? '(deixe vazio para manter)' : '' ?></label>
-                    <input type="password" name="whatsapp_access_token"
-                           placeholder="<?= $agent && $agent['whatsapp_access_token_encrypted'] ? '(mantido)' : 'EAA...' ?>">
-                </div>
-                <div class="form-group">
-                    <label>Verify Token (webhook)</label>
-                    <input type="text" name="whatsapp_verify_token"
-                           value="<?= htmlspecialchars($agent['whatsapp_verify_token'] ?? '') ?>">
-                </div>
-            </div>
-            <p class="text-muted text-sm">
-                URL do webhook: <code><?= APP_URL ?>/webhook/whatsapp</code>
-            </p>
-
-            <h4>OpenRouter (override por agente)</h4>
+            <!-- WhatsApp Mode -->
+            <h4>Modo de Conexão WhatsApp</h4>
             <div class="form-group">
-                <label>Token OpenRouter específico deste agente (opcional, sobrescreve o padrão)</label>
-                <input type="password" name="openrouter_token_override"
-                       placeholder="<?= $agent && $agent['openrouter_token_override_enc'] ? '(mantido)' : 'sk-or-v1-...' ?>">
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="whatsapp_mode" value="cloud_api"
+                            <?= $waMode === 'cloud_api' ? 'checked' : '' ?>
+                            onchange="toggleWaMode(this.value)">
+                        <strong>WhatsApp Cloud API</strong> — Número verificado pelo Meta
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="whatsapp_mode" value="whatsapp_web"
+                            <?= $waMode === 'whatsapp_web' ? 'checked' : '' ?>
+                            onchange="toggleWaMode(this.value)">
+                        <strong>WhatsApp Web (QR Code)</strong> — Qualquer número via Evolution API
+                    </label>
+                </div>
+            </div>
+
+            <!-- Cloud API fields -->
+            <div id="section-cloud-api" style="<?= $waMode !== 'cloud_api' ? 'display:none' : '' ?>">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Phone Number ID</label>
+                        <input type="text" name="whatsapp_phone_number_id"
+                               value="<?= htmlspecialchars($agent['whatsapp_phone_number_id'] ?? '') ?>"
+                               placeholder="123456789012345">
+                    </div>
+                    <div class="form-group">
+                        <label>WABA ID</label>
+                        <input type="text" name="whatsapp_waba_id"
+                               value="<?= htmlspecialchars($agent['whatsapp_waba_id'] ?? '') ?>">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Access Token <?= $agent && $agent['whatsapp_access_token_encrypted'] ? '(deixe vazio para manter)' : '' ?></label>
+                        <input type="password" name="whatsapp_access_token"
+                               placeholder="<?= $agent && $agent['whatsapp_access_token_encrypted'] ? '(mantido)' : 'EAA...' ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Verify Token (webhook)</label>
+                        <input type="text" name="whatsapp_verify_token"
+                               value="<?= htmlspecialchars($agent['whatsapp_verify_token'] ?? '') ?>">
+                    </div>
+                </div>
+                <p class="text-muted text-sm">
+                    URL do webhook: <code><?= APP_URL ?>/webhook/whatsapp</code>
+                </p>
+            </div>
+
+            <!-- WhatsApp Web / Evolution API fields -->
+            <div id="section-whatsapp-web" style="<?= $waMode !== 'whatsapp_web' ? 'display:none' : '' ?>">
+                <?php if ($agent && $agent['whatsapp_mode'] === 'whatsapp_web' && $agent['evo_instance_name']): ?>
+                <div class="alert alert-info">
+                    Instância: <strong><?= htmlspecialchars($agent['evo_instance_name']) ?></strong>
+                    <?php if (isset($evoState)): ?>
+                    — Estado: <span class="badge badge-<?= $evoState === 'open' ? 'success' : 'warning' ?>">
+                        <?= htmlspecialchars($evoState) ?>
+                    </span>
+                    <?php endif; ?>
+                </div>
+
+                <?php if (isset($evoState) && $evoState !== 'open'): ?>
+                <div class="qrcode-section mb-3">
+                    <p>Escaneie o QR Code com o WhatsApp para conectar:</p>
+                    <div id="qrcode-container">
+                        <button type="button" class="btn btn-secondary" onclick="loadQRCode(<?= $agent['id'] ?>)">
+                            Carregar QR Code
+                        </button>
+                        <div id="qrcode-img" style="margin-top:12px"></div>
+                    </div>
+                </div>
+                <?php else: ?>
+                <div class="alert alert-success">WhatsApp conectado!</div>
+                <?php endif; ?>
+                <?php else: ?>
+                <p class="text-muted text-sm">
+                    Após salvar o agente, você poderá escanear o QR Code para conectar o WhatsApp.
+                </p>
+                <?php endif; ?>
+                <p class="text-muted text-sm">
+                    URL do webhook Evolution: <code><?= APP_URL ?>/webhook/evolution</code>
+                </p>
             </div>
 
             <h4>Base de Conhecimento (RAG)</h4>
@@ -148,5 +198,29 @@ require APP_ROOT . '/app/Views/layouts/app.php';
         </form>
     </div>
 </div>
+
+<script>
+function toggleWaMode(mode) {
+    document.getElementById('section-cloud-api').style.display   = mode === 'cloud_api'   ? '' : 'none';
+    document.getElementById('section-whatsapp-web').style.display = mode === 'whatsapp_web' ? '' : 'none';
+}
+
+function loadQRCode(agentId) {
+    const container = document.getElementById('qrcode-img');
+    container.innerHTML = '<span class="text-muted">Carregando...</span>';
+    fetch('/app/agents/' + agentId + '/qrcode')
+        .then(r => r.json())
+        .then(data => {
+            if (data.qrcode) {
+                container.innerHTML = '<img src="' + data.qrcode + '" style="max-width:280px;border:1px solid #ddd;padding:8px;border-radius:8px">';
+            } else {
+                container.innerHTML = '<span class="text-danger">' + (data.error || 'Erro ao carregar QR Code') + '</span>';
+            }
+        })
+        .catch(() => {
+            container.innerHTML = '<span class="text-danger">Falha na requisição.</span>';
+        });
+}
+</script>
 
 <?php require APP_ROOT . '/app/Views/layouts/app_end.php'; ?>

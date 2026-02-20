@@ -6,11 +6,11 @@ require APP_ROOT . '/app/Views/layouts/admin.php';
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-value"><?= $stats['tenants'] ?></div>
-        <div class="stat-label">Total Tenants</div>
+        <div class="stat-label">Total Clientes</div>
     </div>
     <div class="stat-card stat-success">
         <div class="stat-value"><?= $stats['active'] ?></div>
-        <div class="stat-label">Tenants Ativos</div>
+        <div class="stat-label">Clientes Ativos</div>
     </div>
     <div class="stat-card">
         <div class="stat-value"><?= $stats['agents'] ?></div>
@@ -32,15 +32,16 @@ require APP_ROOT . '/app/Views/layouts/admin.php';
 
 <div class="card mt-4">
     <div class="card-header">
-        <h3>Últimos Tenants</h3>
-        <a href="/admin/tenants/create" class="btn btn-primary btn-sm">+ Novo Tenant</a>
+        <h3>Últimos Clientes</h3>
+        <a href="/admin/tenants/create" class="btn btn-primary btn-sm">+ Novo Cliente</a>
     </div>
     <table class="table">
         <thead>
         <tr>
+            <th>#</th>
             <th>Nome</th>
             <th>E-mail</th>
-            <th>Plano</th>
+            <th>Créditos</th>
             <th>Status</th>
             <th>Criado em</th>
             <th>Ações</th>
@@ -49,9 +50,10 @@ require APP_ROOT . '/app/Views/layouts/admin.php';
         <tbody>
         <?php foreach ($recentTenants as $t): ?>
         <tr>
-            <td><?= htmlspecialchars($t['name']) ?></td>
+            <td><?= $t['id'] ?></td>
+            <td><?= htmlspecialchars($t['company_name'] ?? $t['name'] ?? '') ?></td>
             <td><?= htmlspecialchars($t['email']) ?></td>
-            <td><?= htmlspecialchars($t['plan_name'] ?? '—') ?></td>
+            <td><?= number_format((int)$t['credits']) ?></td>
             <td><span class="badge badge-<?= $t['status'] ?>"><?= $t['status'] ?></span></td>
             <td><?= date('d/m/Y', strtotime($t['created_at'])) ?></td>
             <td><a href="/admin/tenants/<?= $t['id'] ?>/edit" class="btn btn-sm">Editar</a></td>

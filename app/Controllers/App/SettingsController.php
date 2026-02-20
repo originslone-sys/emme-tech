@@ -11,7 +11,6 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\Session;
 use App\Lib\AuditLog;
-use App\Lib\Crypto;
 
 class SettingsController
 {
@@ -20,22 +19,11 @@ class SettingsController
         Auth::requireTenant();
         $tid    = Auth::tenantId();
         $tenant = DB::fetchOne('SELECT * FROM tenants WHERE id = ?', [$tid]);
-        $token  = DB::fetchOne('SELECT * FROM openrouter_tokens WHERE tenant_id = ? AND is_default = 1', [$tid]);
-
-        $tokenPreview = '';
-        if ($token) {
-            $decrypted = Crypto::tryDecrypt($token['token_encrypted']);
-            if ($decrypted) {
-                $tokenPreview = substr($decrypted, 0, 12) . '...' . substr($decrypted, -6);
-            }
-        }
 
         Response::view('app/settings', [
-            'user'         => Auth::tenantUser(),
-            'tenant'       => $tenant,
-            'tokenPreview' => $tokenPreview,
-            'hasToken'     => (bool)$token,
-            'csrf'         => CSRF::field(),
+            'user'   => Auth::tenantUser(),
+            'tenant' => $tenant,
+            'csrf'   => CSRF::field(),
         ]);
     }
 
@@ -44,9 +32,9 @@ class SettingsController
         Auth::requireTenant();
         CSRF::verifyRequest();
 
-        $tid    = Auth::tenantId();
-        $user   = Auth::tenantUser();
-        $old    = DB::fetchOne('SELECT * FROM tenants WHERE id = ?', [$tid]);
+        $tid  = Auth::tenantId();
+        $user = Auth::tenantUser();
+        $old  = DB::fetchOne('SELECT * FROM tenants WHERE id = ?', [$tid]);
 
         $data = [
             'name'           => trim(Request::post('name', $old['name'])),
@@ -89,48 +77,6 @@ class SettingsController
         AuditLog::tenant($userId, $tid, 'settings.password_changed');
 
         Session::flash('success', 'Senha alterada com sucesso.');
-        Response::redirect('/app/settings');
-    }
-
-    public function updateOpenRouterToken(): void
-    {
-        Auth::requireTenant();
-        CSRF::verifyRequest();
-
-        $tid    = Auth::tenantId();
-        $user   = Auth::tenantUser();
-        $token  = trim(Request::post('openrouter_token', ''));
-
-        if (!$token) {
-            Session::flash('error', 'Token não pode ser vazio.');
-            Response::redirect('/app/settings');
-        }
-
-        if (!str_starts_with($token, 'sk-or-')) {
-            Session::flash('error', 'Token OpenRouter inválido. Deve começar com sk-or-');
-            Response::redirect('/app/settings');
-        }
-
-        $encrypted = Crypto::encrypt($token);
-
-        // Upsert default token
-        $existing = DB::fetchOne('SELECT id FROM openrouter_tokens WHERE tenant_id = ? AND is_default = 1', [$tid]);
-        if ($existing) {
-            DB::update('openrouter_tokens', [
-                'token_encrypted' => $encrypted,
-                'updated_at'      => date('Y-m-d H:i:s'),
-            ], ['id' => $existing['id']]);
-        } else {
-            DB::insert('openrouter_tokens', [
-                'tenant_id'       => $tid,
-                'token_encrypted' => $encrypted,
-                'label'           => 'Padrão',
-                'is_default'      => 1,
-            ]);
-        }
-
-        AuditLog::tenant($user['id'], $tid, 'settings.openrouter_token_updated');
-        Session::flash('success', 'Token OpenRouter atualizado com sucesso.');
         Response::redirect('/app/settings');
     }
 }

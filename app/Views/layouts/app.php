@@ -31,8 +31,8 @@
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/app/threads') ? 'active' : '' ?>">
             <a href="/app/threads">💬 Conversas</a>
         </li>
-        <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/app/billing') ? 'active' : '' ?>">
-            <a href="/app/billing">💳 Assinatura</a>
+        <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/app/credits') ? 'active' : '' ?>">
+            <a href="/app/credits">🪙 Créditos</a>
         </li>
         <li class="<?= str_starts_with($_SERVER['REQUEST_URI'], '/app/settings') ? 'active' : '' ?>">
             <a href="/app/settings">⚙️ Configurações</a>

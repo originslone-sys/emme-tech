@@ -5,18 +5,21 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Core\DB;
+use App\Lib\GlobalSettings;
 use App\Lib\Logger;
 use App\Lib\OpenRouter;
 use App\Lib\Retriever;
 use App\Lib\WhatsApp;
 
 /**
- * ProcessInbound — handles an inbound WhatsApp message:
- * 1. Resolve agent, contact, thread
- * 2. Check opt-out / handoff / smalltalk rules
- * 3. RAG retrieval (if KB enabled)
- * 4. Build prompt and call OpenRouter
- * 5. Save reply and enqueue outbox
+ * ProcessInbound — processa mensagem inbound do WhatsApp:
+ * 1. Verifica créditos do tenant
+ * 2. Resolve agente, contato, thread
+ * 3. Verifica opt-out / handoff / keywords
+ * 4. RAG retrieval (se KB habilitada)
+ * 5. Chama OpenRouter com token global (admin configura)
+ * 6. Debita 1 crédito por resposta enviada
+ * 7. Salva resposta e enfileira outbox
  */
 class ProcessInbound
 {
@@ -31,7 +34,22 @@ class ProcessInbound
 
         Logger::info('ProcessInbound started', compact('messageId', 'agentId', 'tenantId'));
 
-        // Load records
+        // ----------------------------------------------------------------
+        // Verifica saldo de créditos ANTES de processar
+        // ----------------------------------------------------------------
+        $tenant = DB::fetchOne('SELECT credits FROM tenants WHERE id = ?', [$tenantId]);
+        if (!$tenant || (int)$tenant['credits'] <= 0) {
+            Logger::warning('ProcessInbound: tenant has no credits', ['tenant_id' => $tenantId]);
+            $agent   = DB::fetchOne('SELECT * FROM agents WHERE id = ?', [$agentId]);
+            $contact = DB::fetchOne('SELECT * FROM contacts WHERE id = ?', [$contactId]);
+            if ($agent && $contact) {
+                $this->sendReply($agent, $contact, $threadId, $tenantId,
+                    'Desculpe, não posso responder no momento. Entre em contato com o suporte.', 'text');
+            }
+            return;
+        }
+
+        // Carrega registros
         $agent = DB::fetchOne('SELECT * FROM agents WHERE id = ? AND tenant_id = ?', [$agentId, $tenantId]);
         if (!$agent) {
             throw new \RuntimeException("Agent $agentId not found for tenant $tenantId");
@@ -42,7 +60,7 @@ class ProcessInbound
             throw new \RuntimeException("Contact $contactId not found");
         }
 
-        // Check opt-out
+        // Verifica opt-out
         $optoutKw = strtolower(trim($agent['optout_keyword'] ?? 'sair'));
         if ($optoutKw && strtolower(trim($content)) === $optoutKw) {
             DB::update('contacts', ['opt_out' => 1], ['id' => $contactId]);
@@ -56,7 +74,7 @@ class ProcessInbound
             return;
         }
 
-        // Check handoff
+        // Verifica handoff
         $handoffKw = strtolower(trim($agent['handoff_keyword'] ?? 'humano'));
         if ($handoffKw && strtolower(trim($content)) === $handoffKw) {
             DB::update('contacts', ['handoff' => 1], ['id' => $contactId]);
@@ -71,7 +89,7 @@ class ProcessInbound
             return;
         }
 
-        // Build conversation history (last 10 messages)
+        // Histórico de conversa (últimas 10 mensagens)
         $history = DB::fetchAll(
             "SELECT direction, content FROM messages
              WHERE thread_id = ? AND id < ?
@@ -80,20 +98,16 @@ class ProcessInbound
         );
         $history = array_reverse($history);
 
-        // Build messages array for OpenRouter
-        $messages = [];
-
-        // System prompt
+        // Constrói mensagens para o LLM
+        $messages     = [];
         $systemPrompt = $agent['system_prompt'] ?? '';
 
         // Persona
-        $persona = null;
         if ($agent['persona_id']) {
             $persona = DB::fetchOne('SELECT * FROM personas WHERE id = ?', [(int)$agent['persona_id']]);
-        }
-
-        if ($persona && $persona['instructions']) {
-            $systemPrompt = $persona['instructions'] . "\n\n" . $systemPrompt;
+            if ($persona && $persona['instructions']) {
+                $systemPrompt = $persona['instructions'] . "\n\n" . $systemPrompt;
+            }
         }
 
         // RAG context
@@ -108,32 +122,33 @@ class ProcessInbound
             $messages[] = ['role' => 'system', 'content' => $systemPrompt];
         }
 
-        // Historical messages
         foreach ($history as $h) {
-            $role = $h['direction'] === 'inbound' ? 'user' : 'assistant';
+            $role       = $h['direction'] === 'inbound' ? 'user' : 'assistant';
             $messages[] = ['role' => $role, 'content' => $h['content']];
         }
-
-        // Current message
         $messages[] = ['role' => 'user', 'content' => $content];
 
-        // Get model
+        // Modelo
         $model = null;
         if ($agent['model_catalog_id']) {
             $model = DB::fetchOne('SELECT * FROM model_catalog WHERE id = ? AND is_active = 1', [(int)$agent['model_catalog_id']]);
         }
-
         if (!$model) {
-            // Fallback to first active model
             $model = DB::fetchOne('SELECT * FROM model_catalog WHERE is_active = 1 ORDER BY sort_order LIMIT 1');
         }
-
         if (!$model) {
             throw new \RuntimeException("No active model available for agent $agentId");
         }
 
-        // Call OpenRouter
-        $or    = OpenRouter::forAgent($agent, $tenantId);
+        // OpenRouter — usa token global configurado pelo admin
+        $apiKey = GlobalSettings::get('openrouter_api_key');
+        $apiUrl = GlobalSettings::get('openrouter_api_url', 'https://openrouter.ai/api/v1');
+
+        if (!$apiKey) {
+            throw new \RuntimeException("OpenRouter API key not configured in global settings.");
+        }
+
+        $or    = new OpenRouter($apiKey, $apiUrl);
         $reply = $or->chat(
             $model['model_id'],
             $messages,
@@ -141,28 +156,38 @@ class ProcessInbound
             (int)$agent['max_tokens']
         );
 
-        // Determine message type based on 24h window
-        $msgType = WhatsApp::inFreeWindow($contact['last_inbound_at']) ? 'text' : 'template';
-
-        if ($msgType === 'template') {
-            // We cannot send arbitrary text outside window
-            Logger::warning('Outside 24h window, cannot send free text', ['contact_id' => $contactId]);
-            // Save the reply but mark as failed due to window constraint
-            DB::insert('messages', [
-                'tenant_id'    => $tenantId,
-                'agent_id'     => $agentId,
-                'thread_id'    => $threadId,
-                'contact_id'   => $contactId,
-                'direction'    => 'outbound',
-                'content'      => $reply,
-                'message_type' => 'text',
-                'status'       => 'failed',
-                'metadata'     => json_encode(['error' => 'Outside 24h messaging window. Use template.']),
-            ]);
-            return;
+        // Janela de 24h (apenas Cloud API)
+        if (($agent['whatsapp_mode'] ?? 'cloud_api') !== 'whatsapp_web') {
+            if (!WhatsApp::inFreeWindow($contact['last_inbound_at'])) {
+                Logger::warning('Outside 24h window, cannot send free text', ['contact_id' => $contactId]);
+                DB::insert('messages', [
+                    'tenant_id'    => $tenantId,
+                    'agent_id'     => $agentId,
+                    'thread_id'    => $threadId,
+                    'contact_id'   => $contactId,
+                    'direction'    => 'outbound',
+                    'content'      => $reply,
+                    'message_type' => 'text',
+                    'status'       => 'failed',
+                    'metadata'     => json_encode(['error' => 'Outside 24h messaging window.']),
+                ]);
+                return;
+            }
         }
 
         $this->sendReply($agent, $contact, $threadId, $tenantId, $reply, 'text');
+
+        // ----------------------------------------------------------------
+        // Debita 1 crédito por resposta do agente
+        // ----------------------------------------------------------------
+        DB::query('UPDATE tenants SET credits = credits - 1 WHERE id = ? AND credits > 0', [$tenantId]);
+        DB::insert('credit_transactions', [
+            'tenant_id'    => $tenantId,
+            'amount'       => -1,
+            'type'         => 'usage',
+            'description'  => 'Resposta do agente',
+            'reference_id' => (string)$messageId,
+        ]);
 
         Logger::info('ProcessInbound completed', [
             'agent_id'  => $agentId,
@@ -179,7 +204,6 @@ class ProcessInbound
         string $content,
         string $type
     ): void {
-        // Save outbound message
         $msgId = DB::insert('messages', [
             'tenant_id'    => $tenantId,
             'agent_id'     => $agent['id'],
@@ -191,7 +215,6 @@ class ProcessInbound
             'status'       => 'queued',
         ]);
 
-        // Enqueue in outbox
         DB::insert('outbox', [
             'tenant_id'    => $tenantId,
             'agent_id'     => $agent['id'],
@@ -204,7 +227,6 @@ class ProcessInbound
             'status'       => 'pending',
         ]);
 
-        // Update thread last_message_at
         DB::update('threads', ['last_message_at' => date('Y-m-d H:i:s')], ['id' => $threadId]);
     }
 }

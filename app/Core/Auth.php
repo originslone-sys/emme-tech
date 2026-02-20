@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Core;
 
 /**
- * Auth — admin and tenant authentication.
+ * Auth — autenticação de admin e tenant.
  */
 class Auth
 {
@@ -24,10 +24,10 @@ class Auth
         }
         DB::query('UPDATE admin_users SET last_login_at = NOW() WHERE id = ?', [$admin['id']]);
         Session::set('admin', [
-            'id'   => $admin['id'],
-            'name' => $admin['name'],
-            'email'=> $admin['email'],
-            'role' => $admin['role'],
+            'id'    => $admin['id'],
+            'name'  => $admin['name'],
+            'email' => $admin['email'],
+            'role'  => $admin['role'],
         ]);
         return true;
     }
@@ -48,7 +48,7 @@ class Auth
     public static function logoutAdmin(): void
     {
         Session::remove('admin');
-        Session::remove('tenant');
+        Session::remove('tenant_user');
     }
 
     // ----------------------------------------------------------------
@@ -58,7 +58,7 @@ class Auth
     public static function loginTenant(string $email, string $password): bool
     {
         $user = DB::fetchOne(
-            'SELECT tu.*, t.status AS tenant_status, t.name AS tenant_name
+            'SELECT tu.*, t.status AS tenant_status, t.name AS tenant_name, t.credits AS tenant_credits
              FROM tenant_users tu
              JOIN tenants t ON t.id = tu.tenant_id
              WHERE tu.email = ? AND tu.is_active = 1
@@ -70,12 +70,14 @@ class Auth
         }
         DB::query('UPDATE tenant_users SET last_login_at = NOW() WHERE id = ?', [$user['id']]);
         Session::set('tenant_user', [
-            'id'          => $user['id'],
-            'tenant_id'   => $user['tenant_id'],
-            'name'        => $user['name'],
-            'email'       => $user['email'],
-            'role'        => $user['role'],
-            'tenant_name' => $user['tenant_name'],
+            'id'             => $user['id'],
+            'tenant_id'      => $user['tenant_id'],
+            'name'           => $user['name'],
+            'email'          => $user['email'],
+            'role'           => $user['role'],
+            'tenant_name'    => $user['tenant_name'],
+            'tenant_status'  => $user['tenant_status'],
+            'tenant_credits' => $user['tenant_credits'],
         ]);
         return true;
     }
@@ -105,45 +107,48 @@ class Auth
     }
 
     // ----------------------------------------------------------------
-    // Tenant plan / limits helpers
+    // Créditos e limites
     // ----------------------------------------------------------------
 
-    public static function tenantPlan(): array|null
+    /**
+     * Retorna o saldo atual de créditos do tenant (lê do banco, sempre fresco).
+     */
+    public static function tenantCredits(): int
     {
         $tid = self::tenantId();
-        if (!$tid) return null;
-        return DB::fetchOne(
-            'SELECT p.* FROM plans p
-             JOIN tenants t ON t.plan_id = p.id
-             WHERE t.id = ?',
-            [$tid]
-        ) ?: null;
+        if (!$tid) return 0;
+        return (int)DB::fetchColumn('SELECT credits FROM tenants WHERE id = ?', [$tid]);
     }
 
+    /**
+     * Verifica se o tenant tem créditos disponíveis.
+     */
+    public static function hasCredits(): bool
+    {
+        return self::tenantCredits() > 0;
+    }
+
+    /**
+     * Clientes podem criar quantos agentes quiserem.
+     */
     public static function canCreateAgent(): bool
     {
-        $plan = self::tenantPlan();
-        if (!$plan) return false;
-        $tid   = self::tenantId();
-        $count = (int)DB::fetchColumn('SELECT COUNT(*) FROM agents WHERE tenant_id = ?', [$tid]);
-        return $count < (int)$plan['max_agents'];
+        return true;
     }
 
+    /**
+     * Crons disponíveis para todos os clientes.
+     */
     public static function canCreateCron(): bool
     {
-        $plan = self::tenantPlan();
-        if (!$plan || !$plan['feature_crons']) return false;
-        $tid   = self::tenantId();
-        $count = (int)DB::fetchColumn('SELECT COUNT(*) FROM cron_jobs WHERE tenant_id = ?', [$tid]);
-        return $count < (int)$plan['max_crons'];
+        return true;
     }
 
+    /**
+     * Upload de documentos disponível para todos os clientes.
+     */
     public static function canUploadDoc(): bool
     {
-        $plan = self::tenantPlan();
-        if (!$plan || !$plan['feature_docs']) return false;
-        $tid   = self::tenantId();
-        $count = (int)DB::fetchColumn('SELECT COUNT(*) FROM kb_docs WHERE tenant_id = ?', [$tid]);
-        return $count < (int)$plan['max_docs'];
+        return true;
     }
 }
