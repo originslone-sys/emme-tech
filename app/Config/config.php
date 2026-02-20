@@ -82,7 +82,7 @@ if (env('APP_DEBUG', false)) {
 // ----------------------------------------------------------------
 // Constantes
 // ----------------------------------------------------------------
-define('APP_ROOT',    dirname(__DIR__, 2));
+defined('APP_ROOT') || define('APP_ROOT', dirname(__DIR__, 2));
 define('APP_URL',     rtrim((string)env('APP_URL', 'http://localhost'), '/'));
 define('APP_DEBUG',   (bool)env('APP_DEBUG', false));
 define('MASTER_KEY',  (string)env('MASTER_KEY', ''));
