@@ -13,3 +13,6 @@ Thumbs.db
 # PHP
 *.swp
 *.swo
+
+# Hostinger / hPanel — não ignorar .htaccess
+!.htaccess
