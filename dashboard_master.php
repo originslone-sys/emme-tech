@@ -243,14 +243,20 @@ if (!in_array($filtro_status, $validStatus, true)) $filtro_status = '';
 
 $limit = 50;
 
+// Detecta se a coluna resultado_arquivo existe (compatibilidade antes da migração)
+$tem_resultado_col = false;
+$chk = $conn->query("SHOW COLUMNS FROM fila_edicao LIKE 'resultado_arquivo'");
+if ($chk && $chk->num_rows > 0) $tem_resultado_col = true;
+$sel_resultado = $tem_resultado_col ? ", resultado_arquivo" : ", NULL AS resultado_arquivo";
+
 if ($filtro_status === '') {
-    $sql = "SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at
+    $sql = "SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at $sel_resultado
             FROM fila_edicao
             ORDER BY id DESC
             LIMIT $limit";
     $res = $conn->query($sql);
 } else {
-    $stmt = $conn->prepare("SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at
+    $stmt = $conn->prepare("SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at $sel_resultado
                             FROM fila_edicao
                             WHERE status=?
                             ORDER BY id DESC
@@ -291,26 +297,50 @@ if ($rc) {
 <div class="flex flex-col md:flex-row min-h-screen">
     
     <!-- SIDEBAR -->
-    <div class="bg-gray-900 shadow-xl h-auto md:h-screen w-full md:w-64 flex-shrink-0 sticky top-0 md:static z-20">
-        <div class="p-6">
-            <h1 class="text-white text-2xl font-bold uppercase tracking-wider">
-                <i class="fa-solid fa-robot mr-2 text-blue-500"></i> Fábrica Master
-            </h1>
-
-            <div class="mt-6 text-sm text-gray-300 grid grid-cols-2 gap-2 md:block md:space-y-2">
-                <div><span class="font-bold text-yellow-300"><?= (int)$counts['pendente'] ?></span> pendentes</div>
-                <div><span class="font-bold text-indigo-300"><?= (int)$counts['baixando'] ?></span> baixando</div>
-                <div><span class="font-bold text-blue-300"><?= (int)$counts['editando'] ?></span> editando</div>
-                <div><span class="font-bold text-green-300"><?= (int)$counts['concluido'] ?></span> concluídos</div>
-                <div><span class="font-bold text-red-300"><?= (int)$counts['erro'] ?></span> erros</div>
+    <div class="bg-gray-900 shadow-xl w-full md:w-64 flex-shrink-0 md:sticky md:top-0 md:h-screen z-20">
+        <div class="p-4 md:p-6">
+            <!-- Título + toggle mobile -->
+            <div class="flex items-center justify-between md:block">
+                <h1 class="text-white text-xl md:text-2xl font-bold uppercase tracking-wider">
+                    <i class="fa-solid fa-robot mr-2 text-blue-500"></i> Fábrica Master
+                </h1>
+                <button id="sidebarToggle"
+                        class="md:hidden text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 rounded p-2 transition"
+                        aria-label="Expandir/recolher menu">
+                    <i id="sidebarToggleIcon" class="fa-solid fa-chevron-down text-sm"></i>
+                </button>
             </div>
 
-            <div class="mt-6">
-                <a class="block text-sm text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 rounded px-3 py-2 transition"
-                   href="dashboard_master.php?acao=reset_travadas&min=30"
-                   onclick="return confirm('Resetar tarefas BAIXANDO/EDITANDO com updated_at > 30min para PENDENTE?');">
-                    <i class="fa-solid fa-fire-extinguisher mr-2 text-blue-400"></i> Resetar travadas (30min)
-                </a>
+            <!-- Conteúdo colapsável no mobile -->
+            <div id="sidebarContent" class="hidden md:block">
+                <!-- Estatísticas -->
+                <div class="mt-4 text-sm text-gray-300 grid grid-cols-2 gap-x-4 gap-y-1 md:block md:space-y-2 bg-gray-800 rounded p-3">
+                    <div><span class="font-bold text-yellow-300"><?= (int)$counts['pendente'] ?></span> pendentes</div>
+                    <div><span class="font-bold text-indigo-300"><?= (int)$counts['baixando'] ?></span> baixando</div>
+                    <div><span class="font-bold text-blue-300"><?= (int)$counts['editando'] ?></span> editando</div>
+                    <div><span class="font-bold text-green-300"><?= (int)$counts['concluido'] ?></span> concluídos</div>
+                    <div class="col-span-2 md:col-span-1"><span class="font-bold text-red-300"><?= (int)$counts['erro'] ?></span> erros</div>
+                </div>
+
+                <div class="mt-4 space-y-2">
+                    <a class="flex items-center text-sm text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 rounded px-3 py-2 transition"
+                       href="dashboard_master.php?status=concluido">
+                        <i class="fa-solid fa-check-circle mr-2 text-green-400 w-4"></i> Ver concluídos
+                    </a>
+                    <a class="flex items-center text-sm text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 rounded px-3 py-2 transition"
+                       href="dashboard_master.php?status=erro">
+                        <i class="fa-solid fa-triangle-exclamation mr-2 text-red-400 w-4"></i> Ver com erro
+                    </a>
+                    <a class="flex items-center text-sm text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 rounded px-3 py-2 transition"
+                       href="dashboard_master.php?acao=reset_travadas&min=30"
+                       onclick="return confirm('Resetar tarefas BAIXANDO/EDITANDO com updated_at > 30min para PENDENTE?');">
+                        <i class="fa-solid fa-fire-extinguisher mr-2 text-blue-400 w-4"></i> Resetar travadas (30min)
+                    </a>
+                    <a class="flex items-center text-sm text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 rounded px-3 py-2 transition"
+                       href="dashboard_master.php">
+                        <i class="fa-solid fa-rotate mr-2 text-gray-400 w-4"></i> Atualizar página
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -443,17 +473,27 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                             </div>
                                         <?php endif; ?>
 
-                                        <div class="mt-4 flex gap-2">
+                                        <?php if (!empty($item['resultado_arquivo'])): ?>
+                                            <div class="mt-3">
+                                                <a href="/videos/<?= h(basename($item['resultado_arquivo'])) ?>"
+                                                   download
+                                                   class="flex items-center justify-center gap-2 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded text-sm">
+                                                    <i class="fa-solid fa-download"></i> Baixar editado
+                                                </a>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <div class="mt-3 flex gap-2">
                                             <a href="dashboard_master.php?acao=reprocessar&id=<?= (int)$item['id'] ?>"
                                                onclick="return confirm('Reprocessar: voltar para PENDENTE e limpar erro/worker?');"
-                                               class="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded">
-                                                <i class="fa-solid fa-rotate-right mr-2"></i> Reprocessar
+                                               class="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded text-sm">
+                                                <i class="fa-solid fa-rotate-right mr-1"></i> Reprocessar
                                             </a>
 
                                             <a href="dashboard_master.php?acao=excluir&id=<?= (int)$item['id'] ?>"
                                                onclick="return confirm('ATENÇÃO: excluir tarefa e apagar o bruto do servidor. Continuar?');"
-                                               class="flex-1 text-center bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded">
-                                                <i class="fa-solid fa-trash-can mr-2"></i> Excluir
+                                               class="flex-1 text-center bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded text-sm">
+                                                <i class="fa-solid fa-trash-can mr-1"></i> Excluir
                                             </a>
                                         </div>
                                     </div>
@@ -513,7 +553,16 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                                 </td>
 
                                                 <td class="text-center py-3 px-4">
-                                                    <div class="flex items-center justify-center gap-2">
+                                                    <div class="flex items-center justify-center gap-2 flex-wrap">
+
+                                                        <?php if (!empty($item['resultado_arquivo'])): ?>
+                                                        <a href="/videos/<?= h(basename($item['resultado_arquivo'])) ?>"
+                                                           download
+                                                           class="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-2 rounded transition"
+                                                           title="Baixar editado (<?= h(basename($item['resultado_arquivo'])) ?>)">
+                                                            <i class="fa-solid fa-download"></i>
+                                                        </a>
+                                                        <?php endif; ?>
 
                                                         <a href="dashboard_master.php?acao=reprocessar&id=<?= (int)$item['id'] ?>"
                                                            onclick="return confirm('Reprocessar: voltar para PENDENTE e limpar erro/worker?');"
@@ -561,19 +610,53 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
 </style>
 
 <script>
-(function(){
-  const input = document.querySelector('input[type="file"][name="video[]"]');
-  const hint = document.getElementById('fileCountHint');
-  if(!input || !hint) return;
+// ── Sidebar toggle (mobile) ──────────────────────────────────────────────────
+(function () {
+  const btn     = document.getElementById('sidebarToggle');
+  const content = document.getElementById('sidebarContent');
+  const icon    = document.getElementById('sidebarToggleIcon');
+  if (!btn || !content) return;
 
-  function fmt(n){
-    if(n===0) return "Nenhum arquivo selecionado.";
-    if(n===1) return "1 arquivo selecionado.";
+  btn.addEventListener('click', function () {
+    const open = !content.classList.contains('hidden');
+    content.classList.toggle('hidden', open);
+    icon.classList.toggle('fa-chevron-down', open);
+    icon.classList.toggle('fa-chevron-up',   !open);
+  });
+})();
+
+// ── Contador de arquivos selecionados ────────────────────────────────────────
+(function () {
+  const input = document.querySelector('input[type="file"][name="video[]"]');
+  const hint  = document.getElementById('fileCountHint');
+  if (!input || !hint) return;
+
+  function fmt(n) {
+    if (n === 0) return "Nenhum arquivo selecionado.";
+    if (n === 1) return "1 arquivo selecionado.";
     return n + " arquivos selecionados.";
   }
 
-  input.addEventListener('change', function(){
+  input.addEventListener('change', function () {
     hint.textContent = fmt(input.files ? input.files.length : 0);
+  });
+})();
+
+// ── Feedback visual de upload (barra de progresso simples) ───────────────────
+(function () {
+  const form   = document.querySelector('form[enctype="multipart/form-data"]');
+  const btn    = form ? form.querySelector('button[type="submit"]') : null;
+  if (!form || !btn) return;
+
+  form.addEventListener('submit', function () {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
+    // Restaura após 60s por segurança (caso o servidor demore ou dê erro)
+    setTimeout(function () {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }, 60000);
   });
 })();
 </script>

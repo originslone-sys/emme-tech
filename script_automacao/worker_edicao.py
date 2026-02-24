@@ -182,7 +182,9 @@ def claim_tasks(session: requests.Session) -> List[Dict[str, Any]]:
     return js.get("tarefas", []) or []
 
 
-def set_status(session: requests.Session, task_id: int, status: str, *, erro_msg: Optional[str] = None):
+def set_status(session: requests.Session, task_id: int, status: str, *,
+               erro_msg: Optional[str] = None,
+               resultado_arquivo: Optional[str] = None):
     url = api_url(CFG.status_ep)
     data = {
         "api_key":   CFG.api_key,
@@ -192,6 +194,8 @@ def set_status(session: requests.Session, task_id: int, status: str, *, erro_msg
     }
     if erro_msg is not None:
         data["erro_msg"] = erro_msg[:2000]
+    if resultado_arquivo is not None:
+        data["resultado_arquivo"] = resultado_arquivo
 
     r = req(session, "POST", url, data=data, timeout=CFG.http_timeout_status)
     if r.status_code not in (200, 404):
@@ -357,7 +361,10 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
         resp = upload_editado(session, local_out, vmos_id, legenda)
         logging.info("Upload final resp: %s", json.dumps(resp, ensure_ascii=False)[:900])
 
-        set_status(session, task_id, "concluido", erro_msg=None)
+        # Extrai o nome do arquivo editado da resposta para exibir no dashboard
+        resultado_arq = resp.get("arquivo") if isinstance(resp, dict) else None
+
+        set_status(session, task_id, "concluido", erro_msg=None, resultado_arquivo=resultado_arq)
 
         if CFG.delete_on_server:
             delete_bruto_server(session, bruto_arquivo)
