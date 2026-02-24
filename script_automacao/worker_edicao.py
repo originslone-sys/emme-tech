@@ -254,9 +254,11 @@ def run_fabrica(input_path: str) -> str:
     cmd = [
         os.path.join(CFG.local_root, ".venv", "Scripts", "python.exe"),
         os.path.join(CFG.local_root, "fabrica_videos.py"),
-        "--input", input_path,
-        "--output-dir", CFG.output_dir,
-        "--on-success", "keep",
+        "--input",         input_path,
+        "--output-dir",    CFG.output_dir,
+        "--processed-dir", CFG.processed_dir,
+        "--failed-dir",    CFG.failed_dir,
+        "--on-success",    "keep",
     ]
     logging.info("Rodando fabrica: %s", " ".join(cmd))
 
