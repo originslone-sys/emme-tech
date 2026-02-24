@@ -183,12 +183,14 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
 
     crop_px_x = random.randint(2, 12)
     crop_px_y = random.randint(2, 12)
-    crop_width = f"max(2, iw-{crop_px_x}*2)"
-    crop_height = f"max(2, ih-{crop_px_y}*2)"
+    # Valores inteiros calculados em Python para evitar expressões com vírgulas
+    # dentro de max() que confundem o parser de filtros do FFmpeg
+    crop_w_expr = f"iw-{crop_px_x * 2}"
+    crop_h_expr = f"ih-{crop_px_y * 2}"
 
     scale_factor    = random.uniform(0.99, 1.01)
     rotate_angle    = random.uniform(-0.5, 0.5)
-    grain_strength  = random.uniform(0.0005, 0.0015)
+    grain_strength  = random.randint(1, 3)   # noise alls: inteiro 0-100
     brightness      = random.uniform(0.995, 1.005)
     contrast        = random.uniform(0.998, 1.002)
     saturation      = random.uniform(0.997, 1.003)
@@ -202,7 +204,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
     ]
 
     filtro_base = (
-        f"crop={crop_width}:{crop_height}:(iw-{crop_width})/2:(ih-{crop_height})/2,"
+        f"crop={crop_w_expr}:{crop_h_expr}:{crop_px_x}:{crop_px_y},"
         f"scale=iw*{scale_factor}:ih*{scale_factor}:flags=lanczos,"
         f"rotate={rotate_angle}*PI/180:fillcolor=black@1,"
         f"setpts={speed_factor}*PTS,"
