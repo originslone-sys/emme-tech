@@ -288,7 +288,12 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
             proc = subprocess.run(comando, stdout=lf, stderr=lf, text=True)
 
         if proc.returncode != 0:
-            print(f"\n[ERRO] FFmpeg falhou (código {proc.returncode}). Veja o log: {ffmpeg_log}")
+            log_content = ""
+            try:
+                log_content = ffmpeg_log.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+            print(f"\n[ERRO] FFmpeg falhou (código {proc.returncode}). Log:\n{log_content}")
             return False
 
         if not output_file.exists():
