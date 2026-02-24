@@ -44,6 +44,7 @@ class Config:
     processed_dir: str = r"D:\automacao_videos\processed"
     failed_dir: str = r"D:\automacao_videos\failed"
     logs_dir: str = r"D:\automacao_videos\logs"
+    music_dir: str = r"D:\automacao_videos\musicas_fundo"
 
     # Endpoints
     claim_ep: str = "/api/edicao_claim.php"
@@ -84,7 +85,7 @@ logging.basicConfig(
 
 
 def ensure_dirs():
-    for d in [CFG.input_dir, CFG.output_dir, CFG.processed_dir, CFG.failed_dir]:
+    for d in [CFG.input_dir, CFG.output_dir, CFG.processed_dir, CFG.failed_dir, CFG.logs_dir]:
         os.makedirs(d, exist_ok=True)
 
 
@@ -258,6 +259,8 @@ def run_fabrica(input_path: str) -> str:
         "--output-dir",    CFG.output_dir,
         "--processed-dir", CFG.processed_dir,
         "--failed-dir",    CFG.failed_dir,
+        "--logs-dir",      CFG.logs_dir,
+        "--music-dir",     CFG.music_dir,
         "--on-success",    "keep",
     ]
     logging.info("Rodando fabrica: %s", " ".join(cmd))
