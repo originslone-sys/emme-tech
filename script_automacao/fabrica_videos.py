@@ -1,6 +1,7 @@
 import argparse
 import random
 import subprocess
+import sys
 import textwrap
 import time
 import hashlib
@@ -541,6 +542,8 @@ def main():
         final_status = "done" if fail == 0 else "error"
         msg = "Concluído com sucesso." if fail == 0 else "Concluído com falhas (verifique failed/ logs)."
         job_ack(args.ack_url, last_nonce, final_status, ok, fail, msg, api_key)
+
+    sys.exit(1 if fail > 0 else 0)
 
 
 if __name__ == "__main__":
