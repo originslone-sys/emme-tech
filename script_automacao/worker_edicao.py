@@ -126,10 +126,7 @@ def build_session() -> requests.Session:
 
 
 def req(session: requests.Session, method: str, url: str, *, params=None, data=None, files=None, stream=False, timeout=120) -> requests.Response:
-    """
-    Request com logs melhores. Se o servidor fechar conexão, vai cair aqui com exception,
-    mas o loop se recupera com backoff.
-    """
+    """Request com log de erro detalhado."""
     try:
         r = session.request(
             method,
@@ -142,7 +139,6 @@ def req(session: requests.Session, method: str, url: str, *, params=None, data=N
         )
         return r
     except Exception as e:
-        # Inclui os parâmetros principais para facilitar debug
         p = ""
         if params:
             try:
@@ -156,22 +152,19 @@ def req(session: requests.Session, method: str, url: str, *, params=None, data=N
 
 
 def jitter(seconds: int, spread: float = 0.25) -> float:
-    """
-    adiciona jitter +- spread para reduzir padrão de polling (bom contra WAF/rate-limit)
-    """
+    """Adiciona jitter +-spread para reduzir padrão de polling (bom contra WAF/rate-limit)."""
     return max(0.0, seconds * (1 + random.uniform(-spread, spread)))
 
 
 def claim_tasks(session: requests.Session) -> List[Dict[str, Any]]:
     url = api_url(CFG.claim_ep)
     params = {
-        "api_key": CFG.api_key,
+        "api_key":   CFG.api_key,
         "worker_id": CFG.worker_id,
-        "limit": str(CFG.claim_batch),
+        "max":       str(CFG.claim_batch),  # parâmetro correto: 'max' (não 'limit')
     }
     r = req(session, "GET", url, params=params, timeout=CFG.http_timeout_claim)
     if r.status_code != 200:
-        # tenta logar um pedaço do body se houver
         body = ""
         try:
             body = r.text[:800]
@@ -192,16 +185,16 @@ def claim_tasks(session: requests.Session) -> List[Dict[str, Any]]:
 def set_status(session: requests.Session, task_id: int, status: str, *, erro_msg: Optional[str] = None):
     url = api_url(CFG.status_ep)
     data = {
-        "api_key": CFG.api_key,
-        "id": str(task_id),
-        "status": status,
+        "api_key":   CFG.api_key,
+        "id":        str(task_id),
+        "status":    status,
         "worker_id": CFG.worker_id,
     }
     if erro_msg is not None:
         data["erro_msg"] = erro_msg[:2000]
 
     r = req(session, "POST", url, data=data, timeout=CFG.http_timeout_status)
-    if r.status_code != 200:
+    if r.status_code not in (200, 404):
         raise RuntimeError(f"status HTTP {r.status_code}: {r.text[:800]}")
 
     try:
@@ -210,7 +203,8 @@ def set_status(session: requests.Session, task_id: int, status: str, *, erro_msg
         raise RuntimeError(f"status inválido (não-JSON): {r.text[:800]}")
 
     if not js.get("sucesso"):
-        raise RuntimeError(f"status failed: {js}")
+        # 404 = tarefa não encontrada (pode ter sido deletada do dashboard) — não fatal
+        logging.warning("set_status não confirmado para tarefa %s: %s", task_id, js)
 
 
 def safe_local_name(name: str) -> str:
@@ -250,36 +244,41 @@ def download_bruto(session: requests.Session, bruto_arquivo: str) -> str:
 
 def run_fabrica(input_path: str) -> str:
     """
-    Mantive a mesma interface do seu fabrica_videos.py:
-      python fabrica_videos.py --input <...> --output-dir <...>
+    Chama fabrica_videos.py passando apenas o input e output-dir.
+    O upload é feito pelo worker (não pelo fabrica), por isso --upload não é passado.
     """
     cmd = [
         os.path.join(CFG.local_root, ".venv", "Scripts", "python.exe"),
         os.path.join(CFG.local_root, "fabrica_videos.py"),
         "--input", input_path,
         "--output-dir", CFG.output_dir,
-        "--on-success", "keep"
+        "--on-success", "keep",
     ]
     logging.info("Rodando fabrica: %s", " ".join(cmd))
 
-    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if p.returncode != 0:
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
         raise RuntimeError(
-            f"fabrica falhou ({p.returncode})\n"
-            f"STDOUT:\n{p.stdout}\n"
-            f"STDERR:\n{p.stderr}"
+            f"fabrica falhou ({proc.returncode})\n"
+            f"STDOUT:\n{proc.stdout}\n"
+            f"STDERR:\n{proc.stderr}"
         )
 
-    outs = [os.path.join(CFG.output_dir, f) for f in os.listdir(CFG.output_dir)]
-    outs = [p for p in outs if os.path.isfile(p) and p.lower().endswith(".mp4")]
-    if not outs:
+    # Encontra o MP4 mais recente gerado em output/
+    mp4_candidates = [
+        os.path.join(CFG.output_dir, f)
+        for f in os.listdir(CFG.output_dir)
+    ]
+    mp4_candidates = [f for f in mp4_candidates if os.path.isfile(f) and f.lower().endswith(".mp4")]
+
+    if not mp4_candidates:
         raise RuntimeError("fabrica não gerou mp4 em output/")
 
-    out = max(outs, key=os.path.getmtime)
-    size = os.path.getsize(out)
+    output_file = max(mp4_candidates, key=os.path.getmtime)
+    size = os.path.getsize(output_file)
     if size < CFG.min_output_bytes:
-        raise RuntimeError(f"output pequeno demais: {out} ({size} bytes)")
-    return out
+        raise RuntimeError(f"output pequeno demais: {output_file} ({size} bytes)")
+    return output_file
 
 
 def upload_editado(session: requests.Session, output_path: str, vmos_id: str, legenda: str) -> Dict[str, Any]:
@@ -321,7 +320,7 @@ def delete_bruto_server(session: requests.Session, bruto_arquivo: str):
 
 
 def move_to(folder: str, path: str):
-    # Se outro processo já moveu/deletou o arquivo (ex: fabrica com on-success move/delete), não falha.
+    """Move arquivo para pasta destino. Não falha se arquivo já não existe."""
     if not path or not os.path.exists(path):
         logging.warning("Arquivo não existe para mover (ignorando): %s", path)
         return
@@ -334,9 +333,9 @@ def move_to(folder: str, path: str):
 
 
 def process_task(session: requests.Session, t: Dict[str, Any]):
-    task_id = int(t["id"])
-    vmos_id = str(t.get("vmos_id", "") or "")
-    legenda = str(t.get("legenda", "") or "")
+    task_id      = int(t["id"])
+    vmos_id      = str(t.get("vmos_id", "") or "")
+    legenda      = str(t.get("legenda", "") or "")
     bruto_arquivo = str(t.get("bruto_arquivo", "") or "")
 
     if not vmos_id or not bruto_arquivo:
@@ -344,11 +343,13 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
 
     logging.info("Tarefa %s | vmos_id=%s | bruto=%s", task_id, vmos_id, bruto_arquivo)
 
-    # Se claim já seta "baixando", aqui pulamos direto para editando
-    set_status(session, task_id, "editando")
-
+    # claim já setou "baixando" — fazemos download mantendo esse status
     local_in = download_bruto(session, bruto_arquivo)
+
     try:
+        # Só marca "editando" após o download bem-sucedido
+        set_status(session, task_id, "editando")
+
         local_out = run_fabrica(local_in)
 
         resp = upload_editado(session, local_out, vmos_id, legenda)
@@ -361,7 +362,7 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
 
         move_to(CFG.processed_dir, local_in)
 
-        # opcional: limpar output
+        # Limpa output após upload
         try:
             os.remove(local_out)
         except Exception:
@@ -379,15 +380,17 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
         except Exception:
             pass
 
-        # não re-raise para não matar loop
-        return
+        # não re-raise para não matar o loop principal
 
 
 def main():
     ensure_dirs()
     session = build_session()
 
-    logging.info("Worker iniciado | worker_id=%s | base=%s", CFG.worker_id, CFG.base_url)
+    logging.info(
+        "Worker iniciado | worker_id=%s | base=%s | claim_batch=%s | poll_idle=%ss",
+        CFG.worker_id, CFG.base_url, CFG.claim_batch, CFG.poll_seconds_idle
+    )
 
     while True:
         try:

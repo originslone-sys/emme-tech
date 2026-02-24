@@ -22,9 +22,9 @@ $vmos_id = preg_replace('/[^a-zA-Z0-9_]/', '', $vmos_id);
 
 $legenda = $_POST['legenda'] ?? '';
 
-if ($vmos_id === '' || trim($legenda) === '' || !isset($_FILES['arquivo_mp4'])) {
+if ($vmos_id === '' || !isset($_FILES['arquivo_mp4'])) {
     http_response_code(400);
-    echo json_encode(["sucesso"=>false,"mensagem"=>"Faltam campos: vmos_id, legenda, arquivo_mp4"], JSON_UNESCAPED_UNICODE);
+    echo json_encode(["sucesso"=>false,"mensagem"=>"Faltam campos obrigatórios: vmos_id, arquivo_mp4"], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

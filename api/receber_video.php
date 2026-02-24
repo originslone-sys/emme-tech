@@ -1,59 +1,38 @@
 <?php
-// /public_html/api/receber_video.php
+// api/receber_video.php
+// Recebe vídeo editado do worker e registra em fila_postagens
 declare(strict_types=1);
+
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(E_ALL);
 
 header('Content-Type: application/json; charset=utf-8');
 
-function jfail(int $code, string $msg, array $extra = []): void {
+function jfail(int $code, string $msg): void {
     http_response_code($code);
-    echo json_encode(array_merge([
-        "sucesso" => false,
-        "mensagem" => $msg,
-    ], $extra), JSON_UNESCAPED_UNICODE);
+    echo json_encode(["sucesso" => false, "mensagem" => $msg], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// --- Auth (recomendado) ---
-$authFile = __DIR__ . '/_auth.php';
-if (file_exists($authFile)) {
-    require_once $authFile;
-    if (function_exists('require_api_key')) {
-        require_api_key();
-    }
-}
-
-// --- DB (MySQLi) ---
-$dbFile = __DIR__ . '/db.php';
-if (!file_exists($dbFile)) {
-    // fallback legado, se ainda existir
-    $legacy = __DIR__ . '/conexao.php';
-    if (file_exists($legacy)) {
-        require_once $legacy;
-    } else {
-        jfail(500, "Arquivo de conexão não encontrado (db.php/conexao.php).");
-    }
-} else {
-    require_once $dbFile;
-}
+require_once __DIR__ . '/_auth.php';
+require_once __DIR__ . '/db.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
-    jfail(500, "Conexão MySQL inválida: variável $conn não definida (mysqli).");
+    jfail(500, "Conexão MySQL inválida.");
 }
 if ($conn->connect_errno) {
     jfail(500, "Falha MySQL: " . $conn->connect_error);
 }
 
 // --- Inputs ---
-$vmos_id = $_POST['vmos_id'] ?? '';
-if (!is_string($vmos_id) || trim($vmos_id) === '') {
+$vmos_id = trim($_POST['vmos_id'] ?? '');
+if ($vmos_id === '') {
     jfail(400, "vmos_id é obrigatório.");
 }
-$vmos_id = trim($vmos_id);
 
 // legenda é opcional (mantida por compatibilidade com schema)
-$legenda = $_POST['legenda'] ?? '';
-if (!is_string($legenda)) $legenda = '';
-$legenda = trim($legenda);
+$legenda = trim($_POST['legenda'] ?? '');
 
 // --- Arquivo: aceita múltiplos nomes (compatibilidade) ---
 $fileField = null;
@@ -69,7 +48,7 @@ if ($fileField === null) {
 
 $f = $_FILES[$fileField];
 if (($f['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
-    jfail(400, "Erro no upload: " . (string)($f['error'] ?? 'desconhecido'));
+    jfail(400, "Erro no upload: código " . (string)($f['error'] ?? 'desconhecido'));
 }
 
 $tmp = $f['tmp_name'] ?? '';
@@ -78,16 +57,11 @@ if (!is_string($tmp) || $tmp === '' || !is_uploaded_file($tmp)) {
 }
 
 // --- Nome final: vmos_id_time_rand.mp4 ---
-try {
-    $rand = bin2hex(random_bytes(4));
-} catch (Throwable $e) {
-    $rand = bin2hex(openssl_random_pseudo_bytes(4) ?: "abcd");
-}
-$nome_final = $vmos_id . "_" . time() . "_" . $rand . ".mp4";
+$nome_final = $vmos_id . "_" . time() . "_" . bin2hex(random_bytes(4)) . ".mp4";
 
 // --- Pasta /videos (um nível acima de /api) ---
 $diretorio_salvar = dirname(__DIR__) . "/videos/";
-if (!file_exists($diretorio_salvar)) {
+if (!is_dir($diretorio_salvar)) {
     if (!mkdir($diretorio_salvar, 0755, true)) {
         jfail(500, "Falha ao criar a pasta /videos.");
     }
@@ -95,7 +69,6 @@ if (!file_exists($diretorio_salvar)) {
 
 $caminho_completo = $diretorio_salvar . $nome_final;
 
-// move uploaded file
 if (!move_uploaded_file($tmp, $caminho_completo)) {
     jfail(500, "Erro ao mover o arquivo para /videos. Verifique permissões.");
 }
@@ -113,13 +86,13 @@ if (!$stmt->execute()) {
     jfail(500, "Erro no banco de dados: " . $stmt->error);
 }
 
-echo json_encode([
-    "sucesso" => true,
-    "mensagem" => "Upload recebido e agendado com sucesso.",
-    "arquivo" => $nome_final,
-    "campo_arquivo" => $fileField
-], JSON_UNESCAPED_UNICODE);
-
 $stmt->close();
 $conn->close();
+
+echo json_encode([
+    "sucesso"       => true,
+    "mensagem"      => "Upload recebido e agendado com sucesso.",
+    "arquivo"       => $nome_final,
+    "campo_arquivo" => $fileField
+], JSON_UNESCAPED_UNICODE);
 ?>

@@ -10,6 +10,19 @@ from typing import Optional, List
 import requests
 
 DEFAULT_API_URL = "https://emmetech.digital/api/receber_video.php"
+DEFAULT_API_KEY  = "a4aLYTawyy4HEUGQIoHCSjDOtSrxh4SA"
+
+# Fontes Windows tentadas em ordem; a primeira encontrada é usada
+FONT_PATHS_WINDOWS = [
+    r"C:\Windows\Fonts\arial.ttf",
+    r"C:\Windows\Fonts\Arial.ttf",
+    r"C:\Windows\Fonts\calibri.ttf",
+    r"C:\Windows\Fonts\Calibri.ttf",
+    r"C:\Windows\Fonts\verdana.ttf",
+    r"C:\Windows\Fonts\Verdana.ttf",
+    r"C:\Windows\Fonts\tahoma.ttf",
+    r"C:\Windows\Fonts\Tahoma.ttf",
+]
 
 FRASES_MOTIVACIONAIS = [
     "A tempestade não dura para sempre.", "Seu limite é você quem define.", "Cair faz parte. Levantar é a glória.",
@@ -38,6 +51,15 @@ def _ff_path(p: Path) -> str:
     s = str(p.resolve()).replace("\\", "/")
     s = s.replace(":", r"\:")
     return s
+
+
+def _find_font() -> Optional[Path]:
+    """Retorna o Path da primeira fonte Windows encontrada, ou None."""
+    for fp in FONT_PATHS_WINDOWS:
+        p = Path(fp)
+        if p.exists():
+            return p
+    return None
 
 
 def calcular_hash_arquivo(arquivo: Path, algoritmo: str = "md5") -> str:
@@ -125,8 +147,6 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
     texto_quebrado = textwrap.fill(texto_escolhido, width=chars_por_linha)
 
     ts = int(time.time() * 1000)
-    arquivo_texto_temp = logs_dir / f"texto_temp_{input_file.stem}_{ts}.txt"
-    arquivo_texto_temp.write_text(texto_quebrado, encoding="utf-8")
 
     print(f"\n[{input_file.name}] Iniciando processamento...")
     print(f"-> Hash original (ref): {hash_original}")
@@ -134,26 +154,44 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
     print(f"-> Frase:\n{texto_quebrado}")
     print(f"-> Áudio original detectado? {'Sim' if video_tem_audio else 'Não (Vídeo Mudo)'}")
 
-    font_path = _ff_path(Path(r"C:\Windows\Fonts\arial.ttf"))
+    # Localiza fonte disponível no Windows
+    font_path_obj = _find_font()
+    usar_drawtext = font_path_obj is not None
 
-    fontsize = max(30, int(height / 20))
-    box_border = max(5, int(fontsize / 4))
+    arquivo_texto_temp: Optional[Path] = None
+
+    if usar_drawtext:
+        arquivo_texto_temp = logs_dir / f"texto_temp_{input_file.stem}_{ts}.txt"
+        arquivo_texto_temp.write_text(texto_quebrado, encoding="utf-8")
+        font_path = _ff_path(font_path_obj)
+        fontsize = max(30, int(height / 20))
+        box_border = max(5, int(fontsize / 4))
+        drawtext_filter = (
+            f"drawtext="
+            f"fontfile='{font_path}':"
+            f"textfile='{_ff_path(arquivo_texto_temp)}':"
+            f"fontcolor=white:fontsize={fontsize}:"
+            f"box=1:boxcolor=black@0.5:boxborderw={box_border}:"
+            f"line_spacing={int(fontsize/4)}:"
+            f"x=(w-text_w)/2:y=h-(h/4)"
+        )
+        print(f"-> Fonte: {font_path_obj.name}")
+    else:
+        drawtext_filter = ""
+        print("[AVISO] Nenhuma fonte Windows encontrada. Overlay de texto desativado.")
 
     crop_px_x = random.randint(2, 12)
     crop_px_y = random.randint(2, 12)
     crop_width = f"max(2, iw-{crop_px_x}*2)"
     crop_height = f"max(2, ih-{crop_px_y}*2)"
 
-    scale_factor = random.uniform(0.99, 1.01)
-    rotate_angle = random.uniform(-0.5, 0.5)
-
-    grain_strength = random.uniform(0.0005, 0.0015)
-
-    brightness = random.uniform(0.995, 1.005)
-    contrast = random.uniform(0.998, 1.002)
-    saturation = random.uniform(0.997, 1.003)
-
-    speed_factor = random.uniform(0.995, 1.005)
+    scale_factor    = random.uniform(0.99, 1.01)
+    rotate_angle    = random.uniform(-0.5, 0.5)
+    grain_strength  = random.uniform(0.0005, 0.0015)
+    brightness      = random.uniform(0.995, 1.005)
+    contrast        = random.uniform(0.998, 1.002)
+    saturation      = random.uniform(0.997, 1.003)
+    speed_factor    = random.uniform(0.995, 1.005)
 
     metadata_changes: List[str] = [
         f"title=Edited_{ts}",
@@ -162,25 +200,19 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         "creation_time=1970-01-01T00:00:00.000000Z",
     ]
 
-    filtro_video = (
+    filtro_base = (
         f"crop={crop_width}:{crop_height}:(iw-{crop_width})/2:(ih-{crop_height})/2,"
         f"scale=iw*{scale_factor}:ih*{scale_factor}:flags=lanczos,"
         f"rotate={rotate_angle}*PI/180:fillcolor=black@1,"
         f"setpts={speed_factor}*PTS,"
         f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},"
-        f"noise=alls={grain_strength}:allf=t+u,"
-        f"drawtext="
-        f"fontfile='{font_path}':"
-        f"textfile='{_ff_path(arquivo_texto_temp)}':"
-        f"fontcolor=white:fontsize={fontsize}:"
-        f"box=1:boxcolor=black@0.5:boxborderw={box_border}:"
-        f"line_spacing={int(fontsize/4)}:"
-        f"x=(w-text_w)/2:y=h-(h/4)"
+        f"noise=alls={grain_strength}:allf=t+u"
     )
+    filtro_video = filtro_base + ("," + drawtext_filter if usar_drawtext else "")
 
     musica_escolhida: Optional[Path] = None
     if pasta_mp3.exists() and pasta_mp3.is_dir():
-        lista_mp3 = [p for p in pasta_mp3.iterdir() if p.suffix.lower() == ".mp3" and p.is_file()]
+        lista_mp3 = [m for m in pasta_mp3.iterdir() if m.suffix.lower() == ".mp3" and m.is_file()]
         if lista_mp3:
             musica_escolhida = random.choice(lista_mp3)
 
@@ -193,7 +225,6 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         if video_tem_audio:
             audio_speed = random.uniform(0.998, 1.002)
             audio_pitch = random.uniform(0.999, 1.001)
-
             filter_complex = (
                 f"[0:v]{filtro_video}[vout];"
                 f"[0:a]atempo={audio_speed},asetrate=44100*{audio_pitch},volume=1.0[orig_a];"
@@ -256,7 +287,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
             proc = subprocess.run(comando, stdout=lf, stderr=lf, text=True)
 
         if proc.returncode != 0:
-            print(f"\n[ERRO] FFmpeg falhou. Veja o log: {ffmpeg_log}")
+            print(f"\n[ERRO] FFmpeg falhou (código {proc.returncode}). Veja o log: {ffmpeg_log}")
             return False
 
         if not output_file.exists():
@@ -272,16 +303,19 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         return True
 
     finally:
-        try:
-            if arquivo_texto_temp.exists():
+        if arquivo_texto_temp is not None:
+            try:
                 arquivo_texto_temp.unlink(missing_ok=True)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
 
-def enviar_para_servidor(caminho_video: Path, vmos_id: str, legenda: str, api_url: str) -> bool:
-    nome_arquivo = caminho_video.name
-    dados_texto = {"vmos_id": vmos_id, "legenda": legenda, "nome_arquivo": nome_arquivo}
+def enviar_para_servidor(caminho_video: Path, vmos_id: str, legenda: str, api_url: str, api_key: str = DEFAULT_API_KEY) -> bool:
+    dados_texto = {
+        "api_key": api_key,
+        "vmos_id": vmos_id,
+        "legenda": legenda,
+    }
     try:
         with caminho_video.open("rb") as arquivo_mp4:
             resp = requests.post(
@@ -290,19 +324,22 @@ def enviar_para_servidor(caminho_video: Path, vmos_id: str, legenda: str, api_ur
                 files={"arquivo_mp4": arquivo_mp4},
                 timeout=180
             )
+        if resp.status_code == 403:
+            print("[ERRO] Upload rejeitado (403 Forbidden). Verifique a api_key.")
+            return False
         try:
             resultado = resp.json()
         except Exception:
-            print(f"Erro no servidor (não-JSON): HTTP {resp.status_code} | {resp.text[:300]}")
+            print(f"[ERRO] Servidor retornou não-JSON: HTTP {resp.status_code} | {resp.text[:300]}")
             return False
 
         if resultado.get("sucesso"):
             print(f"Upload OK! Vídeo entrou na fila da conta '{vmos_id}'.")
             return True
-        print(f"Erro no servidor: {resultado.get('mensagem')}")
+        print(f"[ERRO] Servidor recusou upload: {resultado.get('mensagem')}")
         return False
     except Exception as ex:
-        print(f"Erro ao enviar (upload): {ex}")
+        print(f"[ERRO] Falha ao enviar (upload): {ex}")
         return False
 
 
@@ -310,8 +347,8 @@ def listar_inputs(input_path: Path) -> list[Path]:
     if input_path.is_file():
         return [input_path]
     if input_path.is_dir():
-        vids = [p for p in input_path.iterdir() if p.suffix.lower() in VIDEO_EXTS and p.is_file()]
-        vids.sort(key=lambda p: p.stat().st_mtime)
+        vids = [v for v in input_path.iterdir() if v.suffix.lower() in VIDEO_EXTS and v.is_file()]
+        vids.sort(key=lambda v: v.stat().st_mtime)
         return vids
     return []
 
@@ -342,8 +379,8 @@ def cleanup_input_on_fail(input_file: Path, failed_dir: Path) -> None:
     _safe_move(input_file, failed_dir)
 
 
-def job_get(job_url: str) -> dict:
-    r = requests.get(job_url, timeout=30)
+def job_get(job_url: str, api_key: str = DEFAULT_API_KEY) -> dict:
+    r = requests.get(job_url, params={"api_key": api_key}, timeout=30)
     r.raise_for_status()
     data = r.json()
     if not data.get("sucesso"):
@@ -351,8 +388,9 @@ def job_get(job_url: str) -> dict:
     return data.get("job") or {}
 
 
-def job_ack(ack_url: str, nonce: str, status: str, ok: int = 0, fail: int = 0, message: str = "") -> None:
+def job_ack(ack_url: str, nonce: str, status: str, ok: int = 0, fail: int = 0, message: str = "", api_key: str = DEFAULT_API_KEY) -> None:
     payload = {
+        "api_key": api_key,
         "nonce": nonce,
         "status": status,
         "result_ok": str(ok),
@@ -373,6 +411,7 @@ def main():
     parser.add_argument("--music-dir", default="musicas_fundo")
     parser.add_argument("--logs-dir", default="logs")
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
+    parser.add_argument("--api-key", default=DEFAULT_API_KEY, help="Chave de API para autenticação")
 
     # modo job (painel)
     parser.add_argument("--job-url", default="", help="URL do edicao_job_get.php")
@@ -390,12 +429,13 @@ def main():
 
     args = parser.parse_args()
 
-    input_path = Path(args.input)
-    output_dir = Path(args.output_dir)
-    music_dir = Path(args.music_dir)
-    logs_dir = Path(args.logs_dir)
+    input_path    = Path(args.input)
+    output_dir    = Path(args.output_dir)
+    music_dir     = Path(args.music_dir)
+    logs_dir      = Path(args.logs_dir)
     processed_dir = Path(args.processed_dir)
-    failed_dir = Path(args.failed_dir)
+    failed_dir    = Path(args.failed_dir)
+    api_key       = args.api_key
 
     output_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -404,7 +444,7 @@ def main():
 
     # JOB MODE
     if args.job_url and args.ack_url:
-        job = job_get(args.job_url)
+        job = job_get(args.job_url, api_key)
         status = (job.get("status") or "idle").lower()
         if status not in ("pending", "running"):
             print(f"Nenhum job pendente. status={status}")
@@ -415,21 +455,21 @@ def main():
             print("Job inválido: falta nonce.")
             return
 
-        vmos_id = (job.get("vmos_id") or "").strip()
-        legenda = (job.get("legenda") or "").strip()
-        max_videos = int(job.get("max_videos") or 1)
-        on_success = job.get("on_success") or "move"
+        vmos_id     = (job.get("vmos_id") or "").strip()
+        legenda     = (job.get("legenda") or "").strip()
+        max_videos  = int(job.get("max_videos") or 1)
+        on_success  = job.get("on_success") or "move"
         clean_output_after_upload = bool(job.get("clean_output_after_upload") or False)
 
         if not vmos_id:
-            job_ack(args.ack_url, nonce, "error", 0, 0, "Job inválido: vmos_id vazio.")
+            job_ack(args.ack_url, nonce, "error", 0, 0, "Job inválido: vmos_id vazio.", api_key)
             return
 
-        job_ack(args.ack_url, nonce, "running", 0, 0, "Worker iniciou processamento.")
+        job_ack(args.ack_url, nonce, "running", 0, 0, "Worker iniciou processamento.", api_key)
 
         args.upload = True
         args.vmos_id = vmos_id
-        args.legenda = legenda  # opcional (pode ser vazio)
+        args.legenda = legenda
         args.max_videos = max_videos
         args.on_success = on_success
         args.clean_output_after_upload = clean_output_after_upload
@@ -440,10 +480,10 @@ def main():
         print(f"Nenhum vídeo encontrado em: {input_path}")
         if args.job_url and args.ack_url:
             try:
-                job = job_get(args.job_url)
+                job = job_get(args.job_url, api_key)
                 nonce = job.get("nonce") or ""
                 if nonce:
-                    job_ack(args.ack_url, nonce, "error", 0, 0, "Nenhum vídeo encontrado no input.")
+                    job_ack(args.ack_url, nonce, "error", 0, 0, "Nenhum vídeo encontrado no input.", api_key)
             except Exception:
                 pass
         return
@@ -461,7 +501,7 @@ def main():
 
     if args.job_url and args.ack_url:
         try:
-            job = job_get(args.job_url)
+            job = job_get(args.job_url, api_key)
             last_nonce = job.get("nonce") or ""
         except Exception:
             last_nonce = ""
@@ -477,7 +517,13 @@ def main():
             continue
 
         if args.upload:
-            up_ok = enviar_para_servidor(out, str(args.vmos_id).strip(), str(args.legenda or "").strip(), args.api_url)
+            up_ok = enviar_para_servidor(
+                out,
+                str(args.vmos_id).strip(),
+                str(args.legenda or "").strip(),
+                args.api_url,
+                api_key,
+            )
             if not up_ok:
                 fail += 1
                 cleanup_input_on_fail(vid, failed_dir)
@@ -492,9 +538,9 @@ def main():
     print(f"\nFinalizado. OK={ok} | FALHAS={fail}")
 
     if args.job_url and args.ack_url and last_nonce:
-        status = "done" if fail == 0 else "error"
+        final_status = "done" if fail == 0 else "error"
         msg = "Concluído com sucesso." if fail == 0 else "Concluído com falhas (verifique failed/ logs)."
-        job_ack(args.ack_url, last_nonce, status, ok, fail, msg)
+        job_ack(args.ack_url, last_nonce, final_status, ok, fail, msg, api_key)
 
 
 if __name__ == "__main__":
