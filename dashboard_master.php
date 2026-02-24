@@ -536,8 +536,7 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                     <?php endif; ?>
                                 </tbody>
                             </table>
-                        </div>
-                        </div>
+                        </div><!-- /hidden md:block -->
 
                         <div class="mt-4 text-xs text-gray-500">
                             Mostrando as últimas <?= (int)$limit ?> tarefas<?= $filtro_status ? " (status: <b>".h($filtro_status)."</b>)" : "" ?>.

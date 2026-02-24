@@ -343,10 +343,12 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
 
     logging.info("Tarefa %s | vmos_id=%s | bruto=%s", task_id, vmos_id, bruto_arquivo)
 
-    # claim já setou "baixando" — fazemos download mantendo esse status
-    local_in = download_bruto(session, bruto_arquivo)
+    local_in = None  # inicializa antes do try para usar no bloco except
 
     try:
+        # claim já setou "baixando"; download mantém esse status
+        local_in = download_bruto(session, bruto_arquivo)
+
         # Só marca "editando" após o download bem-sucedido
         set_status(session, task_id, "editando")
 
@@ -375,10 +377,11 @@ def process_task(session: requests.Session, t: Dict[str, Any]):
         except Exception as e2:
             logging.error("Falha ao marcar erro no servidor (task %s): %s", task_id, e2)
 
-        try:
-            move_to(CFG.failed_dir, local_in)
-        except Exception:
-            pass
+        if local_in:
+            try:
+                move_to(CFG.failed_dir, local_in)
+            except Exception:
+                pass
 
         # não re-raise para não matar o loop principal
 
