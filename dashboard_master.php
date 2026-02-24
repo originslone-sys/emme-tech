@@ -106,7 +106,7 @@ if (isset($_GET['acao'])) {
             $status = 'pendente';
             $worker = null;
             $erro = null;
-            $stmt = $conn->prepare("UPDATE fila_edicao SET status=?, worker_id=?, erro_msg=? WHERE id=?");
+            $stmt = $conn->prepare("UPDATE fila_edicao SET status=?, worker_id=?, erro_msg=?, updated_at=NOW() WHERE id=?");
             $stmt->bind_param("sssi", $status, $worker, $erro, $id);
             $stmt->execute();
             $stmt->close();
@@ -129,7 +129,7 @@ if (isset($_GET['acao'])) {
         // não dá para bindar INTERVAL diretamente em prepare de forma simples; usamos int sanitizado
         $sql = "
           UPDATE fila_edicao
-          SET status='pendente', worker_id=NULL, erro_msg=NULL
+          SET status='pendente', worker_id=NULL, erro_msg=NULL, updated_at=NOW()
           WHERE status IN ('baixando','editando')
             AND updated_at < (NOW() - INTERVAL $min MINUTE)
         ";
@@ -328,16 +328,13 @@ if ($rc) {
                 </h2>
                 <p class="text-sm text-gray-600 mb-2">
                     O worker fica puxando tarefas pendentes, baixa o bruto, edita e sobe o editado (que vira vídeo na fila do VMOS).
+                    Configure <code class="bg-gray-100 px-1 rounded text-xs">WORKER_ID</code> e os caminhos na classe <code class="bg-gray-100 px-1 rounded text-xs">Config</code> do arquivo antes de rodar.
                 </p>
                 <pre class="bg-gray-900 text-gray-100 text-xs p-3 rounded overflow-auto"><?=
-h("python .\\worker_edicao.py `\n".
-  "  --base \"https://emmetech.digital\" `\n".
-  "  --api-key \"{$API_KEY}\" `\n".
-  "  --worker-id \"PC01\" `\n".
-  "  --max 2 `\n".
-  "  --poll-seconds 10 `\n".
-  "  --upload-url \"https://emmetech.digital/api/receber_video.php\" `\n".
-  "  --delete-bruto-on-server")
+h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
+  "D:\\automacao_videos\\.venv\\Scripts\\python.exe D:\\automacao_videos\\worker_edicao.py\n\n".
+  "# Identificar este PC como worker específico (opcional):\n".
+  "set WORKER_ID=PC01 && D:\\automacao_videos\\.venv\\Scripts\\python.exe D:\\automacao_videos\\worker_edicao.py")
 ?></pre>
             </div>
 
@@ -465,7 +462,7 @@ h("python .\\worker_edicao.py `\n".
                         </div>
 
                         <!-- DESKTOP: Tabela -->
-                        <div class="hidden md:block overflow-x-auto">
+                        <div class="hidden md:block overflow-x-auto mt-2">
                             <table class="min-w-full bg-white">
 
                                 <thead class="bg-gray-800 text-white border-b">
@@ -545,8 +542,9 @@ h("python .\\worker_edicao.py `\n".
                         <div class="mt-4 text-xs text-gray-500">
                             Mostrando as últimas <?= (int)$limit ?> tarefas<?= $filtro_status ? " (status: <b>".h($filtro_status)."</b>)" : "" ?>.
                         </div>
-                    </div>
-                </div>
+
+                    </div><!-- /bg-white card -->
+                </div><!-- /w-2/3 -->
 
             </div>
         </main>

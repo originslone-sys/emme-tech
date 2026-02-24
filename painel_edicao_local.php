@@ -49,8 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     "message" => "",
   ];
 
-  file_put_contents($job_file, json_encode($job, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-  $msg = "✅ Job criado: o seu PC pode puxar e executar agora.";
+  $written = file_put_contents($job_file, json_encode($job, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+  if ($written === false) {
+    $msg = "❌ Erro ao salvar o job. Verifique permissões de escrita em /api/.";
+  } else {
+    $msg = "✅ Job criado: o seu PC pode puxar e executar agora.";
+  }
 }
 ?>
 <!doctype html>
@@ -80,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div>
           <label class="block text-sm font-medium">Legenda</label>
-          <textarea name="legenda" class="w-full border rounded p-2" rows="4" required><?= h($job['legenda']) ?></textarea>
+          <textarea name="legenda" class="w-full border rounded p-2" rows="4" placeholder="Opcional"><?= h($job['legenda']) ?></textarea>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
