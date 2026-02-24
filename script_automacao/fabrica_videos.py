@@ -205,7 +205,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
 
     filtro_base = (
         f"crop={crop_w_expr}:{crop_h_expr}:{crop_px_x}:{crop_px_y},"
-        f"scale=iw*{scale_factor}:ih*{scale_factor}:flags=lanczos,"
+        f"scale=trunc(iw*{scale_factor}/2)*2:trunc(ih*{scale_factor}/2)*2:flags=lanczos,"
         f"rotate={rotate_angle}*PI/180:fillcolor=black@1,"
         f"setpts={speed_factor}*PTS,"
         f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},"
