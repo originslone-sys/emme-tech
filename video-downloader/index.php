@@ -28,17 +28,36 @@
 
 <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-    <!-- Aviso yt-dlp -->
-    <div id="ytdlpWarn" class="hidden bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex gap-3 items-start">
-        <i class="fa-solid fa-triangle-exclamation text-yellow-500 mt-0.5 shrink-0"></i>
-        <div class="text-sm text-yellow-800 flex-1">
-            <strong>yt-dlp não encontrado no servidor.</strong>
-            Acesse a página de configuração para instalar automaticamente ou ver as instruções.
+    <!-- Aviso yt-dlp / modo Cobalt -->
+    <div id="ytdlpWarn" class="hidden bg-amber-50 border border-amber-300 rounded-lg p-4 flex gap-3 items-start">
+        <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+        <div class="text-sm text-amber-800 flex-1">
+            <strong>yt-dlp não disponível neste servidor.</strong>
+            A navegação de perfis está desativada. Use o <strong>Download por URL direta</strong> abaixo
+            — cole links individuais de vídeos para download via <strong>Cobalt API</strong>
+            (YouTube, TikTok, Instagram, Twitter/X, Facebook e mais).
+            <a href="setup.php" class="underline ml-1">Ver Setup →</a>
         </div>
-        <a href="setup.php"
-           class="shrink-0 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold px-3 py-1.5 rounded transition">
-            <i class="fa-solid fa-screwdriver-wrench mr-1"></i> Configurar
-        </a>
+    </div>
+
+    <!-- Card: Download por URL direta (modo Cobalt — aparece quando yt-dlp indisponível) -->
+    <div id="directUrlCard" class="hidden bg-white rounded-xl shadow p-5">
+        <h2 class="font-semibold text-gray-700 mb-1 flex items-center gap-2">
+            <i class="fa-solid fa-link text-purple-500"></i>
+            Download por URL direta
+            <span class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">via Cobalt API</span>
+        </h2>
+        <p class="text-xs text-gray-500 mb-3">Cole um ou mais links de vídeos, um por linha. Suporta YouTube, TikTok, Instagram, Twitter/X, Facebook e centenas de outros sites.</p>
+        <textarea id="directUrls" rows="5"
+                  placeholder="https://www.youtube.com/watch?v=...&#10;https://www.tiktok.com/@usuario/video/...&#10;https://www.instagram.com/p/..."
+                  class="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none font-mono resize-y"></textarea>
+        <div class="flex flex-wrap items-center gap-3 mt-3">
+            <button onclick="startDirectDownload()"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2">
+                <i class="fa-solid fa-download"></i> Baixar vídeos
+            </button>
+            <span class="text-xs text-gray-400">Os vídeos serão empacotados em ZIP para download.</span>
+        </div>
     </div>
 
     <!-- Card de busca -->
@@ -192,7 +211,23 @@ const state = {
   try {
     const r = await fetch('api.php?action=check');
     const d = await r.json();
-    if (!d.ok) document.getElementById('ytdlpWarn').classList.remove('hidden');
+    if (!d.ok) {
+      document.getElementById('ytdlpWarn').classList.remove('hidden');
+      if (d.cobalt_mode) {
+        // Mostra o card de URL direta e avisa no painel de busca
+        document.getElementById('directUrlCard').classList.remove('hidden');
+        document.getElementById('stateMsg').innerHTML =
+          '<i class="fa-solid fa-link text-purple-400 text-4xl mb-3 opacity-50"></i>' +
+          '<p class="text-sm text-gray-500">Navegação de perfis indisponível (requer yt-dlp).<br>' +
+          'Use o <strong>Download por URL direta</strong> acima.</p>';
+        // Desativa o formulário de busca para evitar confusão
+        document.getElementById('btnSearch').disabled = true;
+        document.getElementById('btnSearch').classList.add('opacity-40', 'cursor-not-allowed');
+        document.getElementById('profileUrl').disabled = true;
+        document.getElementById('profileUrl').placeholder = 'Navegação de perfis indisponível — use URL direta acima';
+        document.getElementById('profileUrl').classList.add('bg-gray-50', 'text-gray-400');
+      }
+    }
   } catch (e) { /* ignora erros de rede no check */ }
 })();
 
@@ -411,6 +446,26 @@ function startDownload() {
   // Melhor: usa fetch + ReadableStream para POST com SSE
   // EventSource só faz GET, então vamos via fetch + stream
   evtSource.close();
+  fetchSSE('api.php?action=download', fd, urls.length);
+}
+
+// ── Download direto por URLs (modo Cobalt) ────────────────────────────────────
+function startDirectDownload() {
+  const raw = (document.getElementById('directUrls').value || '').trim();
+  if (!raw) return;
+
+  const urls = raw.split('\n')
+    .map(u => u.trim())
+    .filter(u => /^https?:\/\//i.test(u));
+
+  if (urls.length === 0) {
+    alert('Nenhuma URL válida encontrada. Cole links completos começando com https://');
+    return;
+  }
+
+  openModal(urls.length);
+  const fd = new FormData();
+  urls.forEach(u => fd.append('urls[]', u));
   fetchSSE('api.php?action=download', fd, urls.length);
 }
 
