@@ -19,7 +19,10 @@
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
         <i class="fa-solid fa-film text-blue-400 text-xl"></i>
         <span class="font-bold text-lg tracking-tight">Video Downloader em Lote</span>
-        <span class="ml-auto text-xs text-gray-400">TikTok · Instagram · Facebook · YouTube · e mais</span>
+        <span class="text-xs text-gray-400 hidden sm:inline">TikTok · Instagram · Facebook · YouTube · e mais</span>
+        <a href="setup.php" class="ml-auto text-xs text-gray-400 hover:text-white transition flex items-center gap-1">
+            <i class="fa-solid fa-screwdriver-wrench"></i> Setup
+        </a>
     </div>
 </header>
 
@@ -27,13 +30,15 @@
 
     <!-- Aviso yt-dlp -->
     <div id="ytdlpWarn" class="hidden bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex gap-3 items-start">
-        <i class="fa-solid fa-triangle-exclamation text-yellow-500 mt-0.5"></i>
-        <div class="text-sm text-yellow-800">
-            <strong>yt-dlp não encontrado no servidor.</strong><br>
-            Instale com: <code class="bg-yellow-100 px-1 rounded">pip install yt-dlp</code>
-            ou <code class="bg-yellow-100 px-1 rounded">pip3 install yt-dlp</code><br>
-            Após instalar, recarregue a página.
+        <i class="fa-solid fa-triangle-exclamation text-yellow-500 mt-0.5 shrink-0"></i>
+        <div class="text-sm text-yellow-800 flex-1">
+            <strong>yt-dlp não encontrado no servidor.</strong>
+            Acesse a página de configuração para instalar automaticamente ou ver as instruções.
         </div>
+        <a href="setup.php"
+           class="shrink-0 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold px-3 py-1.5 rounded transition">
+            <i class="fa-solid fa-screwdriver-wrench mr-1"></i> Configurar
+        </a>
     </div>
 
     <!-- Card de busca -->
