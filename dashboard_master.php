@@ -180,6 +180,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
 // UPLOAD (POST): cria tarefa + salva bruto (multi-arquivo)
 // ================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['video'])) {
+    $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) &&
+               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
     try {
         $vmos_id = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['vmos_id'] ?? '');
         $legenda = ''; // removido do painel, mantido vazio por compatibilidade com a coluna
@@ -251,6 +253,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['video'])) {
             $ok++;
         }
 
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            $result = ['ok' => $ok, 'fail' => $fail];
+            if ($fail > 0 && $firstErr) $result['warn'] = $firstErr;
+            echo json_encode($result);
+            exit;
+        }
+
         if ($ok > 0) {
             $qs = "msg=sucesso&ok={$ok}&fail={$fail}";
             if ($fail > 0 && $firstErr) $qs .= "&warn=" . urlencode($firstErr);
@@ -264,6 +274,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['video'])) {
         exit;
 
     } catch (Throwable $e) {
+        if ($is_ajax) {
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => 0, 'fail' => 1, 'warn' => $e->getMessage()]);
+            exit;
+        }
         $err = urlencode($e->getMessage());
         header("Location: dashboard_master.php?msg=erro&err={$err}");
         exit;
@@ -709,21 +724,91 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
   });
 })();
 
-// ── Feedback visual de upload (barra de progresso simples) ───────────────────
+// ── Upload em lotes (evita travamento com muitos arquivos) ────────────────────
 (function () {
-  const form   = document.querySelector('form[enctype="multipart/form-data"]');
-  const btn    = form ? form.querySelector('button[type="submit"]') : null;
+  const BATCH_SIZE = 10; // arquivos por requisição
+
+  const form      = document.querySelector('form[enctype="multipart/form-data"]');
+  const btn       = form ? form.querySelector('button[type="submit"]') : null;
+  const hint      = document.getElementById('fileCountHint');
   if (!form || !btn) return;
 
-  form.addEventListener('submit', function () {
-    const original = btn.innerHTML;
+  // Barra de progresso injetada abaixo do botão
+  const progressWrap = document.createElement('div');
+  progressWrap.className = 'hidden mt-3';
+  progressWrap.innerHTML =
+    '<div class="w-full bg-gray-200 rounded-full h-2 mb-1">' +
+      '<div id="uploadBar" class="bg-blue-500 h-2 rounded-full transition-all" style="width:0%"></div>' +
+    '</div>' +
+    '<p id="uploadStatus" class="text-xs text-gray-600 text-center"></p>';
+  btn.parentNode.insertBefore(progressWrap, btn.nextSibling);
+
+  const bar    = progressWrap.querySelector('#uploadBar');
+  const status = progressWrap.querySelector('#uploadStatus');
+
+  form.addEventListener('submit', async function (e) {
+    const fileInput = form.querySelector('[name="video[]"]');
+    const files     = fileInput ? Array.from(fileInput.files) : [];
+    const vmos_id   = (form.querySelector('[name="vmos_id"]') || {}).value || '';
+
+    // Com 1 arquivo ou sem JS async, deixa o browser tratar normalmente
+    if (files.length <= 1) return;
+
+    e.preventDefault();
+
+    if (!vmos_id.trim()) {
+      alert('Preencha a Conta VMOS antes de enviar.');
+      return;
+    }
+
+    // Divide em lotes
+    const batches = [];
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      batches.push(files.slice(i, i + BATCH_SIZE));
+    }
+
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
-    // Restaura após 60s por segurança (caso o servidor demore ou dê erro)
-    setTimeout(function () {
-      btn.disabled = false;
-      btn.innerHTML = original;
-    }, 60000);
+    progressWrap.classList.remove('hidden');
+
+    let totalOk = 0, totalFail = 0, lastWarn = '';
+
+    for (let b = 0; b < batches.length; b++) {
+      const batch = batches[b];
+      const pct   = Math.round((b / batches.length) * 100);
+
+      bar.style.width    = pct + '%';
+      status.textContent = 'Lote ' + (b + 1) + ' de ' + batches.length +
+                           ' — ' + batch.length + ' arquivo(s)...';
+      if (hint) hint.textContent = totalOk + ' enviado(s) até agora...';
+
+      const fd = new FormData();
+      fd.append('vmos_id', vmos_id);
+      batch.forEach(function (f) { fd.append('video[]', f); });
+
+      try {
+        const resp = await fetch(window.location.pathname, {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd
+        });
+        const data = await resp.json();
+        totalOk   += data.ok   || 0;
+        totalFail += data.fail || 0;
+        if (data.warn) lastWarn = data.warn;
+      } catch (err) {
+        totalFail += batch.length;
+        lastWarn   = 'Falha de rede no lote ' + (b + 1);
+      }
+    }
+
+    bar.style.width    = '100%';
+    bar.classList.replace('bg-blue-500', totalFail > 0 ? 'bg-yellow-500' : 'bg-green-500');
+    status.textContent = 'Concluído! Redirecionando...';
+
+    // Redireciona com totais acumulados
+    let qs = 'msg=sucesso&ok=' + totalOk + '&fail=' + totalFail;
+    if (lastWarn) qs += '&warn=' + encodeURIComponent(lastWarn);
+    setTimeout(function () { window.location.href = 'dashboard_master.php?' + qs; }, 600);
   });
 })();
 
