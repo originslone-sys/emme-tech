@@ -14,20 +14,41 @@ function json_out(array $data, int $code = 200): never {
 
 /**
  * Retorna o comando completo (já escapado) para invocar o yt-dlp.
- * Tenta binário standalone local, python3 + script local,
- * binários no PATH e módulo Python como último recurso.
+ * Ordem: local direto → /tmp (bypassa mmap restriction do /home) →
+ *        python3+local → PATH → módulo Python.
  */
 function find_ytdlp(): string {
-    $local = __DIR__ . '/bin/yt-dlp';
-    // Cada entrada: [comando para testar, prefixo a retornar]
-    $candidates = [
-        [escapeshellarg($local),                  escapeshellarg($local)],
-        ['python3 ' . escapeshellarg($local),     'python3 ' . escapeshellarg($local)],
-        ['yt-dlp',                                'yt-dlp'],
-        [escapeshellarg('/usr/local/bin/yt-dlp'), escapeshellarg('/usr/local/bin/yt-dlp')],
-        [escapeshellarg('/usr/bin/yt-dlp'),       escapeshellarg('/usr/bin/yt-dlp')],
-        ['python3 -m yt_dlp',                     'python3 -m yt_dlp'],
+    $local   = __DIR__ . '/bin/yt-dlp';
+    $tmp_bin = '/tmp/ytdlp_' . substr(md5(__DIR__), 0, 8);
+
+    // Auto-copia ELF para /tmp se necessário (tmpfs não tem restrição de mmap)
+    if (file_exists($local) && is_file($local)) {
+        if (!file_exists($tmp_bin) || filesize($tmp_bin) !== filesize($local)) {
+            @copy($local, $tmp_bin);
+            @chmod($tmp_bin, 0755);
+        }
+    }
+
+    $py_paths = [
+        'python3', '/usr/bin/python3', '/usr/local/bin/python3',
+        '/usr/bin/python3.12', '/usr/bin/python3.11', '/usr/bin/python3.10', '/usr/bin/python3.9',
     ];
+
+    $candidates = [
+        [escapeshellarg($local),   escapeshellarg($local)],
+        [escapeshellarg($tmp_bin), escapeshellarg($tmp_bin)],
+    ];
+    foreach ($py_paths as $py) {
+        $candidates[] = [escapeshellarg($py) . ' ' . escapeshellarg($local),
+                         escapeshellarg($py) . ' ' . escapeshellarg($local)];
+    }
+    $candidates[] = ['yt-dlp',                                'yt-dlp'];
+    $candidates[] = [escapeshellarg('/usr/local/bin/yt-dlp'), escapeshellarg('/usr/local/bin/yt-dlp')];
+    $candidates[] = [escapeshellarg('/usr/bin/yt-dlp'),       escapeshellarg('/usr/bin/yt-dlp')];
+    foreach ($py_paths as $py) {
+        $candidates[] = [escapeshellarg($py) . ' -m yt_dlp', escapeshellarg($py) . ' -m yt_dlp'];
+    }
+
     foreach ($candidates as [$test, $cmd]) {
         $out = []; $rc = -1;
         exec($test . ' --version 2>/dev/null', $out, $rc);
