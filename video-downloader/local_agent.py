@@ -17,7 +17,7 @@ import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse, unquote_plus
+from urllib.parse import parse_qs, urlparse, unquote_plus, urlencode, urlunparse
 
 PORT = 9999
 DOWNLOAD_DIR = Path.home() / "Downloads" / "VideoDownloader"
@@ -25,9 +25,86 @@ DOWNLOAD_DIR = Path.home() / "Downloads" / "VideoDownloader"
 # Populados em main() para evitar subprocess no hot path das requests
 _YTDLP_BIN: str = ""
 _YTDLP_VERSION: str = ""
+_COOKIE_BROWSER: str = ""  # primeiro browser instalado detectado em main()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+# ── URL helpers ────────────────────────────────────────────────────────────────
+
+# Parâmetros de rastreamento que não fazem parte da URL real do conteúdo
+_TRACKING_PARAMS = frozenset({
+    "igsh", "igshid", "hl",                          # Instagram
+    "fbclid", "mibextid", "__cft__", "__tn__",       # Facebook
+    "_rdc", "_rdr",
+    "utm_source", "utm_medium", "utm_campaign",      # UTM genérico
+    "utm_term", "utm_content",
+})
+
+
+def normalize_url(url: str) -> str:
+    """Remove parâmetros de rastreamento e normaliza URLs para o yt-dlp."""
+    try:
+        p = urlparse(url)
+        host = (p.hostname or "").lower()
+        # Instagram: qualquer query string é rastreamento — remove tudo
+        if "instagram.com" in host:
+            return urlunparse(p._replace(query="", fragment=""))
+        # Outros: remove apenas os params de rastreamento conhecidos
+        if p.query:
+            qs = {k: v[0] for k, v in parse_qs(p.query).items()
+                  if k.lower() not in _TRACKING_PARAMS}
+            return urlunparse(p._replace(query=urlencode(qs) if qs else "", fragment=""))
+    except Exception:
+        pass
+    return url
+
+
+def _needs_cookies(url: str) -> bool:
+    """Facebook e Instagram exigem cookies de sessão para acessar conteúdo."""
+    host = (urlparse(url).hostname or "").lower()
+    return any(h in host for h in ("facebook.com", "fb.com", "instagram.com"))
+
+
+def detect_cookie_browser() -> str:
+    """Detecta o primeiro browser instalado verificando diretórios de perfil."""
+    home = Path.home()
+    if sys.platform == "win32":
+        local   = Path(os.environ.get("LOCALAPPDATA", str(home)))
+        roaming = Path(os.environ.get("APPDATA",      str(home)))
+        candidates = [
+            ("chrome",   local   / "Google/Chrome/User Data"),
+            ("edge",     local   / "Microsoft/Edge/User Data"),
+            ("brave",    local   / "BraveSoftware/Brave-Browser/User Data"),
+            ("firefox",  roaming / "Mozilla/Firefox/Profiles"),
+            ("opera",    roaming / "Opera Software/Opera Stable"),
+            ("vivaldi",  local   / "Vivaldi/User Data"),
+        ]
+    elif sys.platform == "darwin":
+        lib = home / "Library/Application Support"
+        candidates = [
+            ("chrome",  lib / "Google/Chrome"),
+            ("brave",   lib / "BraveSoftware/Brave-Browser"),
+            ("edge",    lib / "Microsoft Edge"),
+            ("firefox", home / "Library/Application Support/Firefox/Profiles"),
+            ("safari",  home / "Library/Safari"),
+        ]
+    else:  # Linux
+        cfg = home / ".config"
+        candidates = [
+            ("chrome",    cfg / "google-chrome"),
+            ("chromium",  cfg / "chromium"),
+            ("brave",     cfg / "BraveSoftware/Brave-Browser"),
+            ("edge",      cfg / "microsoft-edge"),
+            ("firefox",   home / ".mozilla/firefox"),
+            ("opera",     cfg / "opera"),
+            ("vivaldi",   cfg / "vivaldi"),
+        ]
+    for name, path in candidates:
+        if path.exists():
+            return name
+    return ""
+
 
 def find_ytdlp() -> str:
     """Retorna o executável yt-dlp disponível ou '' se não encontrado."""
@@ -159,13 +236,24 @@ class Handler(BaseHTTPRequestHandler):
         if not _YTDLP_BIN:
             return self._json({"ok": False, "error": "yt-dlp não instalado"})
 
+        url = normalize_url(url)
+
+        # Facebook e Instagram exigem cookies de sessão; usa o browser detectado
+        cookie_args: list[str] = []
+        if _needs_cookies(url):
+            if _COOKIE_BROWSER:
+                cookie_args = ["--cookies-from-browser", _COOKIE_BROWSER]
+            else:
+                return self._json({"ok": False,
+                    "error": "Facebook e Instagram requerem que você esteja logado "
+                             "no browser. Nenhum browser foi detectado na sua máquina."})
+
         cmd = ytdlp_cmd(_YTDLP_BIN) + [
             "--flat-playlist", "--dump-single-json",
             "--no-warnings", "--ignore-errors",
             "--playlist-start", str(start),
             "--playlist-end",   str(start + count - 1),
-            url,
-        ]
+        ] + cookie_args + [url]
 
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -286,16 +374,20 @@ class Handler(BaseHTTPRequestHandler):
 
         for i, url in enumerate(urls):
             n = i + 1
+            url = normalize_url(url)
             emit({"type": "progress", "done": done, "total": total, "n": n,
                   "msg": f"Baixando vídeo {n} de {total}..."})
 
             out_tpl = str(DOWNLOAD_DIR / "%(title).80B.%(ext)s")
+            dl_cookie_args: list[str] = (
+                ["--cookies-from-browser", _COOKIE_BROWSER]
+                if _needs_cookies(url) and _COOKIE_BROWSER else []
+            )
             cmd = ytdlp_cmd(_YTDLP_BIN) + [
                 "--no-playlist", "--no-warnings", "--ignore-errors",
                 "--merge-output-format", "mp4",
                 "-o", out_tpl,
-                url,
-            ]
+            ] + dl_cookie_args + [url]
 
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -324,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    global _YTDLP_BIN, _YTDLP_VERSION
+    global _YTDLP_BIN, _YTDLP_VERSION, _COOKIE_BROWSER
     _YTDLP_BIN = find_ytdlp()
     if _YTDLP_BIN:
         try:
@@ -334,12 +426,14 @@ def main():
             ).stdout.strip()
         except Exception:
             _YTDLP_VERSION = ""
+    _COOKIE_BROWSER = detect_cookie_browser()
 
     print("=" * 60)
     print("  Video Downloader — Agente Local")
     print("=" * 60)
     print(f"  Porta:           {PORT}")
     print(f"  yt-dlp:          {'encontrado ✓  ' + _YTDLP_VERSION if _YTDLP_BIN else 'NÃO encontrado ✗'}")
+    print(f"  Browser cookies: {_COOKIE_BROWSER if _COOKIE_BROWSER else 'nenhum detectado'}")
     print(f"  Pasta downloads: {DOWNLOAD_DIR}")
     print()
 
