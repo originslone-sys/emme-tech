@@ -45,12 +45,16 @@ def ytdlp_cmd(base: str) -> list[str]:
 
 
 def parse_body(raw: bytes, content_type: str) -> dict:
-    """Parseia body como JSON ou application/x-www-form-urlencoded."""
-    if "application/json" in content_type:
+    """Parseia body como JSON ou application/x-www-form-urlencoded.
+    Tenta JSON primeiro se o body começar com '{' para lidar com
+    clientes que esquecem de setar o Content-Type corretamente."""
+    stripped = raw.lstrip()
+    if "application/json" in content_type or stripped.startswith(b"{"):
         try:
             return json.loads(raw)
         except Exception:
-            return {}
+            if "application/json" in content_type:
+                return {}  # era pra ser JSON mas falhou
 
     # URL-encoded
     decoded = raw.decode("utf-8", errors="replace")
