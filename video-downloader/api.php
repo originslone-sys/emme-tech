@@ -13,10 +13,16 @@ function json_out(array $data, int $code = 200): never {
 }
 
 function find_ytdlp(): string {
-    foreach (['yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'] as $bin) {
-        exec('which ' . escapeshellarg($bin) . ' 2>/dev/null', $out, $rc);
-        if ($rc === 0 && !empty($out[0])) return trim($out[0]);
-        $out = [];
+    $candidates = [
+        __DIR__ . '/bin/yt-dlp',   // binário local (instalado pelo setup.php)
+        'yt-dlp',                  // no PATH do sistema
+        '/usr/local/bin/yt-dlp',
+        '/usr/bin/yt-dlp',
+    ];
+    foreach ($candidates as $bin) {
+        $out = []; $rc = -1;
+        exec(escapeshellarg($bin) . ' --version 2>/dev/null', $out, $rc);
+        if ($rc === 0) return $bin;
     }
     return '';
 }
