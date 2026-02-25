@@ -66,16 +66,100 @@ function safe_url(string $url): bool {
     return true;
 }
 
+/**
+ * Obtém URL de stream via Cobalt API — fallback para servidores sem yt-dlp.
+ * Configuração opcional em bin/cobalt.json: {"url":"https://...","key":"..."}
+ */
+function cobalt_get_stream_url(string $video_url, string $quality = '720'): array {
+    $cfg_file = __DIR__ . '/bin/cobalt.json';
+    $cfg      = file_exists($cfg_file) ? (json_decode(file_get_contents($cfg_file), true) ?? []) : [];
+    $api_base = rtrim($cfg['url'] ?? 'https://api.cobalt.tools', '/');
+    $api_key  = $cfg['key'] ?? '';
+
+    $headers = ['Accept: application/json', 'Content-Type: application/json'];
+    if ($api_key !== '') $headers[] = 'Authorization: Api-Key ' . $api_key;
+
+    $ch = curl_init($api_base . '/');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_POSTFIELDS     => json_encode([
+            'url'               => $video_url,
+            'videoQuality'      => $quality,
+            'youtubeVideoCodec' => 'h264',
+            'filenameStyle'     => 'basic',
+            'downloadMode'      => 'auto',
+        ]),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $resp = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($cerr)         return ['ok' => false, 'error' => 'cURL: ' . $cerr];
+    if ($http === 401) return ['ok' => false, 'error' => 'cobalt_auth_required'];
+    if ($http !== 200) return ['ok' => false, 'error' => "Cobalt HTTP {$http}: " . substr($resp ?? '', 0, 150)];
+
+    $data   = json_decode($resp, true);
+    if (!$data) return ['ok' => false, 'error' => 'Resposta inválida da Cobalt API'];
+
+    $status = $data['status'] ?? '';
+    if ($status === 'error') return ['ok' => false, 'error' => $data['error']['code'] ?? 'cobalt_error'];
+    if (in_array($status, ['tunnel', 'redirect'], true) && !empty($data['url'])) {
+        return ['ok' => true, 'url' => $data['url'], 'status' => $status, 'filename' => $data['filename'] ?? null];
+    }
+    if ($status === 'picker') {
+        $items = $data['picker'] ?? [];
+        if (!empty($items[0]['url'])) {
+            return ['ok' => true, 'url' => $items[0]['url'], 'status' => 'picker', 'filename' => $items[0]['filename'] ?? null];
+        }
+    }
+    return ['ok' => false, 'error' => "Cobalt: status inesperado '{$status}'"];
+}
+
+/**
+ * Baixa uma URL remota diretamente para o disco via cURL (streaming — não carrega em memória).
+ */
+function curl_save_to_file(string $url, string $dest, int $timeout = 300): array {
+    $fp = @fopen($dest, 'wb');
+    if (!$fp) return ['ok' => false, 'error' => 'Não foi possível criar arquivo de destino'];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_FILE           => $fp,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 5,
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; VideoDownloader/1.0)',
+    ]);
+    curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $size = (int) curl_getinfo($ch, CURLINFO_SIZE_DOWNLOAD);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+    fclose($fp);
+
+    if ($cerr || $http < 200 || $http >= 300 || $size < 1000) {
+        @unlink($dest);
+        return ['ok' => false, 'error' => $cerr ?: "HTTP {$http}, {$size} bytes recebidos"];
+    }
+    return ['ok' => true, 'size' => $size];
+}
+
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // ── check: verifica yt-dlp ────────────────────────────────────────────────────
 if ($action === 'check') {
     $bin = find_ytdlp();
     if ($bin === '') {
-        json_out(['ok' => false, 'error' => 'yt-dlp não encontrado.']);
+        json_out(['ok' => false, 'error' => 'yt-dlp não encontrado.', 'cobalt_mode' => true]);
     }
     exec($bin . ' --version 2>/dev/null', $ver);
-    json_out(['ok' => true, 'path' => $bin, 'version' => trim($ver[0] ?? '')]);
+    json_out(['ok' => true, 'path' => $bin, 'version' => trim($ver[0] ?? ''), 'cobalt_mode' => false]);
 }
 
 // ── fetch_videos: lista vídeos de um perfil ───────────────────────────────────
@@ -87,7 +171,7 @@ if ($action === 'fetch_videos') {
     if (!safe_url($url)) json_out(['ok' => false, 'error' => 'URL inválida ou não permitida.']);
 
     $bin = find_ytdlp();
-    if ($bin === '') json_out(['ok' => false, 'error' => 'yt-dlp não encontrado no servidor. Instale com: pip install yt-dlp']);
+    if ($bin === '') json_out(['ok' => false, 'error' => 'A navegação de perfis requer yt-dlp, indisponível neste servidor. Use o modo de URL direta abaixo para baixar vídeos individuais via Cobalt API.']);
 
     $end = $start + $count - 1;
     $cmd = $bin
@@ -145,8 +229,8 @@ if ($action === 'download') {
     $urls = array_values(array_filter(array_map('trim', $raw_urls), 'safe_url'));
     if (empty($urls)) json_out(['ok' => false, 'error' => 'Nenhuma URL válida recebida.']);
 
-    $bin = find_ytdlp();
-    if ($bin === '') json_out(['ok' => false, 'error' => 'yt-dlp não encontrado.']);
+    $bin         = find_ytdlp();
+    $cobalt_mode = ($bin === ''); // usa Cobalt API quando yt-dlp não está disponível
 
     // Cria diretório do job
     $job_id  = date('Ymd_His') . '_' . bin2hex(random_bytes(4));
@@ -156,7 +240,7 @@ if ($action === 'download') {
     // SSE headers
     header('Content-Type: text/event-stream; charset=utf-8');
     header('Cache-Control: no-cache');
-    header('X-Accel-Buffering: no'); // desativa buffer do nginx
+    header('X-Accel-Buffering: no');
     set_time_limit(0);
     if (ob_get_level()) ob_end_flush();
 
@@ -169,35 +253,66 @@ if ($action === 'download') {
     $done   = 0;
     $failed = 0;
 
-    $emit(['type' => 'start', 'total' => $total, 'job' => $job_id]);
+    $emit(['type' => 'start', 'total' => $total, 'job' => $job_id,
+           'mode' => $cobalt_mode ? 'cobalt' : 'ytdlp']);
 
     foreach ($urls as $i => $url) {
         $n = $i + 1;
         $emit(['type' => 'progress', 'done' => $done, 'total' => $total, 'n' => $n,
                'msg' => "Baixando vídeo {$n} de {$total}..."]);
 
-        $out_tpl = $job_dir . '/%(title).80B.%(ext)s';
-        $cmd = $bin
-             . ' --no-playlist --no-warnings --ignore-errors'
-             . ' --merge-output-format mp4'
-             . ' -o ' . escapeshellarg($out_tpl)
-             . ' ' . escapeshellarg($url)
-             . ' 2>&1';
-
-        $output = [];
-        exec($cmd, $output, $rc);
-
-        if ($rc === 0) {
-            $done++;
-            $emit(['type' => 'done_one', 'done' => $done, 'total' => $total, 'n' => $n]);
-        } else {
-            $failed++;
-            $err_line = '';
-            foreach (array_reverse($output) as $line) {
-                if (str_contains($line, 'ERROR')) { $err_line = $line; break; }
+        if ($cobalt_mode) {
+            // ── Cobalt API ────────────────────────────────────────────────────
+            $cobalt = cobalt_get_stream_url($url);
+            if (!$cobalt['ok']) {
+                $failed++;
+                $err_msg = ($cobalt['error'] === 'cobalt_auth_required')
+                    ? 'Cobalt API requer chave de API. Configure em Setup → Cobalt API.'
+                    : 'Cobalt: ' . $cobalt['error'];
+                $emit(['type' => 'error', 'done' => $done, 'total' => $total, 'n' => $n,
+                       'msg' => "Falha no vídeo {$n}: {$err_msg}"]);
+                continue;
             }
-            $emit(['type' => 'error', 'done' => $done, 'total' => $total, 'n' => $n,
-                   'msg' => "Falha no vídeo {$n}" . ($err_line ? ": " . substr($err_line, 0, 120) : '.')]);
+
+            $raw_name = $cobalt['filename'] ?? ('video_' . $n . '.mp4');
+            $fname    = preg_replace('/[^\w.\-]/', '_', $raw_name);
+            if (!preg_match('/\.(mp4|webm|mov|mkv)$/i', $fname)) $fname .= '.mp4';
+            $dest = $job_dir . '/' . $fname;
+
+            $dl = curl_save_to_file($cobalt['url'], $dest);
+            if ($dl['ok']) {
+                $done++;
+                $emit(['type' => 'done_one', 'done' => $done, 'total' => $total, 'n' => $n]);
+            } else {
+                $failed++;
+                $emit(['type' => 'error', 'done' => $done, 'total' => $total, 'n' => $n,
+                       'msg' => "Falha no download do vídeo {$n}: " . $dl['error']]);
+            }
+        } else {
+            // ── yt-dlp ────────────────────────────────────────────────────────
+            $out_tpl = $job_dir . '/%(title).80B.%(ext)s';
+            $cmd = $bin
+                 . ' --no-playlist --no-warnings --ignore-errors'
+                 . ' --merge-output-format mp4'
+                 . ' -o ' . escapeshellarg($out_tpl)
+                 . ' ' . escapeshellarg($url)
+                 . ' 2>&1';
+
+            $output = [];
+            exec($cmd, $output, $rc);
+
+            if ($rc === 0) {
+                $done++;
+                $emit(['type' => 'done_one', 'done' => $done, 'total' => $total, 'n' => $n]);
+            } else {
+                $failed++;
+                $err_line = '';
+                foreach (array_reverse($output) as $line) {
+                    if (str_contains($line, 'ERROR')) { $err_line = $line; break; }
+                }
+                $emit(['type' => 'error', 'done' => $done, 'total' => $total, 'n' => $n,
+                       'msg' => "Falha no vídeo {$n}" . ($err_line ? ": " . substr($err_line, 0, 120) : '.')]);
+            }
         }
     }
 
@@ -212,7 +327,6 @@ if ($action === 'download') {
         }
         $zip->close();
 
-        // Remove pasta individual
         foreach (glob($job_dir . '/*') as $file) @unlink($file);
         @rmdir($job_dir);
 
