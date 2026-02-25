@@ -194,7 +194,8 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
     brightness      = random.uniform(-0.005, 0.005)  # eq: neutro=0, range -1..1
     contrast        = random.uniform(0.998, 1.002)   # eq: neutro=1.0
     saturation      = random.uniform(0.997, 1.003)   # eq: neutro=1.0
-    speed_factor    = random.uniform(0.995, 1.005)
+    speed_factor    = random.uniform(0.97, 1.03)   # ±3%: eficaz contra fingerprint temporal
+    pad_px          = random.randint(2, 8) * 2     # borda preta: 4-16px cada lado (sempre par)
 
     metadata_changes: List[str] = [
         f"title=Edited_{ts}",
@@ -209,7 +210,8 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         f"rotate={rotate_angle}*PI/180:fillcolor=black@1,"
         f"setpts={speed_factor}*PTS,"
         f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},"
-        f"noise=alls={grain_strength}:allf=t+u"
+        f"noise=alls={grain_strength}:allf=t+u,"
+        f"pad=iw+{pad_px * 2}:ih+{pad_px * 2}:{pad_px}:{pad_px}:color=black"
     )
     filtro_video = filtro_base + ("," + drawtext_filter if usar_drawtext else "")
 
@@ -226,12 +228,13 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         comando.extend(["-i", str(musica_escolhida)])
 
         if video_tem_audio:
-            audio_speed = random.uniform(0.998, 1.002)
+            # atempo=1/speed_factor mantém A/V em sync quando o vídeo é acelerado/desacelerado
+            audio_sync  = round(1.0 / speed_factor, 6)
             audio_pitch = random.uniform(0.999, 1.001)
             bg_vol = round(random.uniform(0.25, 0.40), 2)  # 25-40%: audível mas não dominante
             filter_complex = (
                 f"[0:v]{filtro_video}[vout];"
-                f"[0:a]atempo={audio_speed},asetrate=44100*{audio_pitch},volume=1.0[orig_a];"
+                f"[0:a]atempo={audio_sync},asetrate=44100*{audio_pitch},volume=1.0[orig_a];"
                 f"[1:a]volume={bg_vol}[bg_a];"
                 f"[orig_a][bg_a]amix=inputs=2:duration=first:weights=1 {bg_vol}[aout]"
             )
@@ -262,8 +265,8 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         print("-> Nenhuma música encontrada. Processando apenas vídeo e texto...")
         comando.extend(["-vf", filtro_video])
         if video_tem_audio:
-            audio_speed = random.uniform(0.998, 1.002)
-            comando.extend(["-af", f"atempo={audio_speed}"])
+            audio_sync = round(1.0 / speed_factor, 6)
+            comando.extend(["-af", f"atempo={audio_sync}"])
             comando.extend(["-c:a", "aac", "-b:a", "128k", "-ar", "44100"])
         comando.extend([
             "-c:v", "libx264",
