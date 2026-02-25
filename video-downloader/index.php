@@ -399,7 +399,7 @@ async function fetchVideos(url, start, fresh) {
     const endpoint = local.available
       ? local.url + '/fetch_videos'
       : 'api.php?action=fetch_videos';
-    const r = await fetch(endpoint, { method: 'POST', body: toBody(fd, local.available) });
+    const r = await fetch(endpoint, { method: 'POST', body: toBody(fd, local.available), headers: toHeaders(local.available) });
     const d = await r.json();
 
     if (!d.ok) {
