@@ -20,9 +20,14 @@
         <i class="fa-solid fa-film text-blue-400 text-xl"></i>
         <span class="font-bold text-lg tracking-tight">Video Downloader em Lote</span>
         <span class="text-xs text-gray-400 hidden sm:inline">TikTok · Instagram · Facebook · YouTube · e mais</span>
-        <a href="setup.php" class="ml-auto text-xs text-gray-400 hover:text-white transition flex items-center gap-1">
-            <i class="fa-solid fa-screwdriver-wrench"></i> Setup
-        </a>
+        <div class="ml-auto flex items-center gap-3">
+            <span id="localBadge" class="hidden text-xs bg-green-600 text-white px-2.5 py-1 rounded-full font-medium items-center gap-1.5">
+                <i class="fa-solid fa-circle text-green-300 text-[8px]"></i> Modo Local Ativo
+            </span>
+            <a href="setup.php" class="text-xs text-gray-400 hover:text-white transition flex items-center gap-1">
+                <i class="fa-solid fa-screwdriver-wrench"></i> Setup
+            </a>
+        </div>
     </div>
 </header>
 
@@ -33,9 +38,8 @@
         <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
         <div class="text-sm text-amber-800 flex-1">
             <strong>yt-dlp não disponível neste servidor.</strong>
-            A navegação de perfis está desativada. Use o <strong>Download por URL direta</strong> abaixo
-            — cole links individuais de vídeos para download via <strong>Cobalt API</strong>
-            (YouTube, TikTok, Instagram, Twitter/X, Facebook e mais).
+            Execute o <strong>Agente Local</strong> na sua máquina para habilitar todas as funções
+            (incluindo navegação de perfis), ou use <strong>URL direta</strong> abaixo via Cobalt API.
             <a href="setup.php" class="underline ml-1">Ver Setup →</a>
         </div>
     </div>
@@ -206,29 +210,56 @@ const state = {
   profileName: '',
 };
 
-// ── Checar yt-dlp ao carregar ─────────────────────────────────────────────────
-(async function checkYtDlp() {
+// Estado do agente local
+const local = {
+  available: false,
+  url: 'http://localhost:9999',
+  version: '',
+  downloadDir: '',
+};
+
+// ── Checar agente local + yt-dlp ao carregar ──────────────────────────────────
+(async function checkOnLoad() {
+  // 1. Tenta detectar o agente local (timeout curto para não travar)
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1200);
+    const r = await fetch(local.url + '/ping', { signal: ctrl.signal });
+    clearTimeout(timer);
+    const d = await r.json();
+    if (d.ok && d.ytdlp) {
+      local.available = true;
+      local.version = d.version || '';
+      local.downloadDir = d.download_dir || '';
+      // Mostra badge no header
+      const badge = document.getElementById('localBadge');
+      badge.classList.remove('hidden');
+      badge.classList.add('flex');
+      badge.title = `yt-dlp ${local.version} · Downloads: ${local.downloadDir}`;
+      return; // agente local disponível — não precisa checar servidor
+    }
+  } catch (_) { /* agente não encontrado — continua para checar servidor */ }
+
+  // 2. Agente local não disponível — verifica yt-dlp no servidor
   try {
     const r = await fetch('api.php?action=check');
     const d = await r.json();
     if (!d.ok) {
       document.getElementById('ytdlpWarn').classList.remove('hidden');
       if (d.cobalt_mode) {
-        // Mostra o card de URL direta e avisa no painel de busca
         document.getElementById('directUrlCard').classList.remove('hidden');
         document.getElementById('stateMsg').innerHTML =
           '<i class="fa-solid fa-link text-purple-400 text-4xl mb-3 opacity-50"></i>' +
-          '<p class="text-sm text-gray-500">Navegação de perfis indisponível (requer yt-dlp).<br>' +
-          'Use o <strong>Download por URL direta</strong> acima.</p>';
-        // Desativa o formulário de busca para evitar confusão
+          '<p class="text-sm text-gray-500">Navegação de perfis indisponível (requer yt-dlp ou Agente Local).<br>' +
+          'Use o <strong>Download por URL direta</strong> abaixo.</p>';
         document.getElementById('btnSearch').disabled = true;
         document.getElementById('btnSearch').classList.add('opacity-40', 'cursor-not-allowed');
         document.getElementById('profileUrl').disabled = true;
-        document.getElementById('profileUrl').placeholder = 'Navegação de perfis indisponível — use URL direta acima';
+        document.getElementById('profileUrl').placeholder = 'Navegação indisponível — use Agente Local ou URL direta acima';
         document.getElementById('profileUrl').classList.add('bg-gray-50', 'text-gray-400');
       }
     }
-  } catch (e) { /* ignora erros de rede no check */ }
+  } catch (_) {}
 })();
 
 // ── Formata segundos em mm:ss / hh:mm:ss ─────────────────────────────────────
@@ -365,7 +396,10 @@ async function fetchVideos(url, start, fresh) {
     fd.append('start', start);
     fd.append('count', 100);
 
-    const r = await fetch('api.php?action=fetch_videos', { method: 'POST', body: fd });
+    const endpoint = local.available
+      ? local.url + '/fetch_videos'
+      : 'api.php?action=fetch_videos';
+    const r = await fetch(endpoint, { method: 'POST', body: toBody(fd, local.available) });
     const d = await r.json();
 
     if (!d.ok) {
@@ -428,25 +462,41 @@ async function loadMore() {
   btn.innerHTML = '<i class="fa-solid fa-chevron-down mr-2"></i>Carregar mais 100 vídeos';
 }
 
+// ── Converte FormData para o formato adequado ao endpoint ─────────────────────
+// Para o agente local usamos JSON; para o PHP usamos FormData normal.
+function toBody(formData, isLocal) {
+  if (!isLocal) return formData;
+  const obj = {};
+  for (const [k, v] of formData.entries()) {
+    const key = k.endsWith('[]') ? k.slice(0, -2) : k;
+    if (k.endsWith('[]')) {
+      obj[key] = obj[key] || [];
+      obj[key].push(v);
+    } else {
+      obj[key] = v;
+    }
+  }
+  return JSON.stringify(obj);
+}
+
+function toHeaders(isLocal) {
+  return isLocal ? { 'Content-Type': 'application/json' } : {};
+}
+
 // ── Download com SSE ──────────────────────────────────────────────────────────
 function startDownload() {
   const urls = Array.from(state.selected);
   if (urls.length === 0) return;
 
-  // Mostra modal
   openModal(urls.length);
 
   const fd = new FormData();
   urls.forEach(u => fd.append('urls[]', u));
 
-  const evtSource = new EventSource('api.php?action=download&' + new URLSearchParams(
-    Object.fromEntries([...fd.entries()])
-  ).toString());
-
-  // Melhor: usa fetch + ReadableStream para POST com SSE
-  // EventSource só faz GET, então vamos via fetch + stream
-  evtSource.close();
-  fetchSSE('api.php?action=download', fd, urls.length);
+  const endpoint = local.available
+    ? local.url + '/download'
+    : 'api.php?action=download';
+  fetchSSE(endpoint, fd, urls.length);
 }
 
 // ── Download direto por URLs (modo Cobalt) ────────────────────────────────────
@@ -470,8 +520,13 @@ function startDirectDownload() {
 }
 
 async function fetchSSE(url, formData, total) {
+  const isLocal = url.startsWith('http://localhost') || url.startsWith('http://127.');
   try {
-    const resp = await fetch(url, { method: 'POST', body: formData });
+    const resp = await fetch(url, {
+      method: 'POST',
+      body: toBody(formData, isLocal),
+      headers: toHeaders(isLocal),
+    });
     if (!resp.ok) {
       setModalError('Erro HTTP ' + resp.status);
       return;
@@ -543,20 +598,42 @@ function handleSSEEvent(ev, total) {
       bar.style.width   = '95%';
       break;
 
-    case 'complete':
-      bar.style.width   = '100%';
+    case 'complete': {
+      bar.style.width = '100%';
       bar.classList.replace('bg-blue-500', 'bg-green-500');
       label.textContent = 'Concluído!';
       frac.textContent  = ev.done + ' / ' + ev.total;
-      msg.textContent   = ev.done + ' vídeo(s) baixado(s)' +
-        (ev.failed > 0 ? ` · ${ev.failed} falha(s)` : '') +
-        (ev.size_mb ? ` · ZIP: ${ev.size_mb} MB` : '');
-
       document.getElementById('modalIcon').className = 'fa-solid fa-circle-check text-green-500 text-2xl';
-      document.getElementById('modalSubtitle').textContent = 'Clique em "Baixar ZIP" para salvar os arquivos.';
-      document.getElementById('btnDownloadZip').href = 'api.php?action=zip&job=' + encodeURIComponent(ev.job);
-      document.getElementById('modalActions').classList.remove('hidden');
+      const failStr = ev.failed > 0 ? ` · ${ev.failed} falha(s)` : '';
+      const actions = document.getElementById('modalActions');
+
+      if (ev.download_dir) {
+        // Modo local: arquivos já estão na máquina do usuário — não há ZIP
+        msg.textContent = `${ev.done} vídeo(s) salvos localmente${failStr}`;
+        document.getElementById('modalSubtitle').textContent = 'Arquivos salvos em:';
+        actions.innerHTML = `
+          <div class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono text-gray-600 break-all">${escHtml(ev.download_dir)}</div>
+          <button onclick="closeModal()"
+                  class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2.5 px-4 rounded-lg font-semibold text-sm transition">
+            Fechar
+          </button>`;
+      } else {
+        // Modo servidor: ZIP para download
+        msg.textContent = `${ev.done} vídeo(s) baixado(s)${failStr}${ev.size_mb ? ` · ZIP: ${ev.size_mb} MB` : ''}`;
+        document.getElementById('modalSubtitle').textContent = 'Clique em "Baixar ZIP" para salvar os arquivos.';
+        actions.innerHTML = `
+          <a href="api.php?action=zip&job=${encodeURIComponent(ev.job)}" target="_blank"
+             class="flex-1 bg-green-600 hover:bg-green-700 text-white text-center py-2.5 px-4 rounded-lg font-semibold text-sm transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-file-zipper"></i> Baixar ZIP
+          </a>
+          <button onclick="closeModal()"
+                  class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2.5 px-4 rounded-lg font-semibold text-sm transition">
+            Fechar
+          </button>`;
+      }
+      actions.classList.remove('hidden');
       break;
+    }
 
     case 'failed':
       setModalError(ev.msg);
