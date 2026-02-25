@@ -12,17 +12,26 @@ function json_out(array $data, int $code = 200): never {
     exit;
 }
 
+/**
+ * Retorna o comando completo (já escapado) para invocar o yt-dlp.
+ * Tenta binário standalone local, python3 + script local,
+ * binários no PATH e módulo Python como último recurso.
+ */
 function find_ytdlp(): string {
+    $local = __DIR__ . '/bin/yt-dlp';
+    // Cada entrada: [comando para testar, prefixo a retornar]
     $candidates = [
-        __DIR__ . '/bin/yt-dlp',   // binário local (instalado pelo setup.php)
-        'yt-dlp',                  // no PATH do sistema
-        '/usr/local/bin/yt-dlp',
-        '/usr/bin/yt-dlp',
+        [escapeshellarg($local),                  escapeshellarg($local)],
+        ['python3 ' . escapeshellarg($local),     'python3 ' . escapeshellarg($local)],
+        ['yt-dlp',                                'yt-dlp'],
+        [escapeshellarg('/usr/local/bin/yt-dlp'), escapeshellarg('/usr/local/bin/yt-dlp')],
+        [escapeshellarg('/usr/bin/yt-dlp'),       escapeshellarg('/usr/bin/yt-dlp')],
+        ['python3 -m yt_dlp',                     'python3 -m yt_dlp'],
     ];
-    foreach ($candidates as $bin) {
+    foreach ($candidates as [$test, $cmd]) {
         $out = []; $rc = -1;
-        exec(escapeshellarg($bin) . ' --version 2>/dev/null', $out, $rc);
-        if ($rc === 0) return $bin;
+        exec($test . ' --version 2>/dev/null', $out, $rc);
+        if ($rc === 0) return $cmd;
     }
     return '';
 }
@@ -44,7 +53,7 @@ if ($action === 'check') {
     if ($bin === '') {
         json_out(['ok' => false, 'error' => 'yt-dlp não encontrado.']);
     }
-    exec(escapeshellarg($bin) . ' --version 2>/dev/null', $ver);
+    exec($bin . ' --version 2>/dev/null', $ver);
     json_out(['ok' => true, 'path' => $bin, 'version' => trim($ver[0] ?? '')]);
 }
 
@@ -60,7 +69,7 @@ if ($action === 'fetch_videos') {
     if ($bin === '') json_out(['ok' => false, 'error' => 'yt-dlp não encontrado no servidor. Instale com: pip install yt-dlp']);
 
     $end = $start + $count - 1;
-    $cmd = escapeshellarg($bin)
+    $cmd = $bin
          . ' --flat-playlist --dump-single-json'
          . ' --no-warnings --ignore-errors'
          . ' --playlist-start ' . (int)$start
@@ -147,7 +156,7 @@ if ($action === 'download') {
                'msg' => "Baixando vídeo {$n} de {$total}..."]);
 
         $out_tpl = $job_dir . '/%(title).80B.%(ext)s';
-        $cmd = escapeshellarg($bin)
+        $cmd = $bin
              . ' --no-playlist --no-warnings --ignore-errors'
              . ' --merge-output-format mp4'
              . ' -o ' . escapeshellarg($out_tpl)
