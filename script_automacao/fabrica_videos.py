@@ -228,15 +228,17 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         if video_tem_audio:
             audio_speed = random.uniform(0.998, 1.002)
             audio_pitch = random.uniform(0.999, 1.001)
+            bg_vol = round(random.uniform(0.25, 0.40), 2)  # 25-40%: audível mas não dominante
             filter_complex = (
                 f"[0:v]{filtro_video}[vout];"
                 f"[0:a]atempo={audio_speed},asetrate=44100*{audio_pitch},volume=1.0[orig_a];"
-                f"[1:a]volume=0.1[bg_a];"
-                f"[orig_a][bg_a]amix=inputs=2:duration=first:weights=1 0.1[aout]"
+                f"[1:a]volume={bg_vol}[bg_a];"
+                f"[orig_a][bg_a]amix=inputs=2:duration=first:weights=1 {bg_vol}[aout]"
             )
             comando.extend(["-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]"])
         else:
-            filter_complex = f"[0:v]{filtro_video}[vout];[1:a]volume=0.1,atempo=1.0[aout]"
+            bg_vol = round(random.uniform(0.25, 0.40), 2)  # 25-40%: audível sem audio original
+            filter_complex = f"[0:v]{filtro_video}[vout];[1:a]volume={bg_vol},atempo=1.0[aout]"
             comando.extend(["-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]", "-shortest"])
 
         video_bitrate = random.choice(["1500k", "1800k", "2000k", "2200k", "2500k"])
