@@ -25,7 +25,7 @@ DOWNLOAD_DIR = Path.home() / "Downloads" / "VideoDownloader"
 # Populados em main() para evitar subprocess no hot path das requests
 _YTDLP_BIN: str = ""
 _YTDLP_VERSION: str = ""
-_COOKIE_BROWSER: str = ""  # primeiro browser instalado detectado em main()
+_COOKIE_BROWSERS: list[str] = []  # browsers detectados em main(), em ordem de preferência
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -66,17 +66,22 @@ def _needs_cookies(url: str) -> bool:
     return any(h in host for h in ("facebook.com", "fb.com", "instagram.com"))
 
 
-def detect_cookie_browser() -> str:
-    """Detecta o primeiro browser instalado verificando diretórios de perfil."""
+def detect_cookie_browsers() -> list[str]:
+    """Retorna todos os browsers instalados em ordem de preferência para cookies.
+
+    No Windows o Firefox vem primeiro: Chrome 127+ usa App-Bound Encryption
+    que impede leitura externa dos cookies mesmo com o browser fechado.
+    """
     home = Path.home()
     if sys.platform == "win32":
         local   = Path(os.environ.get("LOCALAPPDATA", str(home)))
         roaming = Path(os.environ.get("APPDATA",      str(home)))
         candidates = [
+            # Firefox primeiro no Windows — não tem App-Bound Encryption
+            ("firefox",  roaming / "Mozilla/Firefox/Profiles"),
             ("chrome",   local   / "Google/Chrome/User Data"),
             ("edge",     local   / "Microsoft/Edge/User Data"),
             ("brave",    local   / "BraveSoftware/Brave-Browser/User Data"),
-            ("firefox",  roaming / "Mozilla/Firefox/Profiles"),
             ("opera",    roaming / "Opera Software/Opera Stable"),
             ("vivaldi",  local   / "Vivaldi/User Data"),
         ]
@@ -100,10 +105,7 @@ def detect_cookie_browser() -> str:
             ("opera",     cfg / "opera"),
             ("vivaldi",   cfg / "vivaldi"),
         ]
-    for name, path in candidates:
-        if path.exists():
-            return name
-    return ""
+    return [name for name, path in candidates if path.exists()]
 
 
 def find_ytdlp() -> str:
@@ -238,32 +240,37 @@ class Handler(BaseHTTPRequestHandler):
 
         url = normalize_url(url)
 
-        # Facebook e Instagram exigem cookies de sessão; usa o browser detectado
-        cookie_args: list[str] = []
-        if _needs_cookies(url):
-            if _COOKIE_BROWSER:
-                cookie_args = ["--cookies-from-browser", _COOKIE_BROWSER]
-            else:
-                return self._json({"ok": False,
-                    "error": "Facebook e Instagram requerem que você esteja logado "
-                             "no browser. Nenhum browser foi detectado na sua máquina."})
+        # Facebook e Instagram exigem cookies de sessão.
+        # Tenta cada browser detectado em sequência até um funcionar.
+        browsers_to_try: list[str | None] = (
+            _COOKIE_BROWSERS if _needs_cookies(url) else [None]
+        )
+        if _needs_cookies(url) and not _COOKIE_BROWSERS:
+            return self._json({"ok": False,
+                "error": "Facebook e Instagram requerem que você esteja logado "
+                         "no browser. Nenhum browser foi detectado na sua máquina."})
 
-        cmd = ytdlp_cmd(_YTDLP_BIN) + [
+        r = None
+        last_stderr = ""
+        base_cmd = ytdlp_cmd(_YTDLP_BIN) + [
             "--flat-playlist", "--dump-single-json",
             "--no-warnings", "--ignore-errors",
             "--playlist-start", str(start),
             "--playlist-end",   str(start + count - 1),
-        ] + cookie_args + [url]
+        ]
+        for browser in browsers_to_try:
+            cookie_args = ["--cookies-from-browser", browser] if browser else []
+            try:
+                r = subprocess.run(base_cmd + cookie_args + [url],
+                                   capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                return self._json({"ok": False, "error": "Timeout ao buscar vídeos (>2 min)"})
+            last_stderr = (r.stderr or "").strip()
+            if r.stdout.strip():
+                break  # sucesso — sai do loop
 
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        except subprocess.TimeoutExpired:
-            return self._json({"ok": False, "error": "Timeout ao buscar vídeos (>2 min)"})
-
-        if not r.stdout.strip():
-            # Inclui stderr para ajudar a diagnosticar a causa real
-            stderr_hint = (r.stderr or "").strip()
-            detail = f" Detalhe: {stderr_hint[:400]}" if stderr_hint else ""
+        if not r or not r.stdout.strip():
+            detail = f" Detalhe: {last_stderr[:400]}" if last_stderr else ""
             return self._json({"ok": False,
                                "error": f"Nenhum resultado. Verifique se a URL é válida e pública.{detail}"})
 
@@ -379,9 +386,13 @@ class Handler(BaseHTTPRequestHandler):
                   "msg": f"Baixando vídeo {n} de {total}..."})
 
             out_tpl = str(DOWNLOAD_DIR / "%(title).80B.%(ext)s")
+            # Escolhe o primeiro browser que funcionar (fallback automático)
+            dl_browsers: list[str | None] = (
+                _COOKIE_BROWSERS if _needs_cookies(url) and _COOKIE_BROWSERS else [None]
+            )
+            dl_browser = dl_browsers[0] if dl_browsers else None
             dl_cookie_args: list[str] = (
-                ["--cookies-from-browser", _COOKIE_BROWSER]
-                if _needs_cookies(url) and _COOKIE_BROWSER else []
+                ["--cookies-from-browser", dl_browser] if dl_browser else []
             )
             cmd = ytdlp_cmd(_YTDLP_BIN) + [
                 "--no-playlist", "--no-warnings", "--ignore-errors",
@@ -416,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    global _YTDLP_BIN, _YTDLP_VERSION, _COOKIE_BROWSER
+    global _YTDLP_BIN, _YTDLP_VERSION, _COOKIE_BROWSERS
     _YTDLP_BIN = find_ytdlp()
     if _YTDLP_BIN:
         try:
@@ -426,14 +437,14 @@ def main():
             ).stdout.strip()
         except Exception:
             _YTDLP_VERSION = ""
-    _COOKIE_BROWSER = detect_cookie_browser()
+    _COOKIE_BROWSERS = detect_cookie_browsers()
 
     print("=" * 60)
     print("  Video Downloader — Agente Local")
     print("=" * 60)
     print(f"  Porta:           {PORT}")
     print(f"  yt-dlp:          {'encontrado ✓  ' + _YTDLP_VERSION if _YTDLP_BIN else 'NÃO encontrado ✗'}")
-    print(f"  Browser cookies: {_COOKIE_BROWSER if _COOKIE_BROWSER else 'nenhum detectado'}")
+    print(f"  Browser cookies: {', '.join(_COOKIE_BROWSERS) if _COOKIE_BROWSERS else 'nenhum detectado'}")
     print(f"  Pasta downloads: {DOWNLOAD_DIR}")
     print()
 
