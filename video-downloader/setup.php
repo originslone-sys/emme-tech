@@ -230,25 +230,34 @@ $checks[] = [
 ];
 
 // 5. yt-dlp já instalado (local ou sistema) — usa safe_exec, nunca lança fatal
-$ytdlp_bin = '';
+$ytdlp_cmd = '';   // comando completo pronto para uso (ex: "python3 '/path/bin/yt-dlp'")
+$ytdlp_bin = '';   // descrição legível
 if ($exec_ok) {
-    foreach ([$BIN_PATH, 'yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'] as $b) {
+    $candidates = [
+        [escapeshellarg($BIN_PATH),                 $BIN_PATH],
+        ['python3 ' . escapeshellarg($BIN_PATH),    'python3 ' . $BIN_PATH],
+        ['yt-dlp',                                  'yt-dlp (PATH)'],
+        [escapeshellarg('/usr/local/bin/yt-dlp'),   '/usr/local/bin/yt-dlp'],
+        [escapeshellarg('/usr/bin/yt-dlp'),         '/usr/bin/yt-dlp'],
+        ['python3 -m yt_dlp',                       'python3 -m yt_dlp'],
+    ];
+    foreach ($candidates as [$cmd, $label]) {
         $o = []; $rc = -1;
-        safe_exec(escapeshellarg($b) . ' --version 2>/dev/null', $o, $rc);
-        if ($rc === 0) { $ytdlp_bin = $b; break; }
+        safe_exec($cmd . ' --version 2>/dev/null', $o, $rc);
+        if ($rc === 0) { $ytdlp_cmd = $cmd; $ytdlp_bin = $label; break; }
     }
 }
-$ytdlp_ok      = $ytdlp_bin !== '';
+$ytdlp_ok      = $ytdlp_cmd !== '';
 $ytdlp_version = '';
 if ($ytdlp_ok) {
-    $ov = []; safe_exec(escapeshellarg($ytdlp_bin) . ' --version 2>/dev/null', $ov);
+    $ov = []; safe_exec($ytdlp_cmd . ' --version 2>/dev/null', $ov);
     $ytdlp_version = trim($ov[0] ?? '');
 }
 $checks[] = [
     'label' => 'yt-dlp encontrado',
     'ok'    => $ytdlp_ok,
     'desc'  => $ytdlp_ok
-        ? "Encontrado em: {$ytdlp_bin}" . ($ytdlp_version ? " (v{$ytdlp_version})" : '')
+        ? "Comando: {$ytdlp_bin}" . ($ytdlp_version ? " (v{$ytdlp_version})" : '')
         : ($exec_ok
             ? 'yt-dlp não encontrado. Use o botão abaixo para instalar automaticamente.'
             : 'Não foi possível verificar (exec() desabilitado).'),
@@ -350,8 +359,13 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
         <span class="text-gray-500">bin/yt-dlp existe:</span>
         <span class="text-gray-800">sim (<?= number_format($bin_size / 1024 / 1024, 1) ?> MB)</span>
 
+        <?php
+        $is_script = substr($bin_magic, 0, 4) === '2321'; // #!
+        $file_type = $is_elf ? 'ELF binário compilado' : ($is_script ? 'Script (#! shebang) — precisa de python3' : 'inválido (magic: ' . $bin_magic . ')');
+        $type_class = $is_elf ? 'text-green-600' : ($is_script ? 'text-yellow-600' : 'text-red-600');
+        ?>
         <span class="text-gray-500">Tipo do arquivo:</span>
-        <span class="<?= $is_elf ? 'text-green-600' : 'text-red-600' ?>"><?= $is_elf ? 'ELF binário válido' : 'inválido (magic: ' . $bin_magic . ')' ?></span>
+        <span class="<?= $type_class ?>"><?= $file_type ?></span>
         <?php endif; ?>
 
         <?php if ($bin_error): ?>
@@ -360,7 +374,32 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
         <?php endif; ?>
     </div>
 
-    <?php if ($bin_exists && $is_elf && !$ytdlp_ok && str_contains($bin_error, 'ermission')): ?>
+    <?php
+    // Detecta se o arquivo é script Python (#!)
+    $bin_is_script = $bin_exists && substr($bin_magic, 0, 4) === '2321';
+    // Testa se python3 consegue rodar o script
+    $py3_runs_script = false;
+    if ($bin_is_script && $exec_ok) {
+        $pyo = []; $pyrc = -1;
+        safe_exec('python3 ' . escapeshellarg($BIN_PATH) . ' --version 2>/dev/null', $pyo, $pyrc);
+        $py3_runs_script = $pyrc === 0;
+    }
+    ?>
+    <?php if ($bin_is_script && $py3_runs_script): ?>
+    <div class="bg-green-50 border border-green-300 rounded p-3 text-xs text-green-800">
+        <strong>Funciona com python3!</strong>
+        O arquivo baixado é um script Python (não um binário compilado).
+        O servidor tem python3 instalado e consegue executá-lo.
+        <strong>Recarregue a página</strong> — o check de "yt-dlp encontrado" acima deve ficar verde agora.
+    </div>
+    <?php elseif ($bin_is_script && !$py3_runs_script): ?>
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs text-yellow-800">
+        <strong>Arquivo é um script Python, mas python3 não está disponível no PATH.</strong>
+        O binário compilado (ELF) não foi baixado corretamente.
+        Tente deletar <code>bin/yt-dlp</code> e clicar em "Instalar agora" novamente,
+        ou instale via SSH usando o comando cURL abaixo.
+    </div>
+    <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok && str_contains($bin_error, 'ermission')): ?>
     <div class="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-800">
         <strong>noexec detectado:</strong> O diretório está montado sem permissão de execução.
         Tente mover o binário para <code>/tmp</code> via SSH:
@@ -369,8 +408,7 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
     <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok): ?>
     <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
         <strong>Binário ELF presente mas não executa.</strong>
-        Provável causa: arquitetura incompatível. Seu servidor é <strong><?= htmlspecialchars($arch) ?></strong>
-        mas o binário baixado pode ser para outra arquitetura.
+        Provável causa: arquitetura incompatível. Seu servidor é <strong><?= htmlspecialchars($arch) ?></strong>.
         Tente instalar via pip (abaixo) ou use o SSH.
     </div>
     <?php endif; ?>
