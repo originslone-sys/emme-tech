@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse, unquote_plus, urlencode, urlunparse
@@ -36,6 +37,7 @@ _COOKIE_BROWSERS: list[str] = []  # browsers detectados em main(), em ordem de p
 _TRACKING_PARAMS = frozenset({
     "igsh", "igshid", "hl",                          # Instagram
     "fbclid", "mibextid", "__cft__", "__tn__",       # Facebook
+    "rdid", "share_url",                              # Facebook share redirect
     "_rdc", "_rdr",
     "utm_source", "utm_medium", "utm_campaign",      # UTM genérico
     "utm_term", "utm_content",
@@ -58,6 +60,37 @@ def normalize_url(url: str) -> str:
     except Exception:
         pass
     return url
+
+
+def _resolve_facebook_share(url: str) -> str:
+    """Resolve facebook.com/share/... seguindo o redirect HTTP para obter
+    a URL real do conteúdo, depois limpa parâmetros de rastreamento."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if "facebook.com" not in host and "fb.com" not in host:
+        return url
+    if not parsed.path.startswith("/share"):
+        return url
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) "
+                "Gecko/20100101 Firefox/124.0"
+            ),
+            "Accept-Language": "pt-BR,pt;q=0.9",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            final = resp.url
+        # Redirecionar para login significa conteúdo privado — retorna original
+        if "/login" in final or "login.php" in final:
+            print(f"[resolve] Redireciona para login — conteúdo privado: {url}")
+            return url
+        resolved = normalize_url(final)
+        print(f"[resolve] {url}\n       → {resolved}")
+        return resolved
+    except Exception as exc:
+        print(f"[resolve] Erro ao seguir redirect de {url}: {exc}")
+        return url
 
 
 def _needs_cookies(url: str) -> bool:
@@ -239,6 +272,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "yt-dlp não instalado"})
 
         url = normalize_url(url)
+        url = _resolve_facebook_share(url)
 
         # Facebook e Instagram exigem cookies de sessão.
         # Tenta cada browser detectado em sequência até um funcionar.
