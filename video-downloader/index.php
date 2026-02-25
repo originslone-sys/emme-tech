@@ -220,10 +220,10 @@ const local = {
 
 // ── Checar agente local + yt-dlp ao carregar ──────────────────────────────────
 (async function checkOnLoad() {
-  // 1. Tenta detectar o agente local (timeout curto para não travar)
+  // 1. Tenta detectar o agente local (4s — suficiente para cold-start no Windows)
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1200);
+    const timer = setTimeout(() => ctrl.abort(), 4000);
     const r = await fetch(local.url + '/ping', { signal: ctrl.signal });
     clearTimeout(timer);
     const d = await r.json();

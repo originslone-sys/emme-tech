@@ -22,6 +22,10 @@ from urllib.parse import parse_qs, urlparse, unquote_plus
 PORT = 9999
 DOWNLOAD_DIR = Path.home() / "Downloads" / "VideoDownloader"
 
+# Populados em main() para evitar subprocess no hot path das requests
+_YTDLP_BIN: str = ""
+_YTDLP_VERSION: str = ""
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -119,17 +123,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/ping":
-            ytdlp = find_ytdlp()
-            version = ""
-            if ytdlp:
-                r = subprocess.run(ytdlp_cmd(ytdlp) + ["--version"],
-                                   capture_output=True, text=True, timeout=5)
-                version = r.stdout.strip()
+            # Usa valores cacheados em main() — sem subprocess no hot path
             self._json({
                 "ok": True,
                 "mode": "local",
-                "ytdlp": bool(ytdlp),
-                "version": version,
+                "ytdlp": bool(_YTDLP_BIN),
+                "version": _YTDLP_VERSION,
                 "download_dir": str(DOWNLOAD_DIR),
             })
         else:
@@ -157,11 +156,10 @@ class Handler(BaseHTTPRequestHandler):
         if not url:
             return self._json({"ok": False, "error": "URL não informada"})
 
-        ytdlp = find_ytdlp()
-        if not ytdlp:
+        if not _YTDLP_BIN:
             return self._json({"ok": False, "error": "yt-dlp não instalado"})
 
-        cmd = ytdlp_cmd(ytdlp) + [
+        cmd = ytdlp_cmd(_YTDLP_BIN) + [
             "--flat-playlist", "--dump-single-json",
             "--no-warnings", "--ignore-errors",
             "--playlist-start", str(start),
@@ -175,8 +173,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "Timeout ao buscar vídeos (>2 min)"})
 
         if not r.stdout.strip():
+            # Inclui stderr para ajudar a diagnosticar a causa real
+            stderr_hint = (r.stderr or "").strip()
+            detail = f" Detalhe: {stderr_hint[:400]}" if stderr_hint else ""
             return self._json({"ok": False,
-                               "error": "Nenhum resultado. Verifique se a URL é válida e pública."})
+                               "error": f"Nenhum resultado. Verifique se a URL é válida e pública.{detail}"})
 
         # yt-dlp pode retornar um JSON por linha (vários vídeos sem wrapper de playlist)
         # ou um único JSON de playlist, ou null. Tenta parsear todos os casos.
@@ -255,8 +256,7 @@ class Handler(BaseHTTPRequestHandler):
         if not urls:
             return self._json({"ok": False, "error": "Nenhuma URL válida recebida"})
 
-        ytdlp = find_ytdlp()
-        if not ytdlp:
+        if not _YTDLP_BIN:
             return self._json({"ok": False, "error": "yt-dlp não instalado"})
 
         DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -290,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
                   "msg": f"Baixando vídeo {n} de {total}..."})
 
             out_tpl = str(DOWNLOAD_DIR / "%(title).80B.%(ext)s")
-            cmd = ytdlp_cmd(ytdlp) + [
+            cmd = ytdlp_cmd(_YTDLP_BIN) + [
                 "--no-playlist", "--no-warnings", "--ignore-errors",
                 "--merge-output-format", "mp4",
                 "-o", out_tpl,
@@ -324,17 +324,26 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    ytdlp = find_ytdlp()
+    global _YTDLP_BIN, _YTDLP_VERSION
+    _YTDLP_BIN = find_ytdlp()
+    if _YTDLP_BIN:
+        try:
+            _YTDLP_VERSION = subprocess.run(
+                ytdlp_cmd(_YTDLP_BIN) + ["--version"],
+                capture_output=True, text=True, timeout=10
+            ).stdout.strip()
+        except Exception:
+            _YTDLP_VERSION = ""
 
     print("=" * 60)
     print("  Video Downloader — Agente Local")
     print("=" * 60)
     print(f"  Porta:           {PORT}")
-    print(f"  yt-dlp:          {'encontrado ✓  ' + subprocess.run(ytdlp_cmd(ytdlp) + ['--version'], capture_output=True, text=True).stdout.strip() if ytdlp else 'NÃO encontrado ✗'}")
+    print(f"  yt-dlp:          {'encontrado ✓  ' + _YTDLP_VERSION if _YTDLP_BIN else 'NÃO encontrado ✗'}")
     print(f"  Pasta downloads: {DOWNLOAD_DIR}")
     print()
 
-    if not ytdlp:
+    if not _YTDLP_BIN:
         print("ERRO: yt-dlp não encontrado. Instale com:")
         print("  pip install yt-dlp          (Mac / Linux / Windows)")
         print("  pipx install yt-dlp         (alternativa)")
