@@ -49,6 +49,8 @@ function safe_exec(string $cmd, array &$output = [], int &$rc = -1): bool {
 
 $BIN_DIR  = __DIR__ . '/bin';
 $BIN_PATH = $BIN_DIR . '/yt-dlp';
+// Path único em /tmp por app (tmpfs, sem restrição de mmap)
+$TMP_BIN  = '/tmp/ytdlp_' . substr(md5(__DIR__), 0, 8);
 
 // ── Helpers de diagnóstico ────────────────────────────────────────────────────
 
@@ -271,17 +273,34 @@ $checks[] = [
 ];
 
 // 5. yt-dlp já instalado (local ou sistema) — usa safe_exec, nunca lança fatal
-$ytdlp_cmd = '';   // comando completo pronto para uso (ex: "python3 '/path/bin/yt-dlp'")
+$ytdlp_cmd = '';   // comando completo pronto para uso
 $ytdlp_bin = '';   // descrição legível
 if ($exec_ok) {
+    // Copia ELF para /tmp se necessário — /tmp é tmpfs sem restrição de mmap
+    if (file_exists($BIN_PATH) && substr(bin2hex(substr((string)file_get_contents($BIN_PATH, false, null, 0, 4), 0, 4)), 0, 8) === '7f454c46') {
+        if (!file_exists($TMP_BIN) || filesize($TMP_BIN) !== filesize($BIN_PATH)) {
+            @copy($BIN_PATH, $TMP_BIN);
+            @chmod($TMP_BIN, 0755);
+        }
+    }
+    // Python3 em vários caminhos possíveis
+    $py_paths = [
+        'python3', '/usr/bin/python3', '/usr/local/bin/python3',
+        '/usr/bin/python3.12', '/usr/bin/python3.11', '/usr/bin/python3.10', '/usr/bin/python3.9',
+    ];
     $candidates = [
         [escapeshellarg($BIN_PATH),                 $BIN_PATH],
-        ['python3 ' . escapeshellarg($BIN_PATH),    'python3 ' . $BIN_PATH],
-        ['yt-dlp',                                  'yt-dlp (PATH)'],
-        [escapeshellarg('/usr/local/bin/yt-dlp'),   '/usr/local/bin/yt-dlp'],
-        [escapeshellarg('/usr/bin/yt-dlp'),         '/usr/bin/yt-dlp'],
-        ['python3 -m yt_dlp',                       'python3 -m yt_dlp'],
+        [escapeshellarg($TMP_BIN),                  $TMP_BIN . ' (via /tmp)'],
     ];
+    foreach ($py_paths as $py) {
+        $candidates[] = [escapeshellarg($py) . ' ' . escapeshellarg($BIN_PATH), "{$py} bin/yt-dlp"];
+    }
+    $candidates[] = ['yt-dlp',                                 'yt-dlp (PATH)'];
+    $candidates[] = [escapeshellarg('/usr/local/bin/yt-dlp'),  '/usr/local/bin/yt-dlp'];
+    $candidates[] = [escapeshellarg('/usr/bin/yt-dlp'),        '/usr/bin/yt-dlp'];
+    foreach ($py_paths as $py) {
+        $candidates[] = [escapeshellarg($py) . ' -m yt_dlp', "{$py} -m yt_dlp"];
+    }
     foreach ($candidates as [$cmd, $label]) {
         $o = []; $rc = -1;
         safe_exec($cmd . ' --version 2>/dev/null', $o, $rc);
@@ -416,28 +435,49 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
     </div>
 
     <?php
-    // Detecta se o arquivo é script Python (#!)
-    $bin_is_script = $bin_exists && substr($bin_magic, 0, 4) === '2321';
-    // Testa se python3 consegue rodar o script
-    $py3_runs_script = false;
-    if ($bin_is_script && $exec_ok) {
-        $pyo = []; $pyrc = -1;
-        safe_exec('python3 ' . escapeshellarg($BIN_PATH) . ' --version 2>/dev/null', $pyo, $pyrc);
-        $py3_runs_script = $pyrc === 0;
+    // ── Classifica o arquivo e o tipo de falha ─────────────────────────────────
+    $bin_is_script = $bin_exists && substr($bin_magic, 0, 4) === '2321'; // #!
+
+    // Tipo específico de erro ELF
+    $is_mmap_err = $bin_exists && $is_elf && !$ytdlp_ok &&
+        (str_contains($bin_error, 'failed to map segment') || str_contains($bin_error, 'mmap'));
+    $is_noexec   = $bin_exists && $is_elf && !$ytdlp_ok &&
+        str_contains($bin_error, 'ermission') && !$is_mmap_err;
+
+    // Resultado de /tmp (já testado no ytdlp_ok check acima via candidatos)
+    $tmp_via_ok = str_contains($ytdlp_bin ?? '', 'via /tmp');
+
+    // Encontrou python3 em algum caminho?
+    $found_py3 = '';
+    if ($exec_ok) {
+        foreach (['python3','/usr/bin/python3','/usr/local/bin/python3',
+                  '/usr/bin/python3.12','/usr/bin/python3.11','/usr/bin/python3.10','/usr/bin/python3.9'] as $py) {
+            $pyo = []; $pyrc = -1;
+            safe_exec(escapeshellarg($py) . ' --version 2>/dev/null', $pyo, $pyrc);
+            if ($pyrc === 0) { $found_py3 = $py; break; }
+        }
     }
+    $py3_runs_script = $bin_is_script && $found_py3 !== '';
+
+    // pip3 disponível?
+    $pip3o = []; $pip3rc = -1;
+    safe_exec('pip3 --version 2>/dev/null', $pip3o, $pip3rc);
+    $has_pip3 = $pip3rc === 0;
     ?>
-    <?php if ($bin_is_script && $py3_runs_script): ?>
+
+    <?php if ($ytdlp_ok && $tmp_via_ok): ?>
+    <!-- yt-dlp funcionando via /tmp — sucesso silencioso, checklist já mostra verde -->
+
+    <?php elseif ($bin_is_script && $py3_runs_script): ?>
     <div class="bg-green-50 border border-green-300 rounded p-3 text-xs text-green-800">
-        <strong>Funciona com python3!</strong>
-        O arquivo baixado é um script Python (não um binário compilado).
-        O servidor tem python3 instalado e consegue executá-lo.
-        <strong>Recarregue a página</strong> — o check de "yt-dlp encontrado" acima deve ficar verde agora.
+        <strong>Funciona com <?= htmlspecialchars($found_py3) ?>!</strong>
+        Recarregue a página — o check de "yt-dlp encontrado" vai ficar verde.
     </div>
+
     <?php elseif ($bin_is_script && !$py3_runs_script): ?>
     <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs text-yellow-800 space-y-2">
         <p><strong>Arquivo incorreto:</strong> foi baixado o Python zipapp (~3 MB) em vez do binário ELF compilado (~15 MB).
         O servidor não tem python3, então esse arquivo não funciona.</p>
-        <p>Clique no botão abaixo para deletar o arquivo errado e baixar o binário correto (<code>yt-dlp_linux</code>).</p>
         <form method="post">
             <input type="hidden" name="action" value="delete_bin">
             <button type="submit"
@@ -446,40 +486,73 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
             </button>
         </form>
     </div>
-    <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok && str_contains($bin_error, 'ermission')): ?>
-    <div class="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-800">
-        <strong>noexec detectado:</strong> O diretório está montado sem permissão de execução.
-        Tente mover o binário para <code>/tmp</code> via SSH:
-        <code class="block mt-1 bg-orange-100 p-1 rounded">cp bin/yt-dlp /tmp/yt-dlp && chmod +x /tmp/yt-dlp && /tmp/yt-dlp --version</code>
-    </div>
-    <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok): ?>
-    <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
-        <strong>Binário ELF presente mas não executa.</strong>
-        Provável causa: arquitetura incompatível. Seu servidor é <strong><?= htmlspecialchars($arch) ?></strong>.
-        Tente instalar via pip (abaixo) ou use o SSH.
-    </div>
-    <?php endif; ?>
 
-    <?php if ($exec_ok && $arch): ?>
-    <!-- Tentativa via Python/pip -->
-    <?php
-    $py3 = []; safe_exec('python3 --version 2>&1', $py3, $pyrc);
-    $pip3 = []; safe_exec('pip3 --version 2>&1', $pip3, $piprc);
-    $has_py3  = $pyrc  === 0;
-    $has_pip3 = $piprc === 0;
-    if ($has_py3 || $has_pip3): ?>
-    <div class="border-t pt-3 mt-2">
-        <p class="text-xs text-gray-500 mb-1">Python detectado no servidor:</p>
-        <?php if ($has_py3): ?><p class="text-xs font-mono text-gray-700">python3: <?= htmlspecialchars(trim($py3[0] ?? '')) ?></p><?php endif; ?>
-        <?php if ($has_pip3): ?><p class="text-xs font-mono text-gray-700">pip3: <?= htmlspecialchars(trim($pip3[0] ?? '')) ?></p><?php endif; ?>
-        <form method="POST" class="mt-2">
-            <input type="hidden" name="action" value="install_pip">
-            <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded text-xs font-semibold transition">
-                <i class="fa-solid fa-python mr-1"></i> Instalar via pip3 install yt-dlp
+    <?php elseif ($is_mmap_err): ?>
+    <div class="bg-red-50 border border-red-300 rounded p-4 text-xs text-red-900 space-y-3">
+        <p><strong>Restrição de mmap:</strong> o Hostinger monta <code>/home</code> sem permissão de mapeamento de
+        bibliotecas compartilhadas. O binário é ELF válido mas o sistema operacional bloqueia o linker dinâmico.</p>
+        <?php if ($ytdlp_ok): ?>
+        <p class="text-green-700 font-semibold">Solução automática funcionou via /tmp — o yt-dlp está operacional.</p>
+        <?php else: ?>
+        <p>O binário foi copiado para <code><?= htmlspecialchars($TMP_BIN) ?></code> mas ainda falhou.
+        Isso indica que <code>/tmp</code> também tem restrição, ou que o arquivo ficou corrompido.</p>
+        <div class="flex flex-wrap gap-2">
+            <form method="post" class="inline">
+                <input type="hidden" name="action" value="delete_bin">
+                <button type="submit"
+                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-trash-can"></i> Deletar e baixar novamente
+                </button>
+            </form>
+            <?php if ($found_py3 || $has_pip3): ?>
+            <form method="post" class="inline">
+                <input type="hidden" name="action" value="install_pip">
+                <button type="submit"
+                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
+                    <i class="fa-brands fa-python"></i> Instalar via pip3 (python disponível)
+                </button>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <?php elseif ($is_noexec): ?>
+    <div class="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-800 space-y-2">
+        <p><strong>noexec:</strong> diretório sem permissão de execução.</p>
+        <form method="post">
+            <input type="hidden" name="action" value="delete_bin">
+            <button type="submit"
+                    class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
+                <i class="fa-solid fa-trash-can"></i> Deletar e baixar novamente
             </button>
         </form>
     </div>
+
+    <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok): ?>
+    <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 space-y-2">
+        <p><strong>Binário ELF não executou.</strong> Erro: <code><?= htmlspecialchars($bin_error) ?></code></p>
+        <form method="post">
+            <input type="hidden" name="action" value="delete_bin">
+            <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
+                <i class="fa-solid fa-rotate-right"></i> Deletar e tentar baixar novamente
+            </button>
+        </form>
+    </div>
+
     <?php endif; ?>
+
+    <?php if (!$ytdlp_ok && $has_pip3): ?>
+    <div class="border-t pt-3 mt-2">
+        <p class="text-xs text-gray-600 mb-1">pip3 disponível — alternativa ao binário:</p>
+        <form method="POST">
+            <input type="hidden" name="action" value="install_pip">
+            <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded text-xs font-semibold transition">
+                <i class="fa-brands fa-python mr-1"></i> Instalar via pip3 install yt-dlp
+            </button>
+        </form>
+    </div>
     <?php endif; ?>
 </div>
 
