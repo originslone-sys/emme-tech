@@ -165,7 +165,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         arquivo_texto_temp = logs_dir / f"texto_temp_{input_file.stem}_{ts}.txt"
         arquivo_texto_temp.write_text(texto_quebrado, encoding="utf-8")
         font_path = _ff_path(font_path_obj)
-        fontsize = max(30, int(height / 20))
+        fontsize = max(20, int(height / 35))
         box_border = max(5, int(fontsize / 4))
         drawtext_filter = (
             f"drawtext="
