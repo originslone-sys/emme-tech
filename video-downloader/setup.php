@@ -50,16 +50,28 @@ function safe_exec(string $cmd, array &$output = [], int &$rc = -1): bool {
 $BIN_DIR  = __DIR__ . '/bin';
 $BIN_PATH = $BIN_DIR . '/yt-dlp';
 
-// ── Ação: instalar binário ────────────────────────────────────────────────────
-if (isset($_POST['action']) && $_POST['action'] === 'install') {
-    $url    = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
-    $result = ['ok' => false, 'msg' => ''];
+// ── Helpers de diagnóstico ────────────────────────────────────────────────────
 
-    if (!is_dir($BIN_DIR)) {
-        @mkdir($BIN_DIR, 0755, true);
-    }
+/** Detecta a arquitetura do servidor via uname -m */
+function detect_arch(): string {
+    $out = []; $rc = -1;
+    safe_exec('uname -m 2>/dev/null', $out, $rc);
+    return $rc === 0 ? trim($out[0] ?? '') : 'unknown';
+}
 
-    // Baixa o binário (file_get_contents ou cURL)
+/** Retorna a URL de download do binário yt-dlp para a arquitetura atual */
+function ytdlp_url(string $arch): string {
+    $base = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/';
+    return match(true) {
+        str_contains($arch, 'aarch64') || str_contains($arch, 'arm64') => $base . 'yt-dlp_linux_aarch64',
+        str_contains($arch, 'armv7')                                    => $base . 'yt-dlp_linux_armv7l',
+        str_contains($arch, 'i686') || str_contains($arch, 'i386')     => $base . 'yt-dlp_x86',
+        default                                                          => $base . 'yt-dlp',  // x86_64
+    };
+}
+
+/** Baixa URL via file_get_contents ou cURL */
+function fetch_url(string $url): string|false {
     $content = false;
     if (ini_get('allow_url_fopen')) {
         $ctx     = stream_context_create(['http' => ['follow_location' => true, 'timeout' => 60]]);
@@ -78,30 +90,93 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
         if (curl_errno($ch)) $content = false;
         curl_close($ch);
     }
+    return $content;
+}
+
+// ── Ação: instalar binário ────────────────────────────────────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'install') {
+    $result = ['ok' => false, 'msg' => '', 'detail' => ''];
+
+    if (!is_dir($BIN_DIR)) @mkdir($BIN_DIR, 0755, true);
+
+    // Detecta arquitetura e escolhe o binário correto
+    $arch    = detect_arch();
+    $url     = ytdlp_url($arch);
+    $content = fetch_url($url);
 
     if ($content === false || strlen((string)$content) < 1000) {
-        $result['msg'] = 'Falha ao baixar o binário. Tente pelo SSH (instruções abaixo).';
+        $result['msg']    = 'Falha ao baixar o binário. Tente pelo SSH (instruções abaixo).';
+        $result['detail'] = "URL tentada: {$url}";
     } else {
-        file_put_contents($BIN_PATH, $content);
-        @chmod($BIN_PATH, 0755);
-
-        // Testa usando safe_exec (não lança fatal error se exec() estiver bloqueado)
-        $out = []; $rc = -1;
-        safe_exec(escapeshellarg($BIN_PATH) . ' --version 2>/dev/null', $out, $rc);
-        if ($rc === 0) {
-            $result = ['ok' => true, 'msg' => 'yt-dlp instalado com sucesso! Versão: ' . trim($out[0] ?? '')];
+        // Verifica se é um binário ELF válido (não uma página HTML de erro)
+        $magic = substr($content, 0, 4);
+        if ($magic !== "\x7fELF") {
+            $result['msg']    = 'O arquivo baixado não é um binário válido (recebeu HTML?).';
+            $result['detail'] = "Primeiros bytes: " . bin2hex($magic) . ". Tente pelo SSH.";
         } else {
-            $result['msg'] = 'Binário baixado mas não executou (exec() pode estar bloqueado ou arquitetura incompatível).';
+            file_put_contents($BIN_PATH, $content);
+            @chmod($BIN_PATH, 0755);
+
+            // Testa e captura o erro real (2>&1 para incluir stderr)
+            $out = []; $rc = -1;
+            safe_exec(escapeshellarg($BIN_PATH) . ' --version 2>&1', $out, $rc);
+            if ($rc === 0) {
+                $result = ['ok' => true, 'msg' => 'yt-dlp instalado com sucesso! Versão: ' . trim($out[0] ?? ''), 'detail' => "Arch: {$arch} | Binário: {$url}"];
+            } else {
+                $err = implode(' ', $out);
+                // Detecta noexec
+                $is_noexec = str_contains($err, 'Permission denied') || str_contains($err, 'cannot execute');
+                $result['msg'] = $is_noexec
+                    ? 'Erro de permissão ao executar: o diretório pode estar montado com noexec.'
+                    : 'Binário baixado mas não executou.';
+                $result['detail'] = "Arch: {$arch} | RC: {$rc}" . ($err ? " | Erro: {$err}" : " | (sem saída de erro)");
+            }
         }
     }
     ?>
     <div class="rounded-xl p-5 border <?= $result['ok'] ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300' ?>">
-        <div class="flex items-center gap-3">
-            <i class="fa-solid <?= $result['ok'] ? 'fa-circle-check text-green-500' : 'fa-circle-xmark text-red-500' ?> text-2xl"></i>
+        <div class="flex items-start gap-3">
+            <i class="fa-solid <?= $result['ok'] ? 'fa-circle-check text-green-500' : 'fa-circle-xmark text-red-500' ?> text-2xl mt-0.5 shrink-0"></i>
             <div>
                 <p class="font-semibold <?= $result['ok'] ? 'text-green-800' : 'text-red-800' ?>"><?= htmlspecialchars($result['msg']) ?></p>
+                <?php if (!empty($result['detail'])): ?>
+                    <p class="text-xs mt-1 font-mono <?= $result['ok'] ? 'text-green-700' : 'text-red-700' ?>"><?= htmlspecialchars($result['detail']) ?></p>
+                <?php endif; ?>
                 <?php if ($result['ok']): ?>
-                    <a href="index.php" class="text-sm text-green-700 underline">Abrir o app →</a>
+                    <a href="index.php" class="text-sm text-green-700 underline mt-1 block">Abrir o app →</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+// ── Ação: instalar via pip3 ───────────────────────────────────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'install_pip') {
+    $result = ['ok' => false, 'msg' => '', 'detail' => ''];
+    $out = []; $rc = -1;
+    safe_exec('pip3 install --user yt-dlp 2>&1', $out, $rc);
+    if ($rc === 0) {
+        // Localiza onde o pip instalou
+        $wo = []; safe_exec('python3 -m yt_dlp --version 2>&1', $wo, $wrc);
+        if ($wrc === 0) {
+            $result = ['ok' => true, 'msg' => 'yt-dlp instalado via pip3! Versão: ' . trim($wo[0] ?? ''), 'detail' => 'Use "python3 -m yt_dlp" (o api.php será atualizado).'];
+        } else {
+            $result['msg']    = 'pip3 instalou mas não conseguiu executar.';
+            $result['detail'] = implode(' ', array_slice($out, -3));
+        }
+    } else {
+        $result['msg']    = 'Falha no pip3 install.';
+        $result['detail'] = implode(' ', array_slice($out, -5));
+    }
+    ?>
+    <div class="rounded-xl p-5 border <?= $result['ok'] ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300' ?>">
+        <div class="flex items-start gap-3">
+            <i class="fa-solid <?= $result['ok'] ? 'fa-circle-check text-green-500' : 'fa-circle-xmark text-red-500' ?> text-2xl mt-0.5 shrink-0"></i>
+            <div>
+                <p class="font-semibold <?= $result['ok'] ? 'text-green-800' : 'text-red-800' ?>"><?= htmlspecialchars($result['msg']) ?></p>
+                <?php if (!empty($result['detail'])): ?>
+                    <p class="text-xs mt-1 font-mono <?= $result['ok'] ? 'text-green-700' : 'text-red-700' ?>"><?= htmlspecialchars($result['detail']) ?></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -237,6 +312,90 @@ $ready           = $ytdlp_ok && $all_critical_ok;
         </div>
     </div>
     <?php endforeach; ?>
+</div>
+
+<!-- Diagnóstico do servidor -->
+<?php
+$arch = detect_arch();
+$bin_exists = file_exists($BIN_PATH);
+$bin_size   = $bin_exists ? filesize($BIN_PATH) : 0;
+$bin_magic  = $bin_exists ? bin2hex(substr((string)file_get_contents($BIN_PATH, false, null, 0, 4), 0, 4)) : '';
+$is_elf     = $bin_magic === '7f454c46'; // \x7fELF
+
+// Testa se exec funciona de verdade com um comando simples
+$exec_test_out = []; $exec_test_rc = -1;
+safe_exec('echo ok 2>/dev/null', $exec_test_out, $exec_test_rc);
+$exec_works = $exec_test_rc === 0 && trim($exec_test_out[0] ?? '') === 'ok';
+
+// Se o binário existir mas falhar, captura o erro real
+$bin_error = '';
+if ($bin_exists && $is_elf && !$ytdlp_ok) {
+    $eo = []; $erc = -1;
+    safe_exec(escapeshellarg($BIN_PATH) . ' --version 2>&1', $eo, $erc);
+    $bin_error = implode(' ', $eo);
+}
+?>
+<div class="bg-white rounded-xl shadow p-5 space-y-3">
+    <h2 class="font-bold text-gray-800 flex items-center gap-2 text-sm">
+        <i class="fa-solid fa-magnifying-glass text-gray-500"></i> Diagnóstico do servidor
+    </h2>
+    <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+        <span class="text-gray-500">Arquitetura:</span>
+        <span class="text-gray-800 font-semibold"><?= htmlspecialchars($arch ?: 'não detectada') ?></span>
+
+        <span class="text-gray-500">exec() realmente funciona:</span>
+        <span class="<?= $exec_works ? 'text-green-600' : 'text-red-600' ?> font-semibold"><?= $exec_works ? 'sim' : 'não (bloqueado?)' ?></span>
+
+        <?php if ($bin_exists): ?>
+        <span class="text-gray-500">bin/yt-dlp existe:</span>
+        <span class="text-gray-800">sim (<?= number_format($bin_size / 1024 / 1024, 1) ?> MB)</span>
+
+        <span class="text-gray-500">Tipo do arquivo:</span>
+        <span class="<?= $is_elf ? 'text-green-600' : 'text-red-600' ?>"><?= $is_elf ? 'ELF binário válido' : 'inválido (magic: ' . $bin_magic . ')' ?></span>
+        <?php endif; ?>
+
+        <?php if ($bin_error): ?>
+        <span class="text-gray-500">Erro ao executar:</span>
+        <span class="text-red-600 break-all"><?= htmlspecialchars($bin_error) ?></span>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($bin_exists && $is_elf && !$ytdlp_ok && str_contains($bin_error, 'ermission')): ?>
+    <div class="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-800">
+        <strong>noexec detectado:</strong> O diretório está montado sem permissão de execução.
+        Tente mover o binário para <code>/tmp</code> via SSH:
+        <code class="block mt-1 bg-orange-100 p-1 rounded">cp bin/yt-dlp /tmp/yt-dlp && chmod +x /tmp/yt-dlp && /tmp/yt-dlp --version</code>
+    </div>
+    <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok): ?>
+    <div class="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
+        <strong>Binário ELF presente mas não executa.</strong>
+        Provável causa: arquitetura incompatível. Seu servidor é <strong><?= htmlspecialchars($arch) ?></strong>
+        mas o binário baixado pode ser para outra arquitetura.
+        Tente instalar via pip (abaixo) ou use o SSH.
+    </div>
+    <?php endif; ?>
+
+    <?php if ($exec_ok && $arch): ?>
+    <!-- Tentativa via Python/pip -->
+    <?php
+    $py3 = []; safe_exec('python3 --version 2>&1', $py3, $pyrc);
+    $pip3 = []; safe_exec('pip3 --version 2>&1', $pip3, $piprc);
+    $has_py3  = $pyrc  === 0;
+    $has_pip3 = $piprc === 0;
+    if ($has_py3 || $has_pip3): ?>
+    <div class="border-t pt-3 mt-2">
+        <p class="text-xs text-gray-500 mb-1">Python detectado no servidor:</p>
+        <?php if ($has_py3): ?><p class="text-xs font-mono text-gray-700">python3: <?= htmlspecialchars(trim($py3[0] ?? '')) ?></p><?php endif; ?>
+        <?php if ($has_pip3): ?><p class="text-xs font-mono text-gray-700">pip3: <?= htmlspecialchars(trim($pip3[0] ?? '')) ?></p><?php endif; ?>
+        <form method="POST" class="mt-2">
+            <input type="hidden" name="action" value="install_pip">
+            <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded text-xs font-semibold transition">
+                <i class="fa-solid fa-python mr-1"></i> Instalar via pip3 install yt-dlp
+            </button>
+        </form>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
 </div>
 
 <!-- Instalar yt-dlp automaticamente -->
