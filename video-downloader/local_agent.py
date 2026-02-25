@@ -174,12 +174,45 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False,
                                "error": "Nenhum resultado. Verifique se a URL é válida e pública."})
 
-        try:
-            data = json.loads(r.stdout)
-        except json.JSONDecodeError:
-            return self._json({"ok": False, "error": "Resposta inválida do yt-dlp"})
+        # yt-dlp pode retornar um JSON por linha (vários vídeos sem wrapper de playlist)
+        # ou um único JSON de playlist, ou null. Tenta parsear todos os casos.
+        data = None
+        lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+        if len(lines) == 1:
+            try:
+                data = json.loads(lines[0])
+            except json.JSONDecodeError:
+                pass
+        else:
+            # múltiplas linhas → tenta encontrar o objeto de playlist ou coleta todos
+            parsed_lines = []
+            for ln in lines:
+                try:
+                    obj = json.loads(ln)
+                    if isinstance(obj, dict):
+                        parsed_lines.append(obj)
+                except json.JSONDecodeError:
+                    pass
+            # Se algum objeto tem 'entries', é o wrapper de playlist
+            for obj in parsed_lines:
+                if "entries" in obj:
+                    data = obj
+                    break
+            # Caso contrário, monta um wrapper artificial com os objetos coletados
+            if data is None and parsed_lines:
+                data = {"entries": parsed_lines,
+                        "title":    parsed_lines[0].get("uploader", ""),
+                        "extractor": parsed_lines[0].get("extractor", "")}
 
-        entries = [e for e in (data.get("entries") or []) if e]
+        if not isinstance(data, dict):
+            return self._json({"ok": False,
+                               "error": "Nenhum vídeo encontrado. Verifique se a URL é válida e pública."})
+
+        # Se o yt-dlp retornou um único vídeo (sem 'entries'), trata como lista de 1
+        if "entries" not in data:
+            entries = [data]
+        else:
+            entries = [e for e in (data.get("entries") or []) if e]
 
         def best_thumb(e: dict) -> str:
             t = e.get("thumbnail", "")
