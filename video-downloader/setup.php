@@ -121,60 +121,82 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
 
     if (!is_dir($BIN_DIR)) @mkdir($BIN_DIR, 0755, true);
 
-    // Detecta arquitetura e escolhe o binário correto
-    $arch    = detect_arch();
-    $url     = ytdlp_url($arch);
-    $content = fetch_url($url);
+    $arch = detect_arch();
 
-    $size = strlen((string)$content);
-    if ($content === false || $size < 1000) {
-        $result['msg']    = 'Falha ao baixar o binário. Tente pelo SSH (instruções abaixo).';
-        $result['detail'] = "URL: {$url} | Bytes recebidos: {$size}";
-    } else {
-        $magic     = substr($content, 0, 4);
-        $is_elf    = ($magic === "\x7fELF");
-        $is_script = (substr($magic, 0, 2) === "#!");
-        $is_html   = (substr($magic, 0, 1) === '<');
+    // Caminhos python3 a tentar (sistema, sem restrição de mmap)
+    $py3_candidates = [
+        'python3', '/usr/bin/python3', '/usr/local/bin/python3',
+        '/usr/bin/python3.12', '/usr/bin/python3.11', '/usr/bin/python3.10', '/usr/bin/python3.9',
+    ];
 
-        if ($is_html) {
-            // GitHub devolveu HTML (rate-limit, erro 4xx, etc.)
-            $result['msg']    = 'O servidor GitHub retornou uma página HTML em vez do binário.';
-            $result['detail'] = "URL: {$url} | Tente novamente em alguns minutos ou instale via SSH.";
-        } elseif (!$is_elf && !$is_script) {
-            $result['msg']    = 'Arquivo baixado tem formato desconhecido.';
-            $result['detail'] = "Magic: " . bin2hex($magic) . " | URL: {$url} | Tente pelo SSH.";
-        } else {
-            // ELF ou script Python — salva e testa
-            file_put_contents($BIN_PATH, $content);
-            @chmod($BIN_PATH, 0755);
-
-            // Tenta executar diretamente ou via python3
-            $cmds_to_try = [escapeshellarg($BIN_PATH)];
-            if ($is_script) $cmds_to_try[] = 'python3 ' . escapeshellarg($BIN_PATH);
-
-            $ran_ok = false; $ran_ver = ''; $ran_err = ''; $ran_cmd = '';
-            foreach ($cmds_to_try as $try_cmd) {
-                $out = []; $rc = -1;
-                safe_exec($try_cmd . ' --version 2>&1', $out, $rc);
-                if ($rc === 0) {
-                    $ran_ok = true; $ran_ver = trim($out[0] ?? ''); $ran_cmd = $try_cmd; break;
-                }
-                $ran_err = implode(' ', $out);
-            }
-
-            if ($ran_ok) {
-                $type_label = $is_elf ? 'ELF binário' : 'script Python';
-                $result = ['ok' => true,
-                    'msg'    => "yt-dlp instalado! ({$type_label}) Versão: {$ran_ver}",
-                    'detail' => "Arch: {$arch} | Cmd: {$ran_cmd} | URL: {$url}"];
-            } else {
-                $is_noexec = str_contains($ran_err, 'Permission denied') || str_contains($ran_err, 'cannot execute');
-                $result['msg'] = $is_noexec
-                    ? 'Arquivo salvo mas sem permissão de execução (diretório noexec?).'
-                    : ($is_script ? 'Script Python salvo mas python3 não está no PATH.' : 'Binário salvo mas não executou.');
-                $result['detail'] = "Arch: {$arch} | RC | Erro: {$ran_err}";
-            }
+    /**
+     * Salva conteúdo em $BIN_PATH e testa $cmds_to_try.
+     * Retorna ['ok', 'ver', 'cmd', 'err'].
+     */
+    $save_and_test = function (string $data, array $cmds) use ($BIN_PATH): array {
+        file_put_contents($BIN_PATH, $data);
+        @chmod($BIN_PATH, 0755);
+        foreach ($cmds as $try_cmd) {
+            $out = []; $rc = -1;
+            safe_exec($try_cmd . ' --version 2>&1', $out, $rc);
+            if ($rc === 0) return ['ok' => true,  'ver' => trim($out[0] ?? ''), 'cmd' => $try_cmd, 'err' => ''];
         }
+        return ['ok' => false, 'ver' => '', 'cmd' => '', 'err' => implode(' ', $out ?? [])];
+    };
+
+    // ── Passo 1: tenta o binário ELF standalone ───────────────────────────────
+    $elf_url     = ytdlp_url($arch);
+    $elf_content = fetch_url($elf_url);
+    $elf_size    = strlen((string)$elf_content);
+
+    if ($elf_content === false || $elf_size < 1_000_000) {
+        $result['msg']    = 'Falha ao baixar o binário ELF. Tente pelo SSH.';
+        $result['detail'] = "URL: {$elf_url} | Bytes: {$elf_size}";
+    } elseif (substr($elf_content, 0, 1) === '<') {
+        $result['msg']    = 'GitHub retornou HTML em vez do arquivo (rate-limit?). Tente em alguns minutos.';
+        $result['detail'] = "URL: {$elf_url}";
+    } elseif (substr($elf_content, 0, 4) === "\x7fELF") {
+        $test = $save_and_test($elf_content, [escapeshellarg($BIN_PATH)]);
+        $is_mmap = str_contains($test['err'], 'failed to map segment') || str_contains($test['err'], 'mmap');
+
+        if ($test['ok']) {
+            $result = ['ok' => true,
+                'msg'    => "yt-dlp instalado! (binário ELF) Versão: {$test['ver']}",
+                'detail' => "Arch: {$arch} | URL: {$elf_url}"];
+        } elseif ($is_mmap) {
+            // ── Passo 2: ELF falhou por mmap — tenta Python zipapp ─────────────
+            $zipapp_url     = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+            $zipapp_content = fetch_url($zipapp_url);
+            $zipapp_size    = strlen((string)$zipapp_content);
+            $is_zipapp      = $zipapp_content && substr($zipapp_content, 0, 2) === '#!';
+
+            if (!$is_zipapp || $zipapp_size < 500_000) {
+                $result['msg']    = 'ELF falhou (restrição mmap) e o download do zipapp Python também falhou.';
+                $result['detail'] = "Erro ELF: {$test['err']} | Zipapp bytes: {$zipapp_size}";
+            } else {
+                // Testa zipapp com cada python3 disponível
+                $py3_cmds = array_map(
+                    fn($py) => escapeshellarg($py) . ' ' . escapeshellarg($BIN_PATH),
+                    $py3_candidates
+                );
+                $test2 = $save_and_test($zipapp_content, $py3_cmds);
+
+                if ($test2['ok']) {
+                    $result = ['ok' => true,
+                        'msg'    => "yt-dlp instalado como Python zipapp! Versão: {$test2['ver']}",
+                        'detail' => "Usando: {$test2['cmd']} | O ELF falhou por restrição de mmap no Hostinger."];
+                } else {
+                    $result['msg']    = 'ELF falhou (mmap) e Python zipapp salvo mas python3 não encontrado no servidor.';
+                    $result['detail'] = "Erro mmap: {$test['err']} | Erro python3: {$test2['err']}";
+                }
+            }
+        } else {
+            $result['msg']    = 'Binário salvo mas não executou.';
+            $result['detail'] = "Arch: {$arch} | Erro: {$test['err']}";
+        }
+    } else {
+        $result['msg']    = 'Formato desconhecido.';
+        $result['detail'] = "Magic: " . bin2hex(substr($elf_content, 0, 4)) . " | URL: {$elf_url}";
     }
     ?>
     <div class="rounded-xl p-5 border <?= $result['ok'] ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300' ?>">
@@ -489,31 +511,15 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
 
     <?php elseif ($is_mmap_err): ?>
     <div class="bg-red-50 border border-red-300 rounded p-4 text-xs text-red-900 space-y-3">
-        <p><strong>Restrição de mmap:</strong> o Hostinger monta <code>/home</code> sem permissão de mapeamento de
-        bibliotecas compartilhadas. O binário é ELF válido mas o sistema operacional bloqueia o linker dinâmico.</p>
-        <?php if ($ytdlp_ok): ?>
-        <p class="text-green-700 font-semibold">Solução automática funcionou via /tmp — o yt-dlp está operacional.</p>
+        <p><strong>Restrição de mmap:</strong> tanto <code>/home</code> quanto <code>/tmp</code> bloqueiam
+        o linker dinâmico — nenhum binário PyInstaller pode rodar via PHP neste servidor.</p>
+        <p>Solução: usar o <strong>Python zipapp</strong> (<code>yt-dlp</code> sem sufixo, ~3 MB) com
+        o <code>python3</code> do sistema (<code>/usr/bin/python3</code>).
+        Clique em <strong>"Instalar agora"</strong> — o processo já tenta isso automaticamente.</p>
+        <?php if ($found_py3): ?>
+        <p class="text-green-800">python3 detectado em: <code><?= htmlspecialchars($found_py3) ?></code></p>
         <?php else: ?>
-        <p>O binário foi copiado para <code><?= htmlspecialchars($TMP_BIN) ?></code> mas ainda falhou.
-        Isso indica que <code>/tmp</code> também tem restrição, ou que o arquivo ficou corrompido.</p>
-        <div class="flex flex-wrap gap-2">
-            <form method="post" class="inline">
-                <input type="hidden" name="action" value="delete_bin">
-                <button type="submit"
-                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-trash-can"></i> Deletar e baixar novamente
-                </button>
-            </form>
-            <?php if ($found_py3 || $has_pip3): ?>
-            <form method="post" class="inline">
-                <input type="hidden" name="action" value="install_pip">
-                <button type="submit"
-                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
-                    <i class="fa-brands fa-python"></i> Instalar via pip3 (python disponível)
-                </button>
-            </form>
-            <?php endif; ?>
-        </div>
+        <p class="text-red-700">python3 não encontrado nos caminhos padrão. Pode estar em outro local.</p>
         <?php endif; ?>
     </div>
 
@@ -591,13 +597,14 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
         <p><span class="text-gray-500"># Navega para a pasta do projeto</span></p>
         <p>cd <?= htmlspecialchars(__DIR__) ?></p>
         <p>&nbsp;</p>
-        <p><span class="text-gray-500"># Baixa o binário ELF standalone para Linux x86_64 (não precisa de Python)</span></p>
+        <p><span class="text-gray-500"># Testa se o binário ELF funciona neste servidor</span></p>
         <p>mkdir -p bin</p>
-        <p>curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o bin/yt-dlp</p>
-        <p>chmod +x bin/yt-dlp</p>
+        <p>curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o bin/yt-dlp && chmod +x bin/yt-dlp && bin/yt-dlp --version</p>
         <p>&nbsp;</p>
-        <p><span class="text-gray-500"># Testa</span></p>
-        <p>bin/yt-dlp --version</p>
+        <p><span class="text-gray-500"># Se o ELF falhar com "failed to map segment" (Hostinger mmap restriction)</span></p>
+        <p><span class="text-gray-500"># use o Python zipapp com o python3 do sistema:</span></p>
+        <p>curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp && chmod +x bin/yt-dlp</p>
+        <p>python3 bin/yt-dlp --version</p>
     </div>
     <p class="text-sm text-gray-600">
         Após executar, <a href="setup.php" class="text-blue-600 underline">recarregue esta página</a> para confirmar.
