@@ -100,7 +100,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (ConnectionAbortedError, BrokenPipeError, OSError):
+            # cliente fechou a conexão antes de receber — inofensivo
+            pass
 
     # ── Leitura do body ───────────────────────────────────────────────────────
 
@@ -342,7 +346,15 @@ def main():
     print("Pressione Ctrl+C para encerrar.")
     print()
 
-    server = HTTPServer(("127.0.0.1", PORT), Handler)
+    class _QuietServer(HTTPServer):
+        """Suprime tracebacks de conexões abortadas pelo cliente (inofensivos)."""
+        def handle_error(self, request, client_address):
+            exc = sys.exc_info()[1]
+            if isinstance(exc, (ConnectionAbortedError, BrokenPipeError, OSError)):
+                return
+            super().handle_error(request, client_address)
+
+    server = _QuietServer(("127.0.0.1", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
