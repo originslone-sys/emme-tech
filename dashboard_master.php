@@ -145,6 +145,57 @@ if (isset($_GET['acao'])) {
 }
 
 // ================================
+// DOWNLOAD EM LOTE (POST → ZIP)
+// ================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'download_lote') {
+    $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? $_POST['ids'] : [];
+
+    if (empty($ids)) {
+        header("Location: dashboard_master.php?msg=erro&err=" . urlencode("Nenhum arquivo selecionado."));
+        exit;
+    }
+
+    $arquivos = [];
+    foreach ($ids as $rawId) {
+        $id = (int)$rawId;
+        if ($id <= 0) continue;
+        $stmt = $conn->prepare("SELECT bruto_arquivo FROM fila_edicao WHERE id=? LIMIT 1");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $row = ($r = $stmt->get_result()) ? $r->fetch_assoc() : null;
+        $stmt->close();
+        if ($row && !empty($row['bruto_arquivo'])) {
+            $path = $PASTA_BRUTOS . '/' . basename($row['bruto_arquivo']);
+            if (file_exists($path)) {
+                $arquivos[] = ['path' => $path, 'name' => basename($row['bruto_arquivo'])];
+            }
+        }
+    }
+
+    if (empty($arquivos)) {
+        header("Location: dashboard_master.php?msg=erro&err=" . urlencode("Nenhum arquivo encontrado no servidor."));
+        exit;
+    }
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'zip_dl_');
+    $zip = new ZipArchive();
+    $zip->open($tmpFile, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    foreach ($arquivos as $arq) {
+        $zip->addFile($arq['path'], $arq['name']);
+    }
+    $zip->close();
+
+    $zipname = 'brutos_' . date('Ymd_His') . '_' . count($arquivos) . 'arqs.zip';
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipname . '"');
+    header('Content-Length: ' . filesize($tmpFile));
+    header('Cache-Control: no-cache, no-store');
+    readfile($tmpFile);
+    unlink($tmpFile);
+    exit;
+}
+
+// ================================
 // EXCLUIR EM LOTE (POST)
 // ================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'excluir_lote') {
@@ -493,10 +544,13 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                         </div>
                         
                         
-                        <!-- Toolbar de exclusão em lote -->
-                        <div id="bulkToolbar" class="hidden mb-3 flex flex-wrap items-center gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
-                            <i class="fa-solid fa-trash-can text-red-500"></i>
-                            <span id="bulkCount" class="text-sm font-semibold text-red-700">0 selecionado(s)</span>
+                        <!-- Toolbar de ações em lote -->
+                        <div id="bulkToolbar" class="hidden mb-3 flex flex-wrap items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <span id="bulkCount" class="text-sm font-semibold text-gray-700">0 selecionado(s)</span>
+                            <button type="button" onclick="submitBulkDownload()"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-semibold transition">
+                                <i class="fa-solid fa-download mr-1"></i> Baixar selecionados
+                            </button>
                             <button type="button" onclick="submitBulkDelete()"
                                     class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm font-semibold transition">
                                 <i class="fa-solid fa-trash-can mr-1"></i> Excluir selecionados
@@ -913,6 +967,35 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
     if (n === 0) return;
     if (!confirm('ATENÇÃO: excluir ' + n + ' tarefa(s) e apagar os brutos do servidor. Continuar?')) return;
     formLote.submit();
+  };
+
+  window.submitBulkDownload = function () {
+    const checked = getChecked();
+    if (checked.length === 0) return;
+
+    // Monta form temporário para não alterar o formLote (que é de exclusão)
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = window.location.pathname;
+
+    const acaoInput = document.createElement('input');
+    acaoInput.type  = 'hidden';
+    acaoInput.name  = 'acao';
+    acaoInput.value = 'download_lote';
+    form.appendChild(acaoInput);
+
+    checked.forEach(function (cb) {
+      const inp   = document.createElement('input');
+      inp.type  = 'hidden';
+      inp.name  = 'ids[]';
+      inp.value = cb.value;
+      form.appendChild(inp);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    // Remove imediatamente — o browser mantém a submissão em curso
+    setTimeout(function () { document.body.removeChild(form); }, 100);
   };
 
   window.clearSelection = function () {
