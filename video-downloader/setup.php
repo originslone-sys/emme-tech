@@ -59,38 +59,58 @@ function detect_arch(): string {
     return $rc === 0 ? trim($out[0] ?? '') : 'unknown';
 }
 
-/** Retorna a URL de download do binário yt-dlp para a arquitetura atual */
+/**
+ * Retorna a URL de download do binário ELF standalone do yt-dlp.
+ * Nota: "yt-dlp" (sem sufixo) é o Python zipapp — requer python3.
+ *       "yt-dlp_linux" é o binário ELF compilado (PyInstaller, x86_64).
+ */
 function ytdlp_url(string $arch): string {
     $base = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/';
     return match(true) {
         str_contains($arch, 'aarch64') || str_contains($arch, 'arm64') => $base . 'yt-dlp_linux_aarch64',
         str_contains($arch, 'armv7')                                    => $base . 'yt-dlp_linux_armv7l',
-        str_contains($arch, 'i686') || str_contains($arch, 'i386')     => $base . 'yt-dlp_x86',
-        default                                                          => $base . 'yt-dlp',  // x86_64
+        str_contains($arch, 'i686') || str_contains($arch, 'i386')     => $base . 'yt-dlp_linux_x86',
+        default                                                          => $base . 'yt-dlp_linux',  // x86_64 — binário ELF compilado
     };
 }
 
-/** Baixa URL via file_get_contents ou cURL */
+/**
+ * Baixa URL preferindo cURL (melhor suporte a redirecionamentos do GitHub CDN).
+ * Fallback para file_get_contents se cURL não estiver disponível.
+ */
 function fetch_url(string $url): string|false {
-    $content = false;
-    if (ini_get('allow_url_fopen')) {
-        $ctx     = stream_context_create(['http' => ['follow_location' => true, 'timeout' => 60]]);
-        $content = @file_get_contents($url, false, $ctx);
-    }
-    if ($content === false && function_exists('curl_init')) {
+    // Prefere cURL — segue corretamente os redirecionamentos do GitHub CDN
+    if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT        => 60,
+            CURLOPT_MAXREDIRS      => 10,
+            CURLOPT_TIMEOUT        => 120,          // binário ELF ~15 MB pode demorar
+            CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0',
+            CURLOPT_USERAGENT      => 'curl/7.88',  // GitHub às vezes bloqueia User-Agents genéricos
         ]);
         $content = curl_exec($ch);
-        if (curl_errno($ch)) $content = false;
+        $err     = curl_errno($ch);
         curl_close($ch);
+        if (!$err && $content !== false) return $content;
     }
-    return $content;
+    // Fallback: file_get_contents
+    if (ini_get('allow_url_fopen')) {
+        $ctx = stream_context_create(['http' => ['follow_location' => true, 'timeout' => 120]]);
+        $content = @file_get_contents($url, false, $ctx);
+        if ($content !== false) return $content;
+    }
+    return false;
+}
+
+// ── Ação: deletar binário inválido ───────────────────────────────────────────
+if (isset($_POST['action']) && $_POST['action'] === 'delete_bin') {
+    if (file_exists($BIN_PATH)) @unlink($BIN_PATH);
+    // redireciona para GET limpo (sem re-POST em reload)
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
 }
 
 // ── Ação: instalar binário ────────────────────────────────────────────────────
@@ -104,32 +124,53 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
     $url     = ytdlp_url($arch);
     $content = fetch_url($url);
 
-    if ($content === false || strlen((string)$content) < 1000) {
+    $size = strlen((string)$content);
+    if ($content === false || $size < 1000) {
         $result['msg']    = 'Falha ao baixar o binário. Tente pelo SSH (instruções abaixo).';
-        $result['detail'] = "URL tentada: {$url}";
+        $result['detail'] = "URL: {$url} | Bytes recebidos: {$size}";
     } else {
-        // Verifica se é um binário ELF válido (não uma página HTML de erro)
-        $magic = substr($content, 0, 4);
-        if ($magic !== "\x7fELF") {
-            $result['msg']    = 'O arquivo baixado não é um binário válido (recebeu HTML?).';
-            $result['detail'] = "Primeiros bytes: " . bin2hex($magic) . ". Tente pelo SSH.";
+        $magic     = substr($content, 0, 4);
+        $is_elf    = ($magic === "\x7fELF");
+        $is_script = (substr($magic, 0, 2) === "#!");
+        $is_html   = (substr($magic, 0, 1) === '<');
+
+        if ($is_html) {
+            // GitHub devolveu HTML (rate-limit, erro 4xx, etc.)
+            $result['msg']    = 'O servidor GitHub retornou uma página HTML em vez do binário.';
+            $result['detail'] = "URL: {$url} | Tente novamente em alguns minutos ou instale via SSH.";
+        } elseif (!$is_elf && !$is_script) {
+            $result['msg']    = 'Arquivo baixado tem formato desconhecido.';
+            $result['detail'] = "Magic: " . bin2hex($magic) . " | URL: {$url} | Tente pelo SSH.";
         } else {
+            // ELF ou script Python — salva e testa
             file_put_contents($BIN_PATH, $content);
             @chmod($BIN_PATH, 0755);
 
-            // Testa e captura o erro real (2>&1 para incluir stderr)
-            $out = []; $rc = -1;
-            safe_exec(escapeshellarg($BIN_PATH) . ' --version 2>&1', $out, $rc);
-            if ($rc === 0) {
-                $result = ['ok' => true, 'msg' => 'yt-dlp instalado com sucesso! Versão: ' . trim($out[0] ?? ''), 'detail' => "Arch: {$arch} | Binário: {$url}"];
+            // Tenta executar diretamente ou via python3
+            $cmds_to_try = [escapeshellarg($BIN_PATH)];
+            if ($is_script) $cmds_to_try[] = 'python3 ' . escapeshellarg($BIN_PATH);
+
+            $ran_ok = false; $ran_ver = ''; $ran_err = ''; $ran_cmd = '';
+            foreach ($cmds_to_try as $try_cmd) {
+                $out = []; $rc = -1;
+                safe_exec($try_cmd . ' --version 2>&1', $out, $rc);
+                if ($rc === 0) {
+                    $ran_ok = true; $ran_ver = trim($out[0] ?? ''); $ran_cmd = $try_cmd; break;
+                }
+                $ran_err = implode(' ', $out);
+            }
+
+            if ($ran_ok) {
+                $type_label = $is_elf ? 'ELF binário' : 'script Python';
+                $result = ['ok' => true,
+                    'msg'    => "yt-dlp instalado! ({$type_label}) Versão: {$ran_ver}",
+                    'detail' => "Arch: {$arch} | Cmd: {$ran_cmd} | URL: {$url}"];
             } else {
-                $err = implode(' ', $out);
-                // Detecta noexec
-                $is_noexec = str_contains($err, 'Permission denied') || str_contains($err, 'cannot execute');
+                $is_noexec = str_contains($ran_err, 'Permission denied') || str_contains($ran_err, 'cannot execute');
                 $result['msg'] = $is_noexec
-                    ? 'Erro de permissão ao executar: o diretório pode estar montado com noexec.'
-                    : 'Binário baixado mas não executou.';
-                $result['detail'] = "Arch: {$arch} | RC: {$rc}" . ($err ? " | Erro: {$err}" : " | (sem saída de erro)");
+                    ? 'Arquivo salvo mas sem permissão de execução (diretório noexec?).'
+                    : ($is_script ? 'Script Python salvo mas python3 não está no PATH.' : 'Binário salvo mas não executou.');
+                $result['detail'] = "Arch: {$arch} | RC | Erro: {$ran_err}";
             }
         }
     }
@@ -393,11 +434,17 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
         <strong>Recarregue a página</strong> — o check de "yt-dlp encontrado" acima deve ficar verde agora.
     </div>
     <?php elseif ($bin_is_script && !$py3_runs_script): ?>
-    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs text-yellow-800">
-        <strong>Arquivo é um script Python, mas python3 não está disponível no PATH.</strong>
-        O binário compilado (ELF) não foi baixado corretamente.
-        Tente deletar <code>bin/yt-dlp</code> e clicar em "Instalar agora" novamente,
-        ou instale via SSH usando o comando cURL abaixo.
+    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs text-yellow-800 space-y-2">
+        <p><strong>Arquivo incorreto:</strong> foi baixado o Python zipapp (~3 MB) em vez do binário ELF compilado (~15 MB).
+        O servidor não tem python3, então esse arquivo não funciona.</p>
+        <p>Clique no botão abaixo para deletar o arquivo errado e baixar o binário correto (<code>yt-dlp_linux</code>).</p>
+        <form method="post">
+            <input type="hidden" name="action" value="delete_bin">
+            <button type="submit"
+                    class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-1.5 rounded font-semibold text-xs transition flex items-center gap-1.5">
+                <i class="fa-solid fa-trash-can"></i> Deletar arquivo inválido e tentar novamente
+            </button>
+        </form>
     </div>
     <?php elseif ($bin_exists && $is_elf && !$ytdlp_ok && str_contains($bin_error, 'ermission')): ?>
     <div class="bg-orange-50 border border-orange-200 rounded p-3 text-xs text-orange-800">
@@ -471,9 +518,9 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
         <p><span class="text-gray-500"># Navega para a pasta do projeto</span></p>
         <p>cd <?= htmlspecialchars(__DIR__) ?></p>
         <p>&nbsp;</p>
-        <p><span class="text-gray-500"># Baixa o binário standalone (não precisa de Python)</span></p>
+        <p><span class="text-gray-500"># Baixa o binário ELF standalone para Linux x86_64 (não precisa de Python)</span></p>
         <p>mkdir -p bin</p>
-        <p>curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp</p>
+        <p>curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o bin/yt-dlp</p>
         <p>chmod +x bin/yt-dlp</p>
         <p>&nbsp;</p>
         <p><span class="text-gray-500"># Testa</span></p>
