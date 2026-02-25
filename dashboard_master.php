@@ -64,6 +64,10 @@ if (isset($_GET['msg'])) {
     if ($_GET['msg'] === 'excluida')  $mensagem = "<div class='bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 shadow text-sm font-semibold'>🗑️ Tarefa excluída e bruto removido (se existia).</div>";
     if ($_GET['msg'] === 'reset')     $mensagem = "<div class='bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-4 shadow text-sm font-semibold'>🔄 Tarefa resetada para Pendente.</div>";
     if ($_GET['msg'] === 'resetall')  $mensagem = "<div class='bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-4 shadow text-sm font-semibold'>🧯 Travadas antigas foram resetadas para Pendente.</div>";
+    if ($_GET['msg'] === 'lote_excluido') {
+        $n = (int)($_GET['n'] ?? 0);
+        $mensagem = "<div class='bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 shadow text-sm font-semibold'>🗑️ {$n} tarefa(s) excluída(s) em lote e brutos removidos (se existiam).</div>";
+    }
 }
 
 // ================================
@@ -138,6 +142,38 @@ if (isset($_GET['acao'])) {
         header("Location: dashboard_master.php?msg=resetall");
         exit;
     }
+}
+
+// ================================
+// EXCLUIR EM LOTE (POST)
+// ================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'excluir_lote') {
+    $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? $_POST['ids'] : [];
+    $deletados = 0;
+    foreach ($ids as $rawId) {
+        $id = (int)$rawId;
+        if ($id <= 0) continue;
+
+        $stmt = $conn->prepare("SELECT bruto_arquivo FROM fila_edicao WHERE id=? LIMIT 1");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        if ($row && !empty($row['bruto_arquivo'])) {
+            $path = $PASTA_BRUTOS . '/' . basename($row['bruto_arquivo']);
+            if (file_exists($path)) @unlink($path);
+        }
+
+        $stmt2 = $conn->prepare("DELETE FROM fila_edicao WHERE id=?");
+        $stmt2->bind_param("i", $id);
+        $stmt2->execute();
+        $deletados += (int)$stmt2->affected_rows;
+        $stmt2->close();
+    }
+    header("Location: dashboard_master.php?msg=lote_excluido&n=" . $deletados);
+    exit;
 }
 
 // ================================
@@ -427,6 +463,23 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                         </div>
                         
                         
+                        <!-- Toolbar de exclusão em lote -->
+                        <div id="bulkToolbar" class="hidden mb-3 flex flex-wrap items-center gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
+                            <i class="fa-solid fa-trash-can text-red-500"></i>
+                            <span id="bulkCount" class="text-sm font-semibold text-red-700">0 selecionado(s)</span>
+                            <button type="button" onclick="submitBulkDelete()"
+                                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-sm font-semibold transition">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Excluir selecionados
+                            </button>
+                            <button type="button" onclick="clearSelection()"
+                                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-sm transition">
+                                Limpar seleção
+                            </button>
+                        </div>
+
+                        <form method="POST" id="formLote">
+                        <input type="hidden" name="acao" value="excluir_lote">
+
                         <!-- MOBILE: Cards -->
                         <div class="md:hidden space-y-3">
                             <?php if (empty($fila_atual)): ?>
@@ -437,9 +490,13 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                 <?php foreach ($fila_atual as $item): ?>
                                     <div class="bg-gray-50 border rounded-lg p-4 shadow-sm">
                                         <div class="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div class="text-xs text-gray-500">Conta VMOS</div>
-                                                <div class="text-base font-bold text-gray-800"><?= h($item['vmos_id']) ?></div>
+                                            <div class="flex items-start gap-3">
+                                                <input type="checkbox" name="ids[]" value="<?= (int)$item['id'] ?>"
+                                                       class="row-check mt-1 w-4 h-4 cursor-pointer accent-red-500 shrink-0">
+                                                <div>
+                                                    <div class="text-xs text-gray-500">Conta VMOS</div>
+                                                    <div class="text-base font-bold text-gray-800"><?= h($item['vmos_id']) ?></div>
+                                                </div>
                                             </div>
                                             <div class="shrink-0">
                                                 <?= badge_status($item['status']) ?>
@@ -507,6 +564,10 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
 
                                 <thead class="bg-gray-800 text-white border-b">
                                     <tr>
+                                        <th class="text-center py-3 px-2 w-10">
+                                            <input type="checkbox" id="selectAll" title="Selecionar/Desmarcar todos"
+                                                   class="w-4 h-4 cursor-pointer accent-red-500">
+                                        </th>
                                         <th class="text-left py-3 px-4 uppercase font-semibold text-sm">Conta</th>
                                                                                 <th class="text-center py-3 px-4 uppercase font-semibold text-sm">Bruto</th>
                                         <th class="text-center py-3 px-4 uppercase font-semibold text-sm">Status</th>
@@ -518,13 +579,17 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                 <tbody class="text-gray-700">
                                     <?php if (empty($fila_atual)): ?>
                                         <tr>
-                                            <td colspan="6" class="text-center py-8 text-gray-500">
+                                            <td colspan="7" class="text-center py-8 text-gray-500">
                                                 Nenhuma tarefa encontrada.
                                             </td>
                                         </tr>
                                     <?php else: ?>
                                         <?php foreach ($fila_atual as $item): ?>
                                             <tr class="border-b hover:bg-gray-50 transition align-top">
+                                                <td class="text-center py-3 px-2">
+                                                    <input type="checkbox" name="ids[]" value="<?= (int)$item['id'] ?>"
+                                                           class="row-check w-4 h-4 cursor-pointer accent-red-500">
+                                                </td>
                                                 <td class="text-left py-3 px-4 font-bold text-gray-800"><?= h($item['vmos_id']) ?></td>
 <td class="text-center py-3 px-4 text-xs text-gray-500">
                                                     <div title="<?= h($item['bruto_arquivo']) ?>">
@@ -586,6 +651,8 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
                                 </tbody>
                             </table>
                         </div><!-- /hidden md:block -->
+
+                        </form><!-- /formLote -->
 
                         <div class="mt-4 text-xs text-gray-500">
                             Mostrando as últimas <?= (int)$limit ?> tarefas<?= $filtro_status ? " (status: <b>".h($filtro_status)."</b>)" : "" ?>.
@@ -658,6 +725,60 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
       btn.innerHTML = original;
     }, 60000);
   });
+})();
+
+// ── Seleção em lote ───────────────────────────────────────────────────────────
+(function () {
+  const selectAll  = document.getElementById('selectAll');
+  const toolbar    = document.getElementById('bulkToolbar');
+  const countLabel = document.getElementById('bulkCount');
+  const formLote   = document.getElementById('formLote');
+
+  function getChecked() {
+    return Array.from(document.querySelectorAll('.row-check:checked'));
+  }
+
+  function updateToolbar() {
+    const checked = getChecked();
+    const n = checked.length;
+    if (n > 0) {
+      toolbar.classList.remove('hidden');
+      countLabel.textContent = n + ' selecionado(s)';
+    } else {
+      toolbar.classList.add('hidden');
+    }
+    if (selectAll) {
+      const all = document.querySelectorAll('.row-check');
+      selectAll.checked       = all.length > 0 && n === all.length;
+      selectAll.indeterminate = n > 0 && n < all.length;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      document.querySelectorAll('.row-check').forEach(function (cb) {
+        cb.checked = selectAll.checked;
+      });
+      updateToolbar();
+    });
+  }
+
+  document.querySelectorAll('.row-check').forEach(function (cb) {
+    cb.addEventListener('change', updateToolbar);
+  });
+
+  window.submitBulkDelete = function () {
+    const n = getChecked().length;
+    if (n === 0) return;
+    if (!confirm('ATENÇÃO: excluir ' + n + ' tarefa(s) e apagar os brutos do servidor. Continuar?')) return;
+    formLote.submit();
+  };
+
+  window.clearSelection = function () {
+    document.querySelectorAll('.row-check').forEach(function (cb) { cb.checked = false; });
+    if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+    updateToolbar();
+  };
 })();
 </script>
 
