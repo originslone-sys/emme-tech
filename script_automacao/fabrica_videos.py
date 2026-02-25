@@ -191,9 +191,9 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
     scale_factor    = random.uniform(0.99, 1.01)
     rotate_angle    = random.uniform(-0.5, 0.5)
     grain_strength  = random.randint(1, 3)   # noise alls: inteiro 0-100
-    brightness      = random.uniform(0.995, 1.005)
-    contrast        = random.uniform(0.998, 1.002)
-    saturation      = random.uniform(0.997, 1.003)
+    brightness      = random.uniform(-0.005, 0.005)  # eq: neutro=0, range -1..1
+    contrast        = random.uniform(0.998, 1.002)   # eq: neutro=1.0
+    saturation      = random.uniform(0.997, 1.003)   # eq: neutro=1.0
     speed_factor    = random.uniform(0.995, 1.005)
 
     metadata_changes: List[str] = [
