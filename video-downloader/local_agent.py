@@ -260,16 +260,19 @@ class Handler(BaseHTTPRequestHandler):
         ]
         for browser in browsers_to_try:
             cookie_args = ["--cookies-from-browser", browser] if browser else []
+            print(f"[fetch] browser={browser or 'nenhum'}  url={url[:80]}")
             try:
                 r = subprocess.run(base_cmd + cookie_args + [url],
                                    capture_output=True, text=True, timeout=120)
             except subprocess.TimeoutExpired:
                 return self._json({"ok": False, "error": "Timeout ao buscar vídeos (>2 min)"})
             last_stderr = (r.stderr or "").strip()
-            if r.stdout.strip():
+            stdout_ok = bool(r.stdout.strip()) and r.stdout.strip() != "null"
+            print(f"[fetch] rc={r.returncode}  stdout={len(r.stdout)} chars  stderr={last_stderr[:200] or '(vazio)'}")
+            if stdout_ok:
                 break  # sucesso — sai do loop
 
-        if not r or not r.stdout.strip():
+        if not r or not r.stdout.strip() or r.stdout.strip() == "null":
             detail = f" Detalhe: {last_stderr[:400]}" if last_stderr else ""
             return self._json({"ok": False,
                                "error": f"Nenhum resultado. Verifique se a URL é válida e pública.{detail}"})
@@ -305,8 +308,10 @@ class Handler(BaseHTTPRequestHandler):
                         "extractor": parsed_lines[0].get("extractor", "")}
 
         if not isinstance(data, dict):
+            print(f"[fetch] JSON inválido. data={repr(data)[:100]}  stderr={last_stderr[:200] or '(vazio)'}")
+            detail = f" Detalhe: {last_stderr[:400]}" if last_stderr else ""
             return self._json({"ok": False,
-                               "error": "Nenhum vídeo encontrado. Verifique se a URL é válida e pública."})
+                               "error": f"Nenhum vídeo encontrado. Verifique se a URL é válida e pública.{detail}"})
 
         # Se o yt-dlp retornou um único vídeo (sem 'entries'), trata como lista de 1
         if "entries" not in data:
