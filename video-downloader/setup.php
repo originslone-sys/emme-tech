@@ -22,6 +22,31 @@
 <main class="max-w-3xl mx-auto px-4 py-8 space-y-6">
 
 <?php
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Verifica se exec() está disponível SEM chamá-la.
+ * @param string $func 'exec' | 'shell_exec' | etc.
+ */
+function fn_enabled(string $func): bool {
+    if (!function_exists($func)) return false;
+    $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
+    return !in_array($func, $disabled, true);
+}
+
+/**
+ * Chama exec() somente se ela estiver disponível.
+ * Retorna false se exec() estiver desabilitada (sem lançar fatal error).
+ */
+function safe_exec(string $cmd, array &$output = [], int &$rc = -1): bool {
+    static $ok = null;
+    if ($ok === null) $ok = fn_enabled('exec');
+    if (!$ok) { $output = []; $rc = -1; return false; }
+    exec($cmd, $output, $rc);
+    return true;
+}
+
 $BIN_DIR  = __DIR__ . '/bin';
 $BIN_PATH = $BIN_DIR . '/yt-dlp';
 
@@ -34,7 +59,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
         @mkdir($BIN_DIR, 0755, true);
     }
 
-    // Tenta com file_get_contents primeiro, depois curl
+    // Baixa o binário (file_get_contents ou cURL)
     $content = false;
     if (ini_get('allow_url_fopen')) {
         $ctx     = stream_context_create(['http' => ['follow_location' => true, 'timeout' => 60]]);
@@ -54,15 +79,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
         curl_close($ch);
     }
 
-    if ($content === false || strlen($content) < 1000) {
+    if ($content === false || strlen((string)$content) < 1000) {
         $result['msg'] = 'Falha ao baixar o binário. Tente pelo SSH (instruções abaixo).';
     } else {
         file_put_contents($BIN_PATH, $content);
         @chmod($BIN_PATH, 0755);
 
-        // Testa
+        // Testa usando safe_exec (não lança fatal error se exec() estiver bloqueado)
         $out = []; $rc = -1;
-        exec(escapeshellarg($BIN_PATH) . ' --version 2>/dev/null', $out, $rc);
+        safe_exec(escapeshellarg($BIN_PATH) . ' --version 2>/dev/null', $out, $rc);
         if ($rc === 0) {
             $result = ['ok' => true, 'msg' => 'yt-dlp instalado com sucesso! Versão: ' . trim($out[0] ?? '')];
         } else {
@@ -88,32 +113,34 @@ if (isset($_POST['action']) && $_POST['action'] === 'install') {
 $checks = [];
 
 // 1. exec() habilitado
-$exec_ok = function_exists('exec') && !in_array('exec', array_map('trim', explode(',', ini_get('disable_functions'))));
+$exec_ok = fn_enabled('exec');
 $checks[] = [
     'label' => 'exec() habilitado',
     'ok'    => $exec_ok,
     'desc'  => $exec_ok
         ? 'PHP pode executar processos externos.'
-        : 'exec() está desabilitado. Sem isso o yt-dlp não funciona. No Hostinger, ative em: Hospedagem → Avançado → PHP Configuration → disable_functions (remova "exec").',
+        : 'exec() está desabilitado. Sem isso o yt-dlp não funciona. No Hostinger: hPanel → Hospedagem → Avançado → Configuração do PHP → disable_functions (remova "exec").',
 ];
 
 // 2. shell_exec() habilitado
-$shell_ok = function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))));
+$shell_ok = fn_enabled('shell_exec');
 $checks[] = [
     'label' => 'shell_exec() habilitado',
     'ok'    => $shell_ok,
-    'desc'  => $shell_ok ? 'PHP pode capturar saída de comandos.' : 'shell_exec() está desabilitado. Necessário para buscar a lista de vídeos.',
+    'desc'  => $shell_ok
+        ? 'PHP pode capturar saída de comandos.'
+        : 'shell_exec() está desabilitado. Remova "shell_exec" de disable_functions no painel Hostinger.',
 ];
 
-// 3. allow_url_fopen ou curl (para baixar o binário)
-$fopen_ok = (bool)ini_get('allow_url_fopen');
-$curl_ok  = function_exists('curl_init');
+// 3. allow_url_fopen ou cURL (para baixar o binário)
+$fopen_ok    = (bool) ini_get('allow_url_fopen');
+$curl_ok     = function_exists('curl_init');
 $download_ok = $fopen_ok || $curl_ok;
 $checks[] = [
     'label' => 'Download de URL (allow_url_fopen ou cURL)',
     'ok'    => $download_ok,
     'desc'  => $download_ok
-        ? ($fopen_ok ? 'allow_url_fopen ativado.' : '') . ($curl_ok ? ' cURL disponível.' : '')
+        ? trim(($fopen_ok ? 'allow_url_fopen ativado.' : '') . ($curl_ok ? ' cURL disponível.' : ''))
         : 'Sem allow_url_fopen nem cURL não é possível baixar o binário automaticamente. Use SSH.',
 ];
 
@@ -122,21 +149,24 @@ $zip_ok = class_exists('ZipArchive');
 $checks[] = [
     'label' => 'ZipArchive (para criar ZIP)',
     'ok'    => $zip_ok,
-    'desc'  => $zip_ok ? 'Extensão ZipArchive disponível.' : 'ZipArchive não encontrado. Instale a extensão php-zip.',
+    'desc'  => $zip_ok
+        ? 'Extensão ZipArchive disponível.'
+        : 'ZipArchive não encontrado. Ative a extensão php-zip no painel do Hostinger.',
 ];
 
-// 5. yt-dlp já instalado (sistema ou local)
+// 5. yt-dlp já instalado (local ou sistema) — usa safe_exec, nunca lança fatal
 $ytdlp_bin = '';
-foreach ([$BIN_PATH, 'yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'] as $b) {
-    $o = []; $rc = -1;
-    @exec(escapeshellarg($b) . ' --version 2>/dev/null', $o, $rc);
-    if ($rc === 0) { $ytdlp_bin = $b; break; }
-    $o = [];
+if ($exec_ok) {
+    foreach ([$BIN_PATH, 'yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'] as $b) {
+        $o = []; $rc = -1;
+        safe_exec(escapeshellarg($b) . ' --version 2>/dev/null', $o, $rc);
+        if ($rc === 0) { $ytdlp_bin = $b; break; }
+    }
 }
 $ytdlp_ok      = $ytdlp_bin !== '';
 $ytdlp_version = '';
 if ($ytdlp_ok) {
-    $ov = []; @exec(escapeshellarg($ytdlp_bin) . ' --version 2>/dev/null', $ov);
+    $ov = []; safe_exec(escapeshellarg($ytdlp_bin) . ' --version 2>/dev/null', $ov);
     $ytdlp_version = trim($ov[0] ?? '');
 }
 $checks[] = [
@@ -144,30 +174,35 @@ $checks[] = [
     'ok'    => $ytdlp_ok,
     'desc'  => $ytdlp_ok
         ? "Encontrado em: {$ytdlp_bin}" . ($ytdlp_version ? " (v{$ytdlp_version})" : '')
-        : 'yt-dlp não encontrado. Use o botão abaixo para instalar automaticamente.',
+        : ($exec_ok
+            ? 'yt-dlp não encontrado. Use o botão abaixo para instalar automaticamente.'
+            : 'Não foi possível verificar (exec() desabilitado).'),
 ];
 
-// 6. Pasta downloads com permissão de escrita
+// 6. Pasta downloads/ com permissão de escrita
 $dl_dir = __DIR__ . '/downloads';
-$dl_ok  = is_dir($dl_dir) && is_writable($dl_dir);
-if (!$dl_ok && is_dir($dl_dir)) @chmod($dl_dir, 0755);
+if (!is_dir($dl_dir)) @mkdir($dl_dir, 0755, true);
 $dl_ok = is_dir($dl_dir) && is_writable($dl_dir);
 $checks[] = [
     'label' => 'Pasta downloads/ com escrita',
     'ok'    => $dl_ok,
-    'desc'  => $dl_ok ? 'Pasta downloads/ existe e tem permissão de escrita.' : 'Sem permissão de escrita em downloads/. Execute: chmod 755 downloads/',
+    'desc'  => $dl_ok
+        ? 'Pasta downloads/ existe e tem permissão de escrita.'
+        : 'Sem permissão de escrita em downloads/. Execute via SSH: chmod 755 downloads/',
 ];
 
-// 6. Pasta bin com permissão de escrita
+// 7. Pasta bin/ pode ser criada/escrita
 $bin_writable = is_dir($BIN_DIR) ? is_writable($BIN_DIR) : is_writable(__DIR__);
 $checks[] = [
     'label' => 'Pasta bin/ pode ser criada/escrita',
     'ok'    => $bin_writable,
-    'desc'  => $bin_writable ? 'Pode salvar o binário yt-dlp em bin/.' : 'Sem permissão para criar/escrever em bin/. Execute: chmod 755 .',
+    'desc'  => $bin_writable
+        ? 'Pode salvar o binário yt-dlp em bin/.'
+        : 'Sem permissão para criar/escrever em bin/. Execute via SSH: chmod 755 .',
 ];
 
 $all_critical_ok = $exec_ok && $shell_ok && $zip_ok;
-$ready = $ytdlp_ok && $all_critical_ok;
+$ready           = $ytdlp_ok && $all_critical_ok;
 ?>
 
 <!-- Status geral -->
@@ -212,7 +247,8 @@ $ready = $ytdlp_ok && $all_critical_ok;
         Instalar yt-dlp automaticamente
     </h2>
     <p class="text-sm text-gray-600 mb-4">
-        Baixa o binário standalone direto do GitHub Releases e salva em <code class="bg-gray-100 px-1 rounded">bin/yt-dlp</code>.
+        Baixa o binário standalone direto do GitHub Releases e salva em
+        <code class="bg-gray-100 px-1 rounded">bin/yt-dlp</code>.
         Não precisa de Python nem pip.
     </p>
     <form method="POST">
@@ -225,18 +261,15 @@ $ready = $ytdlp_ok && $all_critical_ok;
 </div>
 <?php endif; ?>
 
-<!-- Instruções SSH (sempre visível quando yt-dlp não está instalado) -->
-<?php if (!$ytdlp_ok): ?>
+<!-- Instruções SSH -->
 <div class="bg-white rounded-xl shadow p-5 space-y-4">
     <h2 class="font-bold text-gray-800 flex items-center gap-2">
         <i class="fa-solid fa-terminal text-gray-600"></i>
         Instalar via SSH (alternativa manual)
     </h2>
-
     <p class="text-sm text-gray-600">
-        Acesse o servidor via SSH (Hostinger → Hospedagem → SSH Access) e execute:
+        Acesse o servidor via SSH (hPanel → Hospedagem → SSH Access) e execute:
     </p>
-
     <div class="bg-gray-900 text-green-400 rounded-lg p-4 text-sm font-mono space-y-1 overflow-x-auto">
         <p><span class="text-gray-500"># Navega para a pasta do projeto</span></p>
         <p>cd <?= htmlspecialchars(__DIR__) ?></p>
@@ -249,27 +282,27 @@ $ready = $ytdlp_ok && $all_critical_ok;
         <p><span class="text-gray-500"># Testa</span></p>
         <p>bin/yt-dlp --version</p>
     </div>
-
-    <p class="text-sm text-gray-600">Após executar, <a href="setup.php" class="text-blue-600 underline">recarregue esta página</a> para confirmar.</p>
+    <p class="text-sm text-gray-600">
+        Após executar, <a href="setup.php" class="text-blue-600 underline">recarregue esta página</a> para confirmar.
+    </p>
 </div>
-<?php endif; ?>
 
-<?php if (!$exec_ok): ?>
-<!-- exec() desabilitado: instrução específica Hostinger -->
+<!-- Como habilitar exec() no Hostinger -->
+<?php if (!$exec_ok || !$shell_ok): ?>
 <div class="bg-orange-50 border border-orange-200 rounded-xl p-5 space-y-3">
     <h2 class="font-bold text-orange-800 flex items-center gap-2">
         <i class="fa-solid fa-triangle-exclamation"></i>
-        Como habilitar exec() no Hostinger
+        Como habilitar exec() / shell_exec() no Hostinger
     </h2>
     <ol class="text-sm text-orange-900 space-y-2 list-decimal list-inside">
         <li>Acesse o painel Hostinger (hPanel)</li>
-        <li>Vá em <strong>Hospedagem → Gerenciar → Configurações Avançadas → PHP Configuration</strong></li>
+        <li>Vá em <strong>Hospedagem → Gerenciar → Configurações Avançadas → Configuração do PHP</strong></li>
         <li>Localize a diretiva <code class="bg-orange-100 px-1 rounded">disable_functions</code></li>
         <li>Remova <code class="bg-orange-100 px-1 rounded">exec</code> e <code class="bg-orange-100 px-1 rounded">shell_exec</code> da lista</li>
         <li>Salve e recarregue esta página</li>
     </ol>
     <p class="text-xs text-orange-700">
-        ⚠️ Se não aparecer essa opção, seu plano pode ser muito restrito.
+        Se não aparecer essa opção, seu plano pode ser muito restrito.
         Planos <strong>Business</strong> e <strong>Cloud</strong> do Hostinger costumam permitir exec().
     </p>
 </div>
