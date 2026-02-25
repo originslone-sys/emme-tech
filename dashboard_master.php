@@ -155,25 +155,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
         exit;
     }
 
-    $arquivos = [];
+    $PASTA_VIDEOS = __DIR__ . '/videos';
+    $arquivos     = [];
+    $sem_arquivo  = 0;
+
     foreach ($ids as $rawId) {
         $id = (int)$rawId;
         if ($id <= 0) continue;
-        $stmt = $conn->prepare("SELECT bruto_arquivo FROM fila_edicao WHERE id=? LIMIT 1");
+
+        $stmt = $conn->prepare("SELECT bruto_arquivo, resultado_arquivo FROM fila_edicao WHERE id=? LIMIT 1");
         $stmt->bind_param("i", $id);
         $stmt->execute();
         $row = ($r = $stmt->get_result()) ? $r->fetch_assoc() : null;
         $stmt->close();
-        if ($row && !empty($row['bruto_arquivo'])) {
-            $path = $PASTA_BRUTOS . '/' . basename($row['bruto_arquivo']);
-            if (file_exists($path)) {
-                $arquivos[] = ['path' => $path, 'name' => basename($row['bruto_arquivo'])];
+        if (!$row) continue;
+
+        // Tenta bruto primeiro; depois resultado como fallback
+        $found = false;
+        foreach ([
+            ['campo' => 'bruto_arquivo',    'base' => $PASTA_BRUTOS],
+            ['campo' => 'resultado_arquivo', 'base' => $PASTA_VIDEOS],
+        ] as $tentativa) {
+            $valor = $row[$tentativa['campo']] ?? '';
+            if ($valor === '' || $valor === null) continue;
+            $path = $tentativa['base'] . '/' . basename($valor);
+            if (file_exists($path) && is_file($path)) {
+                $arquivos[] = ['path' => $path, 'name' => basename($valor)];
+                $found = true;
+                break;
             }
         }
+        if (!$found) $sem_arquivo++;
     }
 
     if (empty($arquivos)) {
-        header("Location: dashboard_master.php?msg=erro&err=" . urlencode("Nenhum arquivo encontrado no servidor."));
+        $detalhe = "Nenhum arquivo encontrado no servidor para os IDs selecionados.";
+        $detalhe .= " Pasta brutos: {$PASTA_BRUTOS}";
+        if ($sem_arquivo > 0) $detalhe .= " | {$sem_arquivo} tarefa(s) sem arquivo no disco.";
+        header("Location: dashboard_master.php?msg=erro&err=" . urlencode($detalhe));
         exit;
     }
 
@@ -185,7 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['ac
     }
     $zip->close();
 
-    $zipname = 'brutos_' . date('Ymd_His') . '_' . count($arquivos) . 'arqs.zip';
+    $aviso = $sem_arquivo > 0 ? " ({$sem_arquivo}_nao_encontrado)" : '';
+    $zipname = 'arquivos_' . date('Ymd_His') . '_' . count($arquivos) . 'arqs' . $aviso . '.zip';
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . $zipname . '"');
     header('Content-Length: ' . filesize($tmpFile));
