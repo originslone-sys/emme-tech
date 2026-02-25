@@ -286,13 +286,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['video'])) {
 }
 
 // ================================
-// LISTAGEM FILA (últimas 50)
+// LISTAGEM FILA (paginada)
 // ================================
 $filtro_status = $_GET['status'] ?? '';
 $validStatus = ['','pendente','baixando','editando','concluido','erro'];
 if (!in_array($filtro_status, $validStatus, true)) $filtro_status = '';
 
 $limit = 50;
+$page  = max(1, (int)($_GET['page'] ?? 1));
 
 // Detecta se a coluna resultado_arquivo existe (compatibilidade antes da migração)
 $tem_resultado_col = false;
@@ -300,18 +301,32 @@ $chk = $conn->query("SHOW COLUMNS FROM fila_edicao LIKE 'resultado_arquivo'");
 if ($chk && $chk->num_rows > 0) $tem_resultado_col = true;
 $sel_resultado = $tem_resultado_col ? ", resultado_arquivo" : ", NULL AS resultado_arquivo";
 
+// Total de registros para calcular páginas
+if ($filtro_status === '') {
+    $total_count = (int)($conn->query("SELECT COUNT(*) FROM fila_edicao")->fetch_row()[0] ?? 0);
+} else {
+    $sc = $conn->prepare("SELECT COUNT(*) FROM fila_edicao WHERE status=?");
+    $sc->bind_param("s", $filtro_status);
+    $sc->execute();
+    $total_count = (int)$sc->get_result()->fetch_row()[0];
+    $sc->close();
+}
+$total_pages = max(1, (int)ceil($total_count / $limit));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $limit;
+
 if ($filtro_status === '') {
     $sql = "SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at $sel_resultado
             FROM fila_edicao
             ORDER BY id DESC
-            LIMIT $limit";
+            LIMIT $limit OFFSET $offset";
     $res = $conn->query($sql);
 } else {
     $stmt = $conn->prepare("SELECT id, vmos_id, bruto_arquivo, status, worker_id, erro_msg, created_at, updated_at $sel_resultado
                             FROM fila_edicao
                             WHERE status=?
                             ORDER BY id DESC
-                            LIMIT $limit");
+                            LIMIT $limit OFFSET $offset");
     $stmt->bind_param("s", $filtro_status);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -669,8 +684,49 @@ h("# Rodar worker (PowerShell / CMD — na pasta D:\\automacao_videos)\n".
 
                         </form><!-- /formLote -->
 
-                        <div class="mt-4 text-xs text-gray-500">
-                            Mostrando as últimas <?= (int)$limit ?> tarefas<?= $filtro_status ? " (status: <b>".h($filtro_status)."</b>)" : "" ?>.
+                        <div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+                            <span>
+                                <?= number_format($total_count) ?> tarefa<?= $total_count !== 1 ? 's' : '' ?>
+                                <?= $filtro_status ? " — status: <b>".h($filtro_status)."</b>" : "" ?>.
+                                Página <?= $page ?> de <?= $total_pages ?>.
+                            </span>
+                            <?php if ($total_pages > 1):
+                                $qs_base = $filtro_status ? 'status=' . urlencode($filtro_status) . '&' : '';
+                            ?>
+                            <nav class="flex items-center gap-1 flex-wrap justify-center">
+                                <?php if ($page > 1): ?>
+                                    <a href="?<?= $qs_base ?>page=<?= $page - 1 ?>"
+                                       class="px-2 py-1 rounded border hover:bg-gray-100">&#8592;</a>
+                                <?php endif; ?>
+
+                                <?php
+                                $window = 2;
+                                $shown = [];
+                                for ($p = 1; $p <= $total_pages; $p++) {
+                                    if ($p === 1 || $p === $total_pages || abs($p - $page) <= $window) {
+                                        $shown[] = $p;
+                                    }
+                                }
+                                $prev_p = null;
+                                foreach ($shown as $p):
+                                    if ($prev_p !== null && $p - $prev_p > 1): ?>
+                                        <span class="px-1 text-gray-400">&hellip;</span>
+                                    <?php endif;
+                                    if ($p === $page): ?>
+                                        <span class="px-3 py-1 rounded border bg-blue-500 text-white font-semibold"><?= $p ?></span>
+                                    <?php else: ?>
+                                        <a href="?<?= $qs_base ?>page=<?= $p ?>"
+                                           class="px-3 py-1 rounded border hover:bg-gray-100"><?= $p ?></a>
+                                    <?php endif;
+                                    $prev_p = $p;
+                                endforeach; ?>
+
+                                <?php if ($page < $total_pages): ?>
+                                    <a href="?<?= $qs_base ?>page=<?= $page + 1 ?>"
+                                       class="px-2 py-1 rounded border hover:bg-gray-100">&#8594;</a>
+                                <?php endif; ?>
+                            </nav>
+                            <?php endif; ?>
                         </div>
 
                     </div><!-- /bg-white card -->
