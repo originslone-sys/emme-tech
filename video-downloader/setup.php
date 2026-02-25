@@ -584,6 +584,88 @@ if ($bin_exists && $is_elf && !$ytdlp_ok) {
 </div>
 <?php endif; ?>
 
+<!-- Agente Local -->
+<div class="bg-white rounded-xl shadow p-5 space-y-4 border-2 border-blue-200">
+    <h2 class="font-bold text-blue-800 flex items-center gap-2 text-lg">
+        <i class="fa-solid fa-computer text-blue-600"></i>
+        Agente Local <span class="text-xs font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Recomendado para Hostinger</span>
+    </h2>
+    <p class="text-sm text-gray-700">
+        Como este servidor não suporta executar binários externos, o <strong>Agente Local</strong> é a melhor solução:
+        um script Python que roda na <em>sua máquina</em> e expõe uma API em <code>localhost:9999</code>.
+        O app detecta automaticamente quando o agente está ativo e o usa para tudo — navegação de perfis,
+        download de vídeos — e os arquivos vão direto para a pasta <code>Downloads/VideoDownloader</code> do seu computador.
+    </p>
+
+    <!-- Passo a passo -->
+    <div class="grid sm:grid-cols-3 gap-4 text-sm">
+        <div class="bg-blue-50 rounded-lg p-4 space-y-2">
+            <div class="font-bold text-blue-700 flex items-center gap-2">
+                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                Instale o yt-dlp
+            </div>
+            <div class="bg-gray-900 text-green-400 rounded p-2 text-xs font-mono">pip install yt-dlp</div>
+            <p class="text-xs text-gray-500">Windows: <code>winget install yt-dlp</code></p>
+        </div>
+        <div class="bg-blue-50 rounded-lg p-4 space-y-2">
+            <div class="font-bold text-blue-700 flex items-center gap-2">
+                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                Baixe o agente
+            </div>
+            <a href="local_agent.py" download
+               class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-2 rounded transition w-full justify-center">
+                <i class="fa-solid fa-download"></i> local_agent.py
+            </a>
+            <p class="text-xs text-gray-500">Salve em qualquer pasta do seu computador.</p>
+        </div>
+        <div class="bg-blue-50 rounded-lg p-4 space-y-2">
+            <div class="font-bold text-blue-700 flex items-center gap-2">
+                <span class="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                Execute
+            </div>
+            <div class="bg-gray-900 text-green-400 rounded p-2 text-xs font-mono">python3 local_agent.py</div>
+            <p class="text-xs text-gray-500">Mantenha o terminal aberto. Recarregue o app — o badge <strong class="text-green-700">Modo Local Ativo</strong> aparece no topo.</p>
+        </div>
+    </div>
+
+    <!-- Status ao vivo -->
+    <div id="localAgentStatus" class="text-sm border rounded-lg p-3 bg-gray-50">
+        <span class="text-gray-400 text-xs"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Verificando agente local...</span>
+    </div>
+
+    <p class="text-xs text-gray-500">
+        <i class="fa-solid fa-shield-halved text-gray-400 mr-1"></i>
+        O agente escuta apenas em <code>127.0.0.1:9999</code> — inacessível externamente.
+        Nenhum dado é enviado para servidores de terceiros quando o agente está ativo.
+    </p>
+</div>
+
+<script>
+// Verifica agente local ao carregar o setup
+(async function() {
+  const el = document.getElementById('localAgentStatus');
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 1500);
+    const r = await fetch('http://localhost:9999/ping', { signal: ctrl.signal });
+    const d = await r.json();
+    if (d.ok && d.ytdlp) {
+      el.innerHTML = '<i class="fa-solid fa-circle-check text-green-500 mr-2"></i>' +
+        '<strong class="text-green-700">Agente local detectado!</strong> ' +
+        `yt-dlp ${d.version} · Downloads: <code class="text-xs">${d.download_dir}</code>`;
+      el.className = 'text-sm border border-green-200 rounded-lg p-3 bg-green-50';
+    } else {
+      el.innerHTML = '<i class="fa-solid fa-circle-xmark text-red-400 mr-2"></i>' +
+        '<span class="text-red-700">Agente encontrado mas yt-dlp não instalado.</span>';
+      el.className = 'text-sm border border-red-200 rounded-lg p-3 bg-red-50';
+    }
+  } catch {
+    el.innerHTML = '<i class="fa-solid fa-circle text-gray-300 mr-2"></i>' +
+      '<span class="text-gray-500">Agente local não detectado (normal se ainda não iniciou).</span>';
+  }
+})();
+</script>
+
 <!-- Instruções SSH -->
 <div class="bg-white rounded-xl shadow p-5 space-y-4">
     <h2 class="font-bold text-gray-800 flex items-center gap-2">
