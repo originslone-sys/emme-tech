@@ -730,10 +730,14 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
         except Exception:
             pass
 
-    # Foca a página para que eventos de teclado e mouse funcionem
+    # Foca a página para que eventos de teclado/mouse funcionem,
+    # SEM clicar em nada (mouse.click abria o modal de vídeo).
     try:
-        page.mouse.click(640, 400)
-        page.wait_for_timeout(800)
+        page.evaluate("document.body.focus()")
+        page.wait_for_timeout(300)
+        # Fecha qualquer modal que possa ter aberto durante o carregamento
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
     except Exception:
         pass
 
