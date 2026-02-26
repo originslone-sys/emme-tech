@@ -11,6 +11,8 @@ Requisitos:
   pip install yt-dlp         (ou: pipx install yt-dlp / winget install yt-dlp)
 """
 
+import importlib
+import itertools
 import json
 import os
 import shutil
@@ -202,118 +204,222 @@ def _read_firefox_cookies(domain_suffix: str) -> dict:
             shutil.rmtree(str(tmp_dir), ignore_errors=True)
 
 
-def _fetch_instagram_videos_direct(username: str, start: int, count: int) -> "dict | None":
-    """Fallback: lista vídeos de perfil do Instagram via API direta quando yt-dlp falha.
-    Usa cookies do Firefox lidos do SQLite.  Inclui retry com backoff para HTTP 429."""
-    cookies = _read_firefox_cookies(".instagram.com")
-    if not cookies.get("sessionid"):
-        print("[ig-direct] sessionid não encontrado — usuário não está logado no Instagram pelo Firefox")
-        return None
+def _pip_install(pkg: str) -> bool:
+    """Instala pacote via pip. Retorna True se bem-sucedido."""
+    print(f"[auto-install] pip install {pkg} ...")
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", pkg,
+             "--quiet", "--disable-pip-version-check"],
+            capture_output=True, timeout=120,
+        )
+        if r.returncode == 0:
+            print(f"[auto-install] {pkg} instalado ✓")
+            return True
+        print(f"[auto-install] Falha: {r.stderr.decode(errors='replace')[:200]}")
+        return False
+    except Exception as exc:
+        print(f"[auto-install] Erro: {exc}")
+        return False
 
-    cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
-    # Headers que imitam o Firefox acessando instagram.com no browser
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-        ),
-        "Accept":          "*/*",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "X-IG-App-ID":     "936619743392459",
-        "X-CSRFToken":     cookies.get("csrftoken", ""),
-        "X-IG-WWW-Claim":  cookies.get("shbts", "0"),
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin":          "https://www.instagram.com",
-        "Referer":         f"https://www.instagram.com/{username}/",
-        "Sec-Fetch-Dest":  "empty",
-        "Sec-Fetch-Mode":  "cors",
-        "Sec-Fetch-Site":  "same-origin",
-        "Cookie":          cookie_str,
-    }
 
-    def _ig_get(url: str) -> "dict | None":
-        """GET com retry/backoff para 429 (rate-limit do Instagram)."""
-        # Aguarda antes da primeira chamada: yt-dlp acabou de fazer requisições
-        # e o Instagram pode ter aplicado rate-limit temporário no IP.
-        delay = 4
-        for attempt in range(4):
-            if attempt > 0:
-                print(f"[ig-direct] Aguardando {delay}s (rate limit 429)...")
-                time.sleep(delay)
-                delay = min(delay * 2, 30)
+def _try_import(module: str, pip_pkg: str | None = None):
+    """Importa módulo; se não estiver instalado, tenta pip install e reimporta."""
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        if _pip_install(pip_pkg or module):
             try:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=25) as resp:
-                    raw = resp.read()
-                    enc = resp.headers.get_content_charset("utf-8")
-                    return json.loads(raw.decode(enc))
-            except urllib.error.HTTPError as e:
-                if e.code == 429:
-                    print(f"[ig-direct] HTTP 429 na tentativa {attempt + 1}/4")
-                    continue
-                print(f"[ig-direct] HTTP {e.code} para {url}")
-                return None
-            except Exception as exc:
-                print(f"[ig-direct] Erro: {exc}")
-                return None
-        print("[ig-direct] Rate limit persistente após 4 tentativas — tente de novo em alguns minutos")
+                return importlib.import_module(module)
+            except ImportError:
+                pass
+    return None
+
+
+def _fetch_instagram_instaloader(username: str, count: int) -> "dict | None":
+    """Lista vídeos de perfil Instagram usando instaloader.
+    Instaloader gerencia rate-limiting automaticamente — não chama a API do Instagram
+    antes de estar pronto, evitando o ciclo de 429 que a abordagem direta causava."""
+    il = _try_import("instaloader")
+    if il is None:
+        print("[instaloader] Não disponível mesmo após tentativa de instalação")
         return None
 
-    # Passo 1: obtém ID numérico do usuário via www.instagram.com (endpoint do browser web)
-    print(f"[ig-direct] Buscando perfil @{username} (aguardando rate-limit expirar)...")
-    pdata = _ig_get(
-        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-    )
-    if pdata is None:
+    print(f"[instaloader] Iniciando para @{username}...")
+    try:
+        L = il.Instaloader(
+            download_videos=False,
+            download_video_thumbnails=False,
+            download_comments=False,
+            save_metadata=False,
+            quiet=True,
+        )
+
+        # Injeta cookies do Firefox para autenticar sem precisar de senha
+        cookies = _read_firefox_cookies(".instagram.com")
+        if cookies.get("sessionid"):
+            print("[instaloader] sessionid encontrado no Firefox — autenticando")
+            for k, v in cookies.items():
+                L.context._session.cookies.set(k, v, domain=".instagram.com")
+        else:
+            print("[instaloader] Sem sessionid no Firefox — modo anônimo (só perfis públicos)")
+            print("[instaloader] Dica: faça login no Instagram pelo Firefox para evitar rate limit")
+
+        profile = il.Profile.from_username(L.context, username)
+        full_name = profile.full_name or username
+        print(f"[instaloader] Perfil: {full_name} ({profile.mediacount} posts no total)")
+
+        videos = []
+        # Itera até 4× mais posts que o pedido para achar vídeos entre fotos
+        for post in itertools.islice(profile.get_posts(), count * 4):
+            if not post.is_video:
+                continue
+            caption = ""
+            try:
+                caption = (post.caption or "")[:200]
+            except Exception:
+                pass
+            videos.append({
+                "id":       post.shortcode,
+                "title":    caption or f"Vídeo de {username}",
+                "url":      f"https://www.instagram.com/p/{post.shortcode}/",
+                "thumb":    post.url or "",
+                "duration": post.video_duration or 0,
+                "views":    post.video_view_count or 0,
+                "date":     str(int(post.date_utc.timestamp())),
+            })
+            if len(videos) >= count:
+                break
+
+        print(f"[instaloader] {len(videos)} vídeo(s) encontrado(s)")
+        if not videos:
+            print("[instaloader] Sem vídeos — conta privada ou sem publicações de vídeo recentes")
+            return None
+
+        return {
+            "ok":       True,
+            "videos":   videos,
+            "fetched":  len(videos),
+            "has_more": profile.mediacount > count * 4,
+            "profile":  full_name,
+            "platform": "instagram",
+        }
+
+    except Exception as exc:
+        name = type(exc).__name__
+        msg  = str(exc)
+        if "LoginRequired" in name or "login" in msg.lower():
+            print("[instaloader] Sessão expirada ou conta privada — faça login no Instagram pelo Firefox")
+        elif "ProfileNotExists" in name or "404" in msg:
+            print(f"[instaloader] Perfil @{username} não existe")
+        elif "429" in msg or "TooMany" in name or "rate" in msg.lower():
+            print("[instaloader] Rate limit do Instagram — aguarde alguns minutos e tente de novo")
+        else:
+            print(f"[instaloader] Erro ({name}): {msg[:300]}")
         return None
 
-    user = (pdata.get("data") or {}).get("user") or {}
-    user_id = user.get("id")
-    if not user_id:
-        print("[ig-direct] Usuário não encontrado ou conta privada")
+
+# ── Prefixos que indicam URL de post individual (não perfil) ──────────────────
+_IG_INDIVIDUAL = frozenset({"p", "reel", "tv", "stories", "explore", "accounts"})
+_FB_INDIVIDUAL = frozenset({"reel", "watch", "video"})
+
+
+def _fetch_facebook_gallerydl(url: str, count: int) -> "dict | None":
+    """Lista vídeos de página do Facebook usando gallery-dl.
+    gallery-dl tem extrator nativo para facebook.com/PAGE/videos/ que o yt-dlp não tem."""
+    # Verifica/instala gallery-dl
+    gdl = shutil.which("gallery-dl")
+    if not gdl:
+        if _pip_install("gallery-dl"):
+            gdl = shutil.which("gallery-dl")
+    if not gdl:
+        # Tenta como módulo Python
+        try:
+            subprocess.run([sys.executable, "-m", "gallery_dl", "--version"],
+                           capture_output=True, timeout=5, check=True)
+            gdl = None  # será chamado via sys.executable abaixo
+        except Exception:
+            print("[gallery-dl] Não disponível")
+            return None
+
+    cmd = ([gdl] if gdl else [sys.executable, "-m", "gallery_dl"])
+    cmd += ["--dump-json", "--range", f"1-{count}"]
+
+    # Passa cookies do Firefox se disponível
+    if "firefox" in _COOKIE_BROWSERS:
+        cmd += ["--cookies-from-browser", "firefox"]
+
+    cmd += [url]
+    print(f"[gallery-dl] Buscando vídeos: {url}")
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        out = r.stdout.strip()
+        if not out:
+            err = (r.stderr or "")[:300]
+            print(f"[gallery-dl] Sem saída (rc={r.returncode}): {err}")
+            return None
+
+        videos = []
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # gallery-dl emite arrays [msg_type, url, metadata] (msg_type 1=URL, 4=URL)
+            if isinstance(item, list) and len(item) >= 3 and item[0] in (1, 4):
+                direct_url = item[1]
+                meta = item[2] if isinstance(item[2], dict) else {}
+            elif isinstance(item, dict):
+                direct_url = item.get("url", "")
+                meta = item
+            else:
+                continue
+
+            if not direct_url:
+                continue
+
+            vid_id  = str(meta.get("id") or meta.get("video_id") or "")
+            title   = (meta.get("title") or meta.get("description") or "Vídeo Facebook")[:200]
+            thumb   = meta.get("thumbnail") or ""
+            # Reconstrói URL de página a partir do ID para que o yt-dlp possa baixar depois
+            page_url = (
+                f"https://www.facebook.com/watch/?v={vid_id}"
+                if vid_id else direct_url
+            )
+            videos.append({
+                "id":       vid_id,
+                "title":    title,
+                "url":      page_url,
+                "thumb":    thumb,
+                "duration": int(meta.get("duration") or 0),
+                "views":    int(meta.get("view_count") or 0),
+                "date":     str(meta.get("date") or ""),
+            })
+
+        if not videos:
+            print("[gallery-dl] Nenhum vídeo encontrado")
+            return None
+
+        print(f"[gallery-dl] {len(videos)} vídeo(s) encontrado(s)")
+        return {
+            "ok":       True,
+            "videos":   videos,
+            "fetched":  len(videos),
+            "profile":  url,
+            "platform": "facebook",
+        }
+
+    except subprocess.TimeoutExpired:
+        print("[gallery-dl] Timeout (90s)")
         return None
-    full_name = user.get("full_name") or username
-
-    # Passo 2: feed de vídeos do usuário
-    print(f"[ig-direct] Buscando vídeos de {full_name} (id={user_id})...")
-    feed = _ig_get(
-        f"https://www.instagram.com/api/v1/feed/user/{user_id}/?count={count}"
-    )
-    if feed is None:
+    except Exception as exc:
+        print(f"[gallery-dl] Erro: {exc}")
         return None
-
-    videos = []
-    for item in (feed.get("items") or []):
-        if item.get("media_type") != 2:  # 2 = vídeo
-            continue
-        code = item.get("code", "")
-        thumbs = (item.get("image_versions2") or {}).get("candidates") or []
-        thumb = thumbs[0].get("url", "") if thumbs else ""
-        caption_text = (item.get("caption") or {}).get("text") or f"Vídeo de {username}"
-        videos.append({
-            "id":       item.get("pk", ""),
-            "title":    caption_text[:200],
-            "url":      f"https://www.instagram.com/reel/{code}/",
-            "thumb":    thumb,
-            "duration": int(item.get("video_duration") or 0),
-            "views":    int(item.get("view_count") or 0),
-            "date":     str(item.get("taken_at", "")),
-        })
-
-    if not videos:
-        print("[ig-direct] Nenhum vídeo encontrado (conta privada ou sem vídeos recentes)")
-        return None
-
-    print(f"[ig-direct] {len(videos)} vídeo(s) encontrado(s)")
-    return {
-        "ok":       True,
-        "videos":   videos,
-        "fetched":  len(videos),
-        "start":    start,
-        "has_more": bool(feed.get("next_max_id")),
-        "profile":  full_name,
-        "platform": "instagram",
-    }
 
 
 def _needs_cookies(url: str) -> bool:
@@ -549,6 +655,41 @@ class Handler(BaseHTTPRequestHandler):
         url = _resolve_facebook_share(url)
         url = _canonicalize_facebook_url(url)
 
+        # ── Intercepção de perfis/páginas ANTES do yt-dlp ─────────────────────
+        # yt-dlp não suporta Instagram user-profile nem Facebook page/videos.
+        # Usamos ferramentas específicas e retornamos imediatamente — sem loop.
+        _host = (urlparse(url).hostname or "").lower()
+        _parts = [p for p in urlparse(url).path.split("/") if p]
+
+        if "instagram.com" in _host and _parts and _parts[0] not in _IG_INDIVIDUAL:
+            # URL de perfil Instagram → instaloader (auto-instalado se necessário)
+            _ig_user = _parts[0]
+            print(f"[route] instagram.com/{_ig_user} → instaloader (ignorando yt-dlp)")
+            result = _fetch_instagram_instaloader(_ig_user, count)
+            if result:
+                return self._json(result)
+            return self._json({"ok": False, "error": (
+                "Não foi possível listar os vídeos do perfil.\n\n"
+                "Verifique:\n"
+                "• Você está logado no Instagram pelo Firefox?\n"
+                "• O perfil é público?\n"
+                "• Se acabou de tentar muitas vezes: aguarde 2–3 minutos e tente de novo."
+            )})
+
+        if "facebook.com" in _host and len(_parts) >= 2 and _parts[1] == "videos":
+            # URL de vídeos de página Facebook → gallery-dl (auto-instalado)
+            print(f"[route] facebook.com/.../videos → gallery-dl (ignorando yt-dlp)")
+            result = _fetch_facebook_gallerydl(url, count)
+            if result:
+                return self._json(result)
+            return self._json({"ok": False, "error": (
+                "Não foi possível listar os vídeos da página.\n\n"
+                "Verifique:\n"
+                "• Você está logado no Facebook pelo Firefox?\n"
+                "• Tente a URL de um vídeo específico: facebook.com/watch?v=ID"
+            )})
+        # ── Fim da intercepção ─────────────────────────────────────────────────
+
         # Facebook e Instagram exigem cookies de sessão.
         # Tenta cada browser detectado em sequência até um funcionar.
         browsers_to_try: list[str | None] = (
@@ -587,20 +728,6 @@ class Handler(BaseHTTPRequestHandler):
                 break  # sucesso — sai do loop
 
         if not r or not r.stdout.strip() or r.stdout.strip() == "null":
-            # Fallback: Instagram → tenta API direta via cookies do Firefox
-            ig_host = "instagram.com" in (urlparse(url).hostname or "").lower()
-            if ig_host:
-                path_parts = [p for p in urlparse(url).path.split("/") if p]
-                # Só tenta para URLs de perfil (não posts individuais)
-                is_profile = path_parts and path_parts[0] not in (
-                    "p", "reel", "tv", "stories", "explore", "accounts"
-                )
-                if is_profile:
-                    username = path_parts[0]
-                    print(f"[ig-direct] yt-dlp falhou — tentando API direta para @{username}")
-                    direct = _fetch_instagram_videos_direct(username, start, count)
-                    if direct:
-                        return self._json(direct)
             best_err = first_real_error or last_stderr
             msg = _friendly_error(best_err, url) if best_err else "Verifique se a URL é válida e pública."
             return self._json({"ok": False, "error": msg})
