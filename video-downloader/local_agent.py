@@ -948,12 +948,15 @@ def _fetch_videos_via_browser(url: str, count: int) -> "dict | None":
                 finally:
                     browser.close()
 
-                # Para o Facebook: se conseguimos >=5 vídeos, OK; senão tenta headless=False
+                # Para o Facebook: headless retorna 12-18 vídeos (primeira batch da API).
+                # Se quisermos mais, precisa de headless=False onde o IntersectionObserver
+                # funciona corretamente e o Facebook não detecta bot.
+                # Threshold: se encontramos < 30 (e pedimos mais), tenta headless=False.
                 if result and result.get("ok"):
                     n_found = result.get("fetched", 0)
-                    if is_fb and n_found < 5 and headless:
-                        print(f"[browser] headless retornou só {n_found} vídeo(s) "
-                              "— retentando com janela visível (headless=False)...")
+                    if is_fb and n_found < min(count, 30) and headless:
+                        print(f"[browser] headless retornou {n_found} vídeo(s) "
+                              f"(pedidos={count}) — retentando com janela visível (headless=False)...")
                         continue
                     return result
                 if not headless:
@@ -1398,7 +1401,11 @@ class Handler(BaseHTTPRequestHandler):
             emit({"type": "progress", "done": done, "total": total, "n": n,
                   "msg": f"Baixando vídeo {n} de {total}..."})
 
-            out_tpl = str(DOWNLOAD_DIR / "%(title).80B.%(ext)s")
+            # Inclui %(id)s para garantir nome de arquivo único.
+            # Sem isso, vídeos com mesmo título (ou sem título) do mesmo criador
+            # geram o mesmo nome de arquivo → yt-dlp pula os 2°, 3°... como
+            # "já baixado" e retorna 0, enganando o contador de sucesso.
+            out_tpl = str(DOWNLOAD_DIR / "%(title).80B [%(id)s].%(ext)s")
             base_cmd = ytdlp_cmd(_YTDLP_BIN) + [
                 "--no-playlist", "--no-warnings",
                 "--merge-output-format", "mp4",
