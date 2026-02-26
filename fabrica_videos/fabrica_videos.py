@@ -13,8 +13,9 @@ import requests
 DEFAULT_API_URL = "https://emmetech.digital/api/receber_video.php"
 DEFAULT_API_KEY  = "a4aLYTawyy4HEUGQIoHCSjDOtSrxh4SA"
 
-# Fontes Windows tentadas em ordem; a primeira encontrada é usada
-FONT_PATHS_WINDOWS = [
+# Fontes: Windows, Linux e macOS (primeira encontrada é usada)
+FONT_PATHS = [
+    # Windows
     r"C:\Windows\Fonts\arial.ttf",
     r"C:\Windows\Fonts\Arial.ttf",
     r"C:\Windows\Fonts\calibri.ttf",
@@ -23,6 +24,16 @@ FONT_PATHS_WINDOWS = [
     r"C:\Windows\Fonts\Verdana.ttf",
     r"C:\Windows\Fonts\tahoma.ttf",
     r"C:\Windows\Fonts\Tahoma.ttf",
+    # Linux (Debian/Ubuntu/Arch)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    # macOS
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/SFNSDisplay.ttf",
 ]
 
 FRASES_MOTIVACIONAIS = [
@@ -37,7 +48,32 @@ FRASES_MOTIVACIONAIS = [
     "Seu valor não depende de opinião alheia.", "Olha no espelho e se orgulha.", "Você é única(o), ponto final.",
     "Pare de duvidar de você.", "Confia no processo e em si mesmo.", "A sua vibe atrai sua tribo.",
     "Seja sua maior prioridade.", "Cala a boca da insegurança.", "Você pode mais do que imagina.", "Se ame em primeiro lugar.",
-    "Ninguém anda na sua velocidade.", "Seu jeito é o seu sucesso.", "Não peça licença para existir.", "Acredite, você é incrível."
+    "Ninguém anda na sua velocidade.", "Seu jeito é o seu sucesso.", "Não peça licença para existir.", "Acredite, você é incrível.",
+    "Cada dia é uma nova chance.", "Pequenos passos também levam longe.", "Não existe fracasso, só aprendizado.",
+    "Você foi feito para vencer.", "Nada te para quando você crê.", "Silêncio e foco: a fórmula do sucesso.",
+]
+
+# Posições possíveis para o texto (variação visual)
+TEXT_POSITIONS = [
+    "x=(w-text_w)/2:y=h-(h/4)",        # baixo centro
+    "x=(w-text_w)/2:y=(h/10)",          # topo centro
+    "x=20:y=h-(h/4)",                   # baixo esquerda
+    "x=(w-text_w)-20:y=h-(h/4)",        # baixo direita
+    "x=(w-text_w)/2:y=(h/2)-(text_h/2)",# meio centro
+]
+
+# Cores de texto (variação visual)
+TEXT_COLORS = ["white", "yellow", "white@0.92", "cyan@0.90"]
+
+# Filtros EQ de áudio sutis (mudam assinatura espectral sem afetar percepção)
+AUDIO_EQ_OPTIONS: List[List[str]] = [
+    [],                                                              # sem EQ
+    ["equalizer=f=80:width_type=o:width=2:g=-2.0"],                 # roll-off grave
+    ["equalizer=f=10000:width_type=o:width=2:g=1.5"],               # leve boost agudo
+    ["equalizer=f=3500:width_type=o:width=2:g=1.2"],                # boost médio-alto
+    ["equalizer=f=200:width_type=o:width=2:g=1.5"],                 # boost grave leve
+    ["equalizer=f=80:width_type=o:width=2:g=-1.5",
+     "equalizer=f=8000:width_type=o:width=2:g=1.0"],                # dual-band
 ]
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv"}
@@ -45,7 +81,7 @@ VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv"}
 
 def _ff_path(p: Path) -> str:
     r"""
-    FFmpeg em Windows aceita melhor paths com / do que com \.
+    FFmpeg aceita melhor paths com / do que com \.
     E dentro de filtros (drawtext etc), ':' precisa ser escapado.
     Ex: D:/pasta/arq.txt -> D\:/pasta/arq.txt
     """
@@ -55,8 +91,8 @@ def _ff_path(p: Path) -> str:
 
 
 def _find_font() -> Optional[Path]:
-    """Retorna o Path da primeira fonte Windows encontrada, ou None."""
-    for fp in FONT_PATHS_WINDOWS:
+    """Retorna o Path da primeira fonte encontrada (multiplataforma), ou None."""
+    for fp in FONT_PATHS:
         p = Path(fp)
         if p.exists():
             return p
@@ -64,7 +100,7 @@ def _find_font() -> Optional[Path]:
 
 
 def calcular_hash_arquivo(arquivo: Path, algoritmo: str = "md5") -> str:
-    """Calcula o hash de um arquivo para verificação (integridade / referência)."""
+    """Calcula o hash de um arquivo para verificação de integridade."""
     hash_obj = hashlib.new(algoritmo)
     with arquivo.open("rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -127,6 +163,164 @@ def obter_info_video(arquivo_video: Path) -> dict:
     return info
 
 
+def _build_video_filters(width: int, height: int, ts: int,
+                         logs_dir: Path, input_stem: str,
+                         font_path_obj: Optional[Path],
+                         texto_quebrado: str) -> tuple[str, Optional[Path], dict]:
+    """
+    Monta a cadeia de filtros de vídeo FFmpeg.
+    Retorna: (filtro_video_str, arquivo_texto_temp, info_transformacoes)
+    """
+    info_tx: dict = {}
+
+    # ------------------------------------------------------------------ #
+    # 1. CROP: 5-30px em cada lado (~0.3-1.5% para 1920px)
+    #    Faixa maior que v1 (era 2-12px) -> mais variação de fingerprint
+    # ------------------------------------------------------------------ #
+    crop_px_x = random.randint(5, 30)
+    crop_px_y = random.randint(5, 30)
+    crop_w_expr = f"iw-{crop_px_x * 2}"
+    crop_h_expr = f"ih-{crop_px_y * 2}"
+
+    # ------------------------------------------------------------------ #
+    # 2. SCALE: ±1.5% (era ±1%)
+    # ------------------------------------------------------------------ #
+    scale_factor = round(random.uniform(0.985, 1.015), 5)
+
+    # ------------------------------------------------------------------ #
+    # 3. FLIP HORIZONTAL: 50% de chance
+    #    Uma das transformações mais eficazes contra perceptual hash.
+    # ------------------------------------------------------------------ #
+    use_hflip = random.random() < 0.5
+
+    # ------------------------------------------------------------------ #
+    # 4. ROTATE: ±1.5° (era ±0.5°)
+    # ------------------------------------------------------------------ #
+    rotate_angle = round(random.uniform(-1.5, 1.5), 4)
+
+    # ------------------------------------------------------------------ #
+    # 5. SPEED: ±5% (era ±3%)
+    #    Altera fingerprint temporal e força resync do áudio.
+    # ------------------------------------------------------------------ #
+    speed_factor = round(random.uniform(0.95, 1.05), 5)
+
+    # ------------------------------------------------------------------ #
+    # 6. COLOR EQ: brightness e contrast (saturation gerida pelo hue)
+    # ------------------------------------------------------------------ #
+    brightness = round(random.uniform(-0.015, 0.015), 5)
+    contrast   = round(random.uniform(0.993, 1.007), 5)
+
+    # ------------------------------------------------------------------ #
+    # 7. HUE ROTATION: ±15° + ajuste de saturação ±5%
+    #    Muda completamente a assinatura de cor frame-a-frame.
+    #    Imperceptível ao espectador mas derrota comparação RGB/HSV.
+    # ------------------------------------------------------------------ #
+    hue_shift = round(random.uniform(-15.0, 15.0), 3)
+    hue_sat   = round(random.uniform(0.96, 1.04), 4)
+
+    # ------------------------------------------------------------------ #
+    # 8. NOISE/GRAIN: 1-6 (era 1-3)
+    # ------------------------------------------------------------------ #
+    grain_strength = random.randint(1, 6)
+
+    # ------------------------------------------------------------------ #
+    # 9. PADDING: 8-40px em cada lado (era 4-16px)
+    # ------------------------------------------------------------------ #
+    pad_px = random.randint(4, 20) * 2   # sempre par
+
+    info_tx = {
+        "crop": f"{crop_px_x}x{crop_px_y}px",
+        "scale": f"{scale_factor:.4f}",
+        "hflip": use_hflip,
+        "rotate": f"{rotate_angle:.2f}°",
+        "speed": f"{speed_factor:.4f}",
+        "brightness": brightness,
+        "hue_shift": f"{hue_shift:.1f}°",
+        "hue_sat": hue_sat,
+        "grain": grain_strength,
+        "pad": f"{pad_px}px",
+    }
+
+    # ------------------------------------------------------------------ #
+    # DRAWTEXT: multiplataforma, posição e cor aleatórias
+    # ------------------------------------------------------------------ #
+    arquivo_texto_temp: Optional[Path] = None
+    drawtext_filter = ""
+
+    if font_path_obj is not None:
+        arquivo_texto_temp = logs_dir / f"texto_temp_{input_stem}_{ts}.txt"
+        arquivo_texto_temp.write_text(texto_quebrado, encoding="utf-8")
+
+        font_path  = _ff_path(font_path_obj)
+        fontsize   = max(18, int(height / 38))
+        box_border = max(4, int(fontsize / 5))
+        font_color = random.choice(TEXT_COLORS)
+        text_pos   = random.choice(TEXT_POSITIONS)
+
+        drawtext_filter = (
+            f"drawtext="
+            f"fontfile='{font_path}':"
+            f"textfile='{_ff_path(arquivo_texto_temp)}':"
+            f"fontcolor={font_color}:fontsize={fontsize}:"
+            f"box=1:boxcolor=black@0.5:boxborderw={box_border}:"
+            f"line_spacing={int(fontsize / 4)}:"
+            f"{text_pos}"
+        )
+        info_tx["font"] = font_path_obj.name
+        info_tx["text_color"] = font_color
+    else:
+        info_tx["font"] = "N/A (desativado)"
+
+    # ------------------------------------------------------------------ #
+    # MONTA CADEIA DE FILTROS (lista -> evita vírgula dupla)
+    # ------------------------------------------------------------------ #
+    filters: List[str] = []
+
+    filters.append(f"crop={crop_w_expr}:{crop_h_expr}:{crop_px_x}:{crop_px_y}")
+    filters.append(
+        f"scale=trunc(iw*{scale_factor}/2)*2:trunc(ih*{scale_factor}/2)*2:flags=lanczos"
+    )
+    if use_hflip:
+        filters.append("hflip")
+    filters.append(f"rotate={rotate_angle}*PI/180:fillcolor=black@1")
+    filters.append(f"setpts={speed_factor}*PTS")
+    filters.append(f"eq=brightness={brightness}:contrast={contrast}")
+    filters.append(f"hue=h={hue_shift}:s={hue_sat}")
+    filters.append(f"noise=alls={grain_strength}:allf=t+u")
+    filters.append(
+        f"pad=iw+{pad_px * 2}:ih+{pad_px * 2}:{pad_px}:{pad_px}:color=black"
+    )
+    if drawtext_filter:
+        filters.append(drawtext_filter)
+
+    filtro_video = ",".join(filters)
+    return filtro_video, arquivo_texto_temp, info_tx
+
+
+def _build_audio_af(speed_factor: float, audio_pitch: float,
+                    audio_eq: List[str], base_vol: float = 1.0) -> str:
+    """
+    Monta filtro de áudio:
+      - EQ espectral (opcional, muda assinatura ACR)
+      - atempo (resync temporal com speed do vídeo)
+      - asetrate + aresample (pitch shift real sem mudar velocidade)
+      - volume
+    """
+    audio_sync = round(1.0 / speed_factor, 6)
+    parts: List[str] = []
+
+    parts.extend(audio_eq)
+    parts.append(f"atempo={audio_sync}")
+    # Pitch shift: asetrate muda taxa de amostragem (altera pitch),
+    # aresample restaura para 44100Hz sem alterar velocidade.
+    parts.append(f"asetrate=44100*{audio_pitch}")
+    parts.append("aresample=44100")
+    if base_vol != 1.0:
+        parts.append(f"volume={base_vol}")
+
+    return ",".join(parts)
+
+
 def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_mp3: Path) -> bool:
     logs_dir.mkdir(parents=True, exist_ok=True)
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -136,10 +330,8 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         return False
 
     hash_original = calcular_hash_arquivo(input_file)[:16]
-
     texto_escolhido = random.choice(FRASES_MOTIVACIONAIS)
     video_tem_audio = tem_audio(input_file)
-
     info_video = obter_info_video(input_file)
     width, height = info_video.get("width", 1920), info_video.get("height", 1080)
     fps = float(info_video.get("fps", 30.0))
@@ -151,141 +343,137 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
 
     print(f"\n[{input_file.name}] Iniciando processamento...")
     print(f"-> Hash original (ref): {hash_original}")
-    print(f"-> Resolução: {width}x{height}, FPS: {fps:.2f}")
-    print(f"-> Frase:\n{texto_quebrado}")
-    print(f"-> Áudio original detectado? {'Sim' if video_tem_audio else 'Não (Vídeo Mudo)'}")
+    print(f"-> Resolução: {width}x{height} | FPS: {fps:.2f}")
+    print(f"-> Áudio detectado: {'Sim' if video_tem_audio else 'Não'}")
 
-    # Localiza fonte disponível no Windows
     font_path_obj = _find_font()
-    usar_drawtext = font_path_obj is not None
+    if font_path_obj is None:
+        print("[AVISO] Nenhuma fonte encontrada. Overlay de texto desativado.")
 
-    arquivo_texto_temp: Optional[Path] = None
-
-    if usar_drawtext:
-        arquivo_texto_temp = logs_dir / f"texto_temp_{input_file.stem}_{ts}.txt"
-        arquivo_texto_temp.write_text(texto_quebrado, encoding="utf-8")
-        font_path = _ff_path(font_path_obj)
-        fontsize = max(20, int(height / 35))
-        box_border = max(5, int(fontsize / 4))
-        drawtext_filter = (
-            f"drawtext="
-            f"fontfile='{font_path}':"
-            f"textfile='{_ff_path(arquivo_texto_temp)}':"
-            f"fontcolor=white:fontsize={fontsize}:"
-            f"box=1:boxcolor=black@0.5:boxborderw={box_border}:"
-            f"line_spacing={int(fontsize/4)}:"
-            f"x=(w-text_w)/2:y=h-(h/4)"
-        )
-        print(f"-> Fonte: {font_path_obj.name}")
-    else:
-        drawtext_filter = ""
-        print("[AVISO] Nenhuma fonte Windows encontrada. Overlay de texto desativado.")
-
-    crop_px_x = random.randint(2, 12)
-    crop_px_y = random.randint(2, 12)
-    # Valores inteiros calculados em Python para evitar expressões com vírgulas
-    # dentro de max() que confundem o parser de filtros do FFmpeg
-    crop_w_expr = f"iw-{crop_px_x * 2}"
-    crop_h_expr = f"ih-{crop_px_y * 2}"
-
-    scale_factor    = random.uniform(0.99, 1.01)
-    rotate_angle    = random.uniform(-0.5, 0.5)
-    grain_strength  = random.randint(1, 3)   # noise alls: inteiro 0-100
-    brightness      = random.uniform(-0.005, 0.005)  # eq: neutro=0, range -1..1
-    contrast        = random.uniform(0.998, 1.002)   # eq: neutro=1.0
-    saturation      = random.uniform(0.997, 1.003)   # eq: neutro=1.0
-    speed_factor    = random.uniform(0.97, 1.03)   # ±3%: eficaz contra fingerprint temporal
-    pad_px          = random.randint(2, 8) * 2     # borda preta: 4-16px cada lado (sempre par)
-
-    metadata_changes: List[str] = [
-        f"title=Edited_{ts}",
-        f"artist=Creator_{random.randint(1000, 9999)}",
-        f"comment=Ref_{hash_original[:8]}_{ts}",
-        "creation_time=1970-01-01T00:00:00.000000Z",
-    ]
-
-    filtro_base = (
-        f"crop={crop_w_expr}:{crop_h_expr}:{crop_px_x}:{crop_px_y},"
-        f"scale=trunc(iw*{scale_factor}/2)*2:trunc(ih*{scale_factor}/2)*2:flags=lanczos,"
-        f"rotate={rotate_angle}*PI/180:fillcolor=black@1,"
-        f"setpts={speed_factor}*PTS,"
-        f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},"
-        f"noise=alls={grain_strength}:allf=t+u,"
-        f"pad=iw+{pad_px * 2}:ih+{pad_px * 2}:{pad_px}:{pad_px}:color=black"
+    # Monta cadeia de filtros de vídeo
+    filtro_video, arquivo_texto_temp, info_tx = _build_video_filters(
+        width, height, ts, logs_dir, input_file.stem, font_path_obj, texto_quebrado
     )
-    filtro_video = filtro_base + ("," + drawtext_filter if usar_drawtext else "")
 
+    # Parâmetros de áudio
+    speed_factor = float(filtro_video.split("setpts=")[1].split("*PTS")[0])
+    audio_pitch  = round(random.uniform(0.97, 1.03), 5)
+    audio_eq     = random.choice(AUDIO_EQ_OPTIONS)
+
+    print(f"-> Flip H: {'Sim' if info_tx['hflip'] else 'Não'} | "
+          f"Hue: {info_tx['hue_shift']} | "
+          f"Rot: {info_tx['rotate']} | "
+          f"Speed: {info_tx['speed']} | "
+          f"Pitch: {audio_pitch:.4f}")
+    print(f"-> Grain: {info_tx['grain']} | Pad: {info_tx['pad']} | "
+          f"EQ áudio: {'Sim' if audio_eq else 'Não'}")
+    print(f"-> Fonte: {info_tx.get('font', 'N/A')} | "
+          f"Cor texto: {info_tx.get('text_color', 'N/A')}")
+
+    # Música de fundo
     musica_escolhida: Optional[Path] = None
     if pasta_mp3.exists() and pasta_mp3.is_dir():
         lista_mp3 = [m for m in pasta_mp3.iterdir() if m.suffix.lower() == ".mp3" and m.is_file()]
         if lista_mp3:
             musica_escolhida = random.choice(lista_mp3)
 
-    comando: List[str] = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "warning", "-i", str(input_file)]
+    # ------------------------------------------------------------------ #
+    # MONTA COMANDO FFMPEG
+    # ------------------------------------------------------------------ #
+    comando: List[str] = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "warning",
+        "-i", str(input_file)
+    ]
 
     if musica_escolhida:
-        print(f"-> Música sorteada: '{musica_escolhida.name}'")
+        print(f"-> Música: '{musica_escolhida.name}'")
         comando.extend(["-i", str(musica_escolhida)])
 
+        bg_vol = round(random.uniform(0.20, 0.45), 2)
+
         if video_tem_audio:
-            # atempo=1/speed_factor mantém A/V em sync quando o vídeo é acelerado/desacelerado
-            audio_sync  = round(1.0 / speed_factor, 6)
-            audio_pitch = random.uniform(0.999, 1.001)
-            bg_vol = round(random.uniform(0.25, 0.40), 2)  # 25-40%: audível mas não dominante
+            orig_af = _build_audio_af(speed_factor, audio_pitch, audio_eq)
             filter_complex = (
                 f"[0:v]{filtro_video}[vout];"
-                f"[0:a]atempo={audio_sync},asetrate=44100*{audio_pitch},volume=1.0[orig_a];"
+                f"[0:a]{orig_af}[orig_a];"
                 f"[1:a]volume={bg_vol}[bg_a];"
                 f"[orig_a][bg_a]amix=inputs=2:duration=first:weights=1 {bg_vol}[aout]"
             )
-            comando.extend(["-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]"])
+            comando.extend([
+                "-filter_complex", filter_complex,
+                "-map", "[vout]", "-map", "[aout]"
+            ])
         else:
-            bg_vol = round(random.uniform(0.25, 0.40), 2)  # 25-40%: audível sem audio original
-            filter_complex = f"[0:v]{filtro_video}[vout];[1:a]volume={bg_vol},atempo=1.0[aout]"
-            comando.extend(["-filter_complex", filter_complex, "-map", "[vout]", "-map", "[aout]", "-shortest"])
+            filter_complex = (
+                f"[0:v]{filtro_video}[vout];"
+                f"[1:a]volume={bg_vol},atempo=1.0[aout]"
+            )
+            comando.extend([
+                "-filter_complex", filter_complex,
+                "-map", "[vout]", "-map", "[aout]",
+                "-shortest"
+            ])
 
-        video_bitrate = random.choice(["1500k", "1800k", "2000k", "2200k", "2500k"])
-        br = int(video_bitrate[:-1])
-        maxrate = int(br * 1.2)
-        bufsize = int(br * 2.0)
-
-        comando.extend([
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", str(random.randint(21, 25)),
-            "-b:v", video_bitrate,
-            "-maxrate", f"{maxrate}k",
-            "-bufsize", f"{bufsize}k",
-            "-c:a", "aac",
-            "-b:a", random.choice(["128k", "160k", "192k"]),
-            "-ar", random.choice(["44100", "48000"]),
-            "-pix_fmt", "yuv420p",
-        ])
     else:
-        print("-> Nenhuma música encontrada. Processando apenas vídeo e texto...")
+        print("-> Sem música. Processando apenas vídeo e áudio original...")
         comando.extend(["-vf", filtro_video])
         if video_tem_audio:
-            audio_sync = round(1.0 / speed_factor, 6)
-            comando.extend(["-af", f"atempo={audio_sync}"])
-            comando.extend(["-c:a", "aac", "-b:a", "128k", "-ar", "44100"])
+            orig_af = _build_audio_af(speed_factor, audio_pitch, audio_eq)
+            comando.extend(["-af", orig_af])
+
+    # ------------------------------------------------------------------ #
+    # PARÂMETROS DE ENCODING
+    # ------------------------------------------------------------------ #
+    video_bitrate = random.choice(["1500k", "1800k", "2000k", "2200k", "2500k"])
+    br      = int(video_bitrate[:-1])
+    maxrate = int(br * 1.2)
+    bufsize = int(br * 2.0)
+    crf     = random.randint(20, 26)
+
+    comando.extend([
+        "-c:v", "libx264",
+        "-preset", random.choice(["medium", "slow"]),
+        "-crf", str(crf),
+        "-b:v", video_bitrate,
+        "-maxrate", f"{maxrate}k",
+        "-bufsize", f"{bufsize}k",
+        "-pix_fmt", "yuv420p",
+    ])
+
+    if musica_escolhida or video_tem_audio:
         comando.extend([
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", str(random.randint(21, 25)),
-            "-b:v", random.choice(["1500k", "2000k", "2500k"]),
-            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", random.choice(["128k", "160k", "192k"]),
+            "-ar",  random.choice(["44100", "48000"]),
         ])
 
-    for kv in metadata_changes:
+    # ------------------------------------------------------------------ #
+    # METADATA: apaga TUDO do original, então injeta custom
+    # -map_metadata -1 remove: câmera, GPS, datas, encoder original, etc.
+    # ------------------------------------------------------------------ #
+    comando.extend(["-map_metadata", "-1"])
+
+    custom_metadata: List[str] = [
+        f"title=Video_{ts}",
+        f"artist=Creator_{random.randint(1000, 9999)}",
+        f"comment=ID_{hash_original[:8]}_{ts}",
+        "creation_time=1970-01-01T00:00:00.000000Z",
+        f"encoder=FFmpeg Custom {random.randint(1000, 9999)}",
+        "copyright=",
+        "description=",
+        "location=",
+    ]
+    for kv in custom_metadata:
         comando.extend(["-metadata", kv])
 
     comando.extend([
-        "-metadata", f"encoder=FFmpeg Custom {random.randint(1000, 9999)}",
-        "-metadata", f"creation_time={time.strftime('%Y-%m-%dT%H:%M:%S.000000Z', time.gmtime(ts//1000))}",
         "-movflags", "+faststart",
         str(output_file)
     ])
 
+    # ------------------------------------------------------------------ #
+    # EXECUÇÃO
+    # ------------------------------------------------------------------ #
     ffmpeg_log = logs_dir / f"ffmpeg_{input_file.stem}.log"
 
     try:
@@ -468,10 +656,10 @@ def main():
             print("Job inválido: falta nonce.")
             return
 
-        vmos_id     = (job.get("vmos_id") or "").strip()
-        legenda     = (job.get("legenda") or "").strip()
-        max_videos  = int(job.get("max_videos") or 1)
-        on_success  = job.get("on_success") or "move"
+        vmos_id    = (job.get("vmos_id") or "").strip()
+        legenda    = (job.get("legenda") or "").strip()
+        max_videos = int(job.get("max_videos") or 1)
+        on_success = job.get("on_success") or "move"
         clean_output_after_upload = bool(job.get("clean_output_after_upload") or False)
 
         if not vmos_id:
@@ -508,7 +696,7 @@ def main():
         print("[ERRO] Para usar upload, precisa --vmos-id (ou job mode).")
         return
 
-    ok = 0
+    ok   = 0
     fail = 0
     last_nonce = ""
 
@@ -520,7 +708,7 @@ def main():
             last_nonce = ""
 
     for vid in inputs:
-        ts = int(time.time())
+        ts  = int(time.time())
         out = output_dir / f"{vid.stem}_edit_{ts}{vid.suffix.lower()}"
 
         sucesso = processar_video(vid, out, logs_dir, music_dir)
