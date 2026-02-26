@@ -768,14 +768,7 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
         page.mouse.wheel(0, 5000)
         page.wait_for_timeout(400)
         page.mouse.wheel(0, 5000)
-        page.wait_for_timeout(400)
-
-        # Tecla End como reforço
-        try:
-            page.keyboard.press("End")
-            page.wait_for_timeout(300)
-        except Exception:
-            pass
+        # Sem keyboard.press("End") — pode acionar vídeo focado na página
 
         # Tenta também rolar containers com overflow (grade de vídeos do FB)
         try:
@@ -785,11 +778,15 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
 
         page.wait_for_timeout(2500)
 
-        # Clica em botões "Ver mais" se existirem
+        # Procura botão "carregar mais" restringindo a button/[role=button].
+        # get_by_text sem filtro encontra qualquer texto na página, incluindo
+        # legendas dentro de cards de vídeo, o que causava cliques indesejados.
         for txt in ("Ver mais vídeos", "Load more videos", "Ver mais", "See more",
                     "Mostrar mais", "Show more", "Carregar mais"):
             try:
-                btn = page.get_by_text(txt, exact=False).first
+                btn = page.locator(
+                    f"button:has-text('{txt}'), [role='button']:has-text('{txt}')"
+                ).first
                 if btn.is_visible(timeout=300):
                     btn.click()
                     page.wait_for_timeout(2000)
