@@ -850,6 +850,11 @@ _STEALTH_INIT_JS = """
     window.chrome = {runtime: {}};
 """
 
+_FIREFOX_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) "
+    "Gecko/20100101 Firefox/124.0"
+)
+
 _CHROME_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -857,45 +862,96 @@ _CHROME_UA = (
 )
 
 
+def _ensure_pw_firefox() -> bool:
+    """Instala binários do Firefox do Playwright se ainda não disponível."""
+    print("[browser] Instalando Firefox do Playwright (único download necessário)...")
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "firefox"],
+            capture_output=True, text=True, timeout=300,
+        )
+        ok = r.returncode == 0
+        print(f"[browser] playwright install firefox → {'OK ✓' if ok else 'falhou'}")
+        return ok
+    except Exception as exc:
+        print(f"[browser] playwright install firefox erro: {exc}")
+        return False
+
+
 def _launch_browser_ctx(p, pw_cookies: list, headless: bool, ch_used_ref: list):
-    """Tenta lançar Chrome/Edge e retorna (browser, ctx, page) ou None."""
-    launch_args = [
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-    ]
+    """Lança Firefox primeiro (mesmo fingerprint dos cookies do usuário),
+    com fallback para Chrome/Edge caso Firefox não esteja disponível.
+
+    Usar Firefox é importante: os cookies do Facebook/Instagram foram gerados
+    pela sessão do usuário no Firefox. Apresentá-los em um contexto Chrome cria
+    um mismatch de browser fingerprint (User-Agent, TLS JA3, navigator.*) que
+    o Facebook usa como sinal de bot. Com Firefox o fingerprint bate."""
     browser = None
-    for ch in ("chrome", "msedge"):
-        try:
-            browser = p.chromium.launch(
-                channel=ch, headless=headless, args=launch_args
-            )
-            ch_used_ref.append(ch)
-            break
-        except Exception:
-            continue
+
+    # ── 1. Firefox via Playwright (preferido para FB/IG) ──────────────────────
+    ff_prefs = {
+        "dom.webdriver.enabled": False,
+        "useAutomationExtension": False,
+    }
+    try:
+        browser = p.firefox.launch(headless=headless, firefox_user_prefs=ff_prefs)
+        ch_used_ref.append("firefox")
+    except Exception as exc:
+        err = str(exc)
+        if "Executable doesn't exist" in err or "executable" in err.lower():
+            # Binário não instalado — instala e tenta de novo
+            if _ensure_pw_firefox():
+                try:
+                    browser = p.firefox.launch(
+                        headless=headless, firefox_user_prefs=ff_prefs
+                    )
+                    ch_used_ref.append("firefox")
+                except Exception:
+                    pass
+        # Outro erro (ex: permissão) → cai no fallback Chrome/Edge
+
+    # ── 2. Chrome / Edge com flags anti-detecção (fallback) ───────────────────
+    if not browser:
+        ch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ]
+        for ch in ("chrome", "msedge"):
+            try:
+                browser = p.chromium.launch(
+                    channel=ch, headless=headless, args=ch_args
+                )
+                ch_used_ref.append(ch)
+                break
+            except Exception:
+                continue
+
     if not browser:
         return None, None, None
 
+    is_firefox = ch_used_ref[0] == "firefox"
     ctx = browser.new_context(
         viewport={"width": 1280, "height": 900},
-        user_agent=_CHROME_UA,
+        user_agent=_FIREFOX_UA if is_firefox else _CHROME_UA,
     )
-    ctx.add_init_script(_STEALTH_INIT_JS)
+    if not is_firefox:
+        # Chrome: injeta stealth JS; Firefox já tem dom.webdriver.enabled=False
+        ctx.add_init_script(_STEALTH_INIT_JS)
     ctx.add_cookies(pw_cookies)
     page = ctx.new_page()
     return browser, ctx, page
 
 
 def _fetch_videos_via_browser(url: str, count: int) -> "dict | None":
-    """Abre Chrome ou Edge do sistema via Playwright para listar vídeos.
-    Injeta cookies do Firefox (que conseguimos ler) no browser do sistema.
-    Funciona onde APIs falham porque É um browser real — mesma engine,
-    mesmo TLS, mesmo JavaScript do Instagram/Facebook.
+    """Abre Firefox via Playwright (ou Chrome/Edge como fallback) para listar vídeos.
 
-    Para o Facebook tenta primeiro com headless=True (mais rápido).
-    Se retornar muito poucos vídeos (<5), repete com headless=False
-    (janela visível — mais difícil de detectar como bot)."""
+    Prioridade de browser: Firefox > Chrome > Edge
+    - Firefox: mesmo fingerprint dos cookies do usuário → FB/IG não detecta mismatch
+    - Chrome/Edge: fallback se Firefox não estiver disponível (com flags anti-detecção)
+
+    Para Facebook tenta primeiro headless=True; se retornar < 30 vídeos, retenta
+    com headless=False (janela visível) onde o IntersectionObserver funciona corretamente."""
     pw = _try_import("playwright", "playwright")
     if pw is None:
         return None
