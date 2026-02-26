@@ -211,6 +211,56 @@ def ytdlp_cmd(base: str) -> list[str]:
     return base.split()
 
 
+# Marcadores que indicam falha de cookies do browser, não de conteúdo
+_COOKIE_ERR_MARKERS = (
+    "Could not copy Chrome cookie database",
+    "Failed to decrypt with DPAPI",
+    "App-Bound Encryption",
+    "cookie database",
+)
+
+
+def _is_cookie_error(stderr: str) -> bool:
+    return any(m in stderr for m in _COOKIE_ERR_MARKERS)
+
+
+def _friendly_error(stderr: str, url: str) -> str:
+    """Traduz erros do yt-dlp em mensagens acionáveis para o usuário."""
+    host = (urlparse(url).hostname or "").lower()
+    fb = "facebook.com" in host or "fb.com" in host
+    ig = "instagram.com" in host
+
+    if "Unsupported URL" in stderr:
+        if fb:
+            return (
+                "O yt-dlp instalado não suporta listagem de vídeos de páginas/perfis do Facebook. "
+                "Atualize para a versão mais recente: pip install -U yt-dlp  "
+                "Ou cole a URL de um vídeo específico (ex: facebook.com/watch?v=ID)."
+            )
+        if ig:
+            return (
+                "URL do Instagram não reconhecida. Tente a URL do perfil direto "
+                "(ex: instagram.com/usuario) e atualize o yt-dlp: pip install -U yt-dlp"
+            )
+        return f"URL não reconhecida pelo yt-dlp. Verifique se está correta."
+
+    if ig and ("Unable to extract data" in stderr or "Failed to extract" in stderr):
+        return (
+            "Instagram bloqueou a extração de dados. Verifique:\n"
+            "• Você está logado no Instagram pelo Firefox?\n"
+            "• Atualize o yt-dlp: pip install -U yt-dlp\n"
+            "• Tente novamente em alguns minutos (possível limite de requisições)."
+        )
+
+    if "Login required" in stderr or "login required" in stderr:
+        return (
+            "Conteúdo privado ou que exige login. "
+            "Certifique-se de estar logado no Facebook/Instagram pelo Firefox."
+        )
+
+    return stderr[:400] if stderr else "Erro desconhecido."
+
+
 def parse_body(raw: bytes, content_type: str) -> dict:
     """Parseia body como JSON ou application/x-www-form-urlencoded.
     Tenta JSON primeiro se o body começar com '{' para lidar com
@@ -338,6 +388,7 @@ class Handler(BaseHTTPRequestHandler):
 
         r = None
         last_stderr = ""
+        first_real_error = ""   # primeiro erro que NÃO é falha de cookie de browser
         base_cmd = ytdlp_cmd(_YTDLP_BIN) + [
             "--flat-playlist", "--dump-single-json",
             "--no-warnings", "--ignore-errors",
@@ -352,16 +403,20 @@ class Handler(BaseHTTPRequestHandler):
                                    capture_output=True, text=True, timeout=120)
             except subprocess.TimeoutExpired:
                 return self._json({"ok": False, "error": "Timeout ao buscar vídeos (>2 min)"})
-            last_stderr = (r.stderr or "").strip()
+            stderr = (r.stderr or "").strip()
+            last_stderr = stderr
+            # Preserva o primeiro erro de conteúdo — erros de cookie são ruído
+            if stderr and not _is_cookie_error(stderr) and not first_real_error:
+                first_real_error = stderr
             stdout_ok = bool(r.stdout.strip()) and r.stdout.strip() != "null"
-            print(f"[fetch] rc={r.returncode}  stdout={len(r.stdout)} chars  stderr={last_stderr[:200] or '(vazio)'}")
+            print(f"[fetch] rc={r.returncode}  stdout={len(r.stdout)} chars  stderr={stderr[:200] or '(vazio)'}")
             if stdout_ok:
                 break  # sucesso — sai do loop
 
         if not r or not r.stdout.strip() or r.stdout.strip() == "null":
-            detail = f" Detalhe: {last_stderr[:400]}" if last_stderr else ""
-            return self._json({"ok": False,
-                               "error": f"Nenhum resultado. Verifique se a URL é válida e pública.{detail}"})
+            best_err = first_real_error or last_stderr
+            msg = _friendly_error(best_err, url) if best_err else "Verifique se a URL é válida e pública."
+            return self._json({"ok": False, "error": msg})
 
         # yt-dlp pode retornar um JSON por linha (vários vídeos sem wrapper de playlist)
         # ou um único JSON de playlist, ou null. Tenta parsear todos os casos.
