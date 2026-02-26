@@ -233,22 +233,23 @@ def _friendly_error(stderr: str, url: str) -> str:
     if "Unsupported URL" in stderr:
         if fb:
             return (
-                "O yt-dlp instalado não suporta listagem de vídeos de páginas/perfis do Facebook. "
-                "Atualize para a versão mais recente: pip install -U yt-dlp  "
-                "Ou cole a URL de um vídeo específico (ex: facebook.com/watch?v=ID)."
+                "Esta versão do yt-dlp não suporta listagem de vídeos de páginas do Facebook. "
+                "Reinicie o agente local — ele atualizará o yt-dlp automaticamente. "
+                "Ou execute manualmente: yt-dlp -U"
             )
         if ig:
             return (
-                "URL do Instagram não reconhecida. Tente a URL do perfil direto "
-                "(ex: instagram.com/usuario) e atualize o yt-dlp: pip install -U yt-dlp"
+                "URL do Instagram não reconhecida pelo yt-dlp. "
+                "Reinicie o agente local para atualizar o yt-dlp automaticamente. "
+                "Ou execute: yt-dlp -U"
             )
-        return f"URL não reconhecida pelo yt-dlp. Verifique se está correta."
+        return "URL não reconhecida pelo yt-dlp. Verifique se está correta."
 
     if ig and ("Unable to extract data" in stderr or "Failed to extract" in stderr):
         return (
             "Instagram bloqueou a extração de dados. Verifique:\n"
             "• Você está logado no Instagram pelo Firefox?\n"
-            "• Atualize o yt-dlp: pip install -U yt-dlp\n"
+            "• Reinicie o agente local para atualizar o yt-dlp (ou execute: yt-dlp -U)\n"
             "• Tente novamente em alguns minutos (possível limite de requisições)."
         )
 
@@ -571,6 +572,36 @@ class Handler(BaseHTTPRequestHandler):
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
+def _auto_update_ytdlp():
+    """Atualiza o yt-dlp para a versão mais recente usando o self-update embutido.
+    Funciona independentemente de como o yt-dlp foi instalado (winget, pip, exe).
+    Falhas silenciosas — o agente continua funcionando mesmo sem atualizar."""
+    global _YTDLP_VERSION
+    if not _YTDLP_BIN:
+        return
+    print("  Atualizando yt-dlp...         ", end="", flush=True)
+    try:
+        r = subprocess.run(
+            ytdlp_cmd(_YTDLP_BIN) + ["-U"],
+            capture_output=True, text=True, timeout=60,
+        )
+        # yt-dlp escreve status em stdout ou stderr dependendo da versão
+        out = (r.stdout + r.stderr).strip()
+        # Extrai última linha com conteúdo (ex: "Updated to 2024.12.13" / "is up to date")
+        status = next((l.strip() for l in reversed(out.splitlines()) if l.strip()), "")
+        print(status or "OK")
+        # Atualiza versão em cache após possível atualização
+        ver = subprocess.run(
+            ytdlp_cmd(_YTDLP_BIN) + ["--version"],
+            capture_output=True, text=True, timeout=10,
+        )
+        _YTDLP_VERSION = ver.stdout.strip()
+    except subprocess.TimeoutExpired:
+        print("(timeout — ignorado)")
+    except Exception as exc:
+        print(f"(ignorado: {exc})")
+
+
 def main():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     global _YTDLP_BIN, _YTDLP_VERSION, _COOKIE_BROWSERS
@@ -601,6 +632,8 @@ def main():
         print("  winget install yt-dlp       (Windows)")
         sys.exit(1)
 
+    _auto_update_ytdlp()
+    print()
     print(f"Servidor rodando em http://localhost:{PORT}")
     print("Mantenha esta janela aberta enquanto usa o app.")
     print("Pressione Ctrl+C para encerrar.")
