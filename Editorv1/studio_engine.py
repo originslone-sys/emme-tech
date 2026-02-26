@@ -1018,7 +1018,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--processed-dir", default="processed")
     p.add_argument("--failed-dir", default="failed")
 
-    p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--workers", type=int, default=1)
     p.add_argument("--num-videos", type=int, default=1)
 
     p.add_argument("--clip-timeout", type=int, default=900, help="Timeout mínimo (piso) por clip (s)")
