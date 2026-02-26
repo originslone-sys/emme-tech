@@ -363,6 +363,251 @@ def _fetch_instagram_curl_cffi(username: str, count: int) -> "dict | None":
         return None
 
 
+# ── Playwright: browser real do sistema (Chrome/Edge) ─────────────────────────
+
+def _scrape_ig_profile(page, url: str, count: int) -> "dict | None":
+    """Extrai vídeos do perfil Instagram dentro de um Playwright page já autenticado."""
+    parts = [p for p in urlparse(url).path.split("/") if p]
+    username = parts[0] if parts else "unknown"
+
+    # Captura respostas da API que o JS do Instagram faz automaticamente
+    captured = {"profile": None, "feed": None}
+
+    def _on_resp(resp):
+        try:
+            if resp.status != 200:
+                return
+            u = resp.url
+            if "web_profile_info" in u:
+                captured["profile"] = resp.json()
+            elif "/feed/user/" in u:
+                captured["feed"] = resp.json()
+        except Exception:
+            pass
+
+    page.on("response", _on_resp)
+
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+    except Exception:
+        page.goto(url, wait_until="load", timeout=30000)
+
+    page.wait_for_timeout(3000)
+
+    # Scroll para carregar mais posts
+    for _ in range(3):
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2000)
+
+    full_name = username
+
+    # ── Tentativa 1: dados da API interceptada ────────────────────────────
+    if captured["profile"]:
+        user = (captured["profile"].get("data") or {}).get("user") or {}
+        full_name = user.get("full_name") or username
+        print(f"[browser] Perfil capturado: {full_name}")
+
+    if captured["feed"]:
+        feed = captured["feed"]
+        videos = []
+        for item in (feed.get("items") or []):
+            if item.get("media_type") != 2:
+                continue
+            code = item.get("code", "")
+            thumbs = (item.get("image_versions2") or {}).get("candidates") or []
+            thumb = thumbs[0].get("url", "") if thumbs else ""
+            caption = ((item.get("caption") or {}).get("text")
+                       or f"Vídeo de {username}")[:200]
+            videos.append({
+                "id":       item.get("pk", ""),
+                "title":    caption,
+                "url":      f"https://www.instagram.com/reel/{code}/",
+                "thumb":    thumb,
+                "duration": int(item.get("video_duration") or 0),
+                "views":    int(item.get("view_count") or 0),
+                "date":     str(item.get("taken_at", "")),
+            })
+        if videos:
+            print(f"[browser] {len(videos)} vídeo(s) via API interceptada")
+            return {
+                "ok":       True,
+                "videos":   videos[:count],
+                "fetched":  min(len(videos), count),
+                "has_more": bool(feed.get("next_max_id")),
+                "profile":  full_name,
+                "platform": "instagram",
+            }
+
+    # ── Tentativa 2: extrai links do DOM ──────────────────────────────────
+    links = page.evaluate("""() => {
+        const anchors = document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"]');
+        const seen = new Set(), out = [];
+        for (const a of anchors) {
+            const h = a.getAttribute('href') || '';
+            if (!h || seen.has(h)) continue;
+            seen.add(h);
+            const img = a.querySelector('img');
+            out.push({ href: h, thumb: img ? img.src : '' });
+        }
+        return out;
+    }""")
+
+    if not links:
+        print("[browser] Nenhum post encontrado — perfil vazio ou privado")
+        return None
+
+    videos = []
+    for lk in links[:count]:
+        href = lk["href"]
+        if not href.startswith("http"):
+            href = f"https://www.instagram.com{href}"
+        sc = href.rstrip("/").split("/")[-1]
+        videos.append({
+            "id":       sc,
+            "title":    f"Post de {username}",
+            "url":      href,
+            "thumb":    lk.get("thumb", ""),
+            "duration": 0,
+            "views":    0,
+            "date":     "",
+        })
+
+    print(f"[browser] {len(videos)} post(s) via DOM")
+    return {
+        "ok":       True,
+        "videos":   videos,
+        "fetched":  len(videos),
+        "profile":  full_name,
+        "platform": "instagram",
+    }
+
+
+def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
+    """Extrai vídeos de página do Facebook dentro de um Playwright page autenticado."""
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+    except Exception:
+        page.goto(url, wait_until="load", timeout=30000)
+
+    page.wait_for_timeout(3000)
+
+    # Scroll para carregar mais vídeos
+    for _ in range(5):
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2000)
+
+    links = page.evaluate("""() => {
+        const out = [], seen = new Set();
+        for (const a of document.querySelectorAll('a[href]')) {
+            let href = a.href || '';
+            const m = href.match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
+            if (!m) continue;
+            const vid = m[1];
+            if (seen.has(vid)) continue;
+            seen.add(vid);
+            const img = a.querySelector('img');
+            const txt = (a.textContent || '').trim().substring(0, 200);
+            out.push({
+                url: href.startsWith('http') ? href : 'https://www.facebook.com' + href,
+                id:    vid,
+                thumb: img ? img.src : '',
+                title: txt,
+            });
+        }
+        return out;
+    }""")
+
+    if not links:
+        print("[browser] Nenhum vídeo encontrado na página do Facebook")
+        return None
+
+    path_parts = [p for p in urlparse(url).path.split("/") if p]
+    page_name = path_parts[0] if path_parts else "Facebook"
+
+    videos = []
+    for lk in links[:count]:
+        videos.append({
+            "id":       lk["id"],
+            "title":    lk.get("title", "") or f"Vídeo de {page_name}",
+            "url":      lk["url"],
+            "thumb":    lk.get("thumb", ""),
+            "duration": 0,
+            "views":    0,
+            "date":     "",
+        })
+
+    print(f"[browser] {len(videos)} vídeo(s) do Facebook")
+    return {
+        "ok":       True,
+        "videos":   videos,
+        "fetched":  len(videos),
+        "profile":  page_name,
+        "platform": "facebook",
+    }
+
+
+def _fetch_videos_via_browser(url: str, count: int) -> "dict | None":
+    """Abre Chrome ou Edge do sistema via Playwright para listar vídeos.
+    Injeta cookies do Firefox (que conseguimos ler) no browser do sistema.
+    Funciona onde APIs falham porque É um browser real — mesma engine,
+    mesmo TLS, mesmo JavaScript do Instagram/Facebook."""
+    pw = _try_import("playwright", "playwright")
+    if pw is None:
+        return None
+
+    from playwright.sync_api import sync_playwright
+
+    host = (urlparse(url).hostname or "").lower()
+    is_ig = "instagram.com" in host
+    is_fb = "facebook.com" in host or "fb.com" in host
+    if not is_ig and not is_fb:
+        return None
+
+    # Cookies do Firefox (único browser onde conseguimos lê-los no Windows)
+    domain = ".instagram.com" if is_ig else ".facebook.com"
+    raw = _read_firefox_cookies(domain)
+    if not raw:
+        print("[browser] Sem cookies do Firefox — faça login pelo Firefox primeiro")
+        return None
+
+    pw_cookies = [
+        {"name": k, "value": v, "domain": domain, "path": "/"}
+        for k, v in raw.items()
+    ]
+
+    print(f"[browser] Abrindo browser do sistema para {url}...")
+    try:
+        with sync_playwright() as p:
+            browser = None
+            ch_used = ""
+            for ch in ("chrome", "msedge"):
+                try:
+                    browser = p.chromium.launch(channel=ch, headless=True)
+                    ch_used = ch
+                    break
+                except Exception:
+                    continue
+            if not browser:
+                print("[browser] Nem Chrome nem Edge encontrados no sistema")
+                return None
+
+            print(f"[browser] Usando {ch_used}")
+            ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+            ctx.add_cookies(pw_cookies)
+            page = ctx.new_page()
+
+            if is_ig:
+                result = _scrape_ig_profile(page, url, count)
+            else:
+                result = _scrape_fb_videos(page, url, count)
+
+            browser.close()
+            return result
+    except Exception as exc:
+        print(f"[browser] Erro: {type(exc).__name__}: {exc}")
+        return None
+
+
 def _needs_cookies(url: str) -> bool:
     """Facebook e Instagram exigem cookies de sessão para acessar conteúdo."""
     host = (urlparse(url).hostname or "").lower()
@@ -603,40 +848,42 @@ class Handler(BaseHTTPRequestHandler):
         _parts = [p for p in urlparse(url).path.split("/") if p]
 
         if "instagram.com" in _host and _parts and _parts[0] not in _IG_INDIVIDUAL:
-            # URL de perfil Instagram → curl_cffi (TLS fingerprint idêntico ao Firefox)
+            # URL de perfil Instagram
+            # Camada 1: curl_cffi (TLS fingerprint Firefox, rápido, ~2 req)
+            # Camada 2: Playwright (browser real do sistema, infalível)
             _ig_user = _parts[0]
-            print(f"[route] instagram.com/{_ig_user} → curl_cffi/Firefox TLS (ignorando yt-dlp)")
+            print(f"[route] instagram.com/{_ig_user} — tentando curl_cffi → Playwright")
+
             result = _fetch_instagram_curl_cffi(_ig_user, count)
             if result and result.get("ok"):
                 return self._json(result)
-            if result and result.get("__ratelimit_mins"):
-                mins = result["__ratelimit_mins"]
-                return self._json({"ok": False, "error": (
-                    f"O Instagram bloqueou temporariamente as requisições deste IP.\n\n"
-                    f"Aguarde aproximadamente {mins} minuto(s) e tente de novo.\n\n"
-                    "Dicas para evitar este bloqueio no futuro:\n"
-                    "• Não tente muitas vezes seguidas\n"
-                    "• Certifique-se de estar logado no Instagram pelo Firefox"
-                )})
+
+            # curl_cffi falhou ou rate-limited → Playwright (browser real)
+            print(f"[route] curl_cffi falhou — tentando Playwright (Chrome/Edge do sistema)")
+            result = _fetch_videos_via_browser(url, count)
+            if result and result.get("ok"):
+                return self._json(result)
+
             return self._json({"ok": False, "error": (
                 "Não foi possível listar os vídeos do perfil.\n\n"
                 "Verifique:\n"
                 "• Você está logado no Instagram pelo Firefox?\n"
                 "• O perfil é público?\n"
-                "• Se o erro persistir, aguarde alguns minutos (rate limit do Instagram)."
+                "• Se tentou muitas vezes: aguarde alguns minutos e tente de novo."
             )})
 
         if "facebook.com" in _host and len(_parts) >= 2 and _parts[1] == "videos":
-            # Listagem de vídeos de página Facebook não é suportada por nenhuma ferramenta.
-            # yt-dlp: "Unsupported URL" — gallery-dl: também não suporta esta URL.
-            # A única opção é colar URLs individuais de vídeos.
-            print(f"[route] facebook.com/.../videos → não suportado")
+            # Listagem de vídeos de página Facebook → Playwright (único que funciona)
+            print(f"[route] facebook.com/.../videos → Playwright (Chrome/Edge do sistema)")
+            result = _fetch_videos_via_browser(url, count)
+            if result and result.get("ok"):
+                return self._json(result)
             return self._json({"ok": False, "error": (
-                "Listagem de vídeos de páginas do Facebook não é suportada.\n\n"
-                "Alternativas:\n"
-                "• Abra a página no Facebook, clique em um vídeo e cole a URL aqui\n"
-                "  (ex: facebook.com/watch?v=ID  ou  facebook.com/reel/ID)\n"
-                "• Cole múltiplas URLs, uma de cada vez"
+                "Não foi possível listar os vídeos da página do Facebook.\n\n"
+                "Verifique:\n"
+                "• Você está logado no Facebook pelo Firefox?\n"
+                "• Chrome ou Edge estão instalados no sistema?\n"
+                "• Alternativa: cole URLs individuais de vídeos"
             )})
         # ── Fim da intercepção ─────────────────────────────────────────────────
 
