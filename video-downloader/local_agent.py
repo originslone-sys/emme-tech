@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -203,33 +204,67 @@ def _read_firefox_cookies(domain_suffix: str) -> dict:
 
 def _fetch_instagram_videos_direct(username: str, start: int, count: int) -> "dict | None":
     """Fallback: lista vídeos de perfil do Instagram via API direta quando yt-dlp falha.
-    Usa cookies do Firefox lidos do SQLite para autenticar."""
+    Usa cookies do Firefox lidos do SQLite.  Inclui retry com backoff para HTTP 429."""
     cookies = _read_firefox_cookies(".instagram.com")
     if not cookies.get("sessionid"):
         print("[ig-direct] sessionid não encontrado — usuário não está logado no Instagram pelo Firefox")
         return None
 
     cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+    # Headers que imitam o Firefox acessando instagram.com no browser
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
         ),
-        "X-IG-App-ID": "936619743392459",
-        "Cookie": cookie_str,
-        "Referer": f"https://www.instagram.com/{username}/",
+        "Accept":          "*/*",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "X-IG-App-ID":     "936619743392459",
+        "X-CSRFToken":     cookies.get("csrftoken", ""),
+        "X-IG-WWW-Claim":  cookies.get("shbts", "0"),
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin":          "https://www.instagram.com",
+        "Referer":         f"https://www.instagram.com/{username}/",
+        "Sec-Fetch-Dest":  "empty",
+        "Sec-Fetch-Mode":  "cors",
+        "Sec-Fetch-Site":  "same-origin",
+        "Cookie":          cookie_str,
     }
 
-    # Passo 1: obtém o ID numérico do usuário
-    print(f"[ig-direct] Buscando perfil @{username}...")
-    try:
-        req = urllib.request.Request(
-            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
-            headers=headers,
-        )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            pdata = json.loads(resp.read().decode())
-    except Exception as exc:
-        print(f"[ig-direct] Erro ao buscar perfil: {exc}")
+    def _ig_get(url: str) -> "dict | None":
+        """GET com retry/backoff para 429 (rate-limit do Instagram)."""
+        # Aguarda antes da primeira chamada: yt-dlp acabou de fazer requisições
+        # e o Instagram pode ter aplicado rate-limit temporário no IP.
+        delay = 4
+        for attempt in range(4):
+            if attempt > 0:
+                print(f"[ig-direct] Aguardando {delay}s (rate limit 429)...")
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    raw = resp.read()
+                    enc = resp.headers.get_content_charset("utf-8")
+                    return json.loads(raw.decode(enc))
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    print(f"[ig-direct] HTTP 429 na tentativa {attempt + 1}/4")
+                    continue
+                print(f"[ig-direct] HTTP {e.code} para {url}")
+                return None
+            except Exception as exc:
+                print(f"[ig-direct] Erro: {exc}")
+                return None
+        print("[ig-direct] Rate limit persistente após 4 tentativas — tente de novo em alguns minutos")
+        return None
+
+    # Passo 1: obtém ID numérico do usuário via www.instagram.com (endpoint do browser web)
+    print(f"[ig-direct] Buscando perfil @{username} (aguardando rate-limit expirar)...")
+    pdata = _ig_get(
+        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+    )
+    if pdata is None:
         return None
 
     user = (pdata.get("data") or {}).get("user") or {}
@@ -239,17 +274,12 @@ def _fetch_instagram_videos_direct(username: str, start: int, count: int) -> "di
         return None
     full_name = user.get("full_name") or username
 
-    # Passo 2: obtém o feed de vídeos
+    # Passo 2: feed de vídeos do usuário
     print(f"[ig-direct] Buscando vídeos de {full_name} (id={user_id})...")
-    try:
-        req = urllib.request.Request(
-            f"https://i.instagram.com/api/v1/feed/user/{user_id}/?count={count}",
-            headers=headers,
-        )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            feed = json.loads(resp.read().decode())
-    except Exception as exc:
-        print(f"[ig-direct] Erro ao buscar feed: {exc}")
+    feed = _ig_get(
+        f"https://www.instagram.com/api/v1/feed/user/{user_id}/?count={count}"
+    )
+    if feed is None:
         return None
 
     videos = []
