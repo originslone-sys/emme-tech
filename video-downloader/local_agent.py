@@ -13,8 +13,11 @@ Requisitos:
 
 import json
 import os
+import shutil
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -144,6 +147,145 @@ def _resolve_facebook_share(url: str) -> str:
         return url
 
 
+def _firefox_profile_path() -> "Path | None":
+    """Retorna o diretório do perfil padrão do Firefox."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", "")) / "Mozilla/Firefox/Profiles"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library/Application Support/Firefox/Profiles"
+    else:
+        base = Path.home() / ".mozilla/firefox"
+    if not base.exists():
+        return None
+    for pattern in ("*.default-release", "*.default"):
+        hits = list(base.glob(pattern))
+        if hits:
+            return hits[0]
+    hits = [p for p in base.iterdir() if p.is_dir()]
+    return hits[0] if hits else None
+
+
+def _read_firefox_cookies(domain_suffix: str) -> dict:
+    """Lê cookies do banco SQLite do Firefox para o domínio informado.
+    Copia o arquivo antes de abrir para evitar erros de lock (Firefox aberto)."""
+    profile = _firefox_profile_path()
+    if not profile:
+        return {}
+    db = profile / "cookies.sqlite"
+    if not db.exists():
+        return {}
+    tmp_dir = None
+    try:
+        tmp_dir = Path(tempfile.mkdtemp())
+        tmp_db = tmp_dir / "cookies.sqlite"
+        shutil.copy2(str(db), str(tmp_db))
+        # Copia WAL/SHM para ter dados mais recentes quando Firefox está aberto
+        for ext in ("-wal", "-shm"):
+            src = Path(str(db) + ext)
+            if src.exists():
+                shutil.copy2(str(src), str(tmp_db) + ext)
+        conn = sqlite3.connect(str(tmp_db))
+        try:
+            rows = conn.execute(
+                "SELECT name, value FROM moz_cookies WHERE host LIKE ?",
+                (f"%{domain_suffix}",),
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[cookies-sqlite] {exc}")
+        return {}
+    finally:
+        if tmp_dir:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+
+def _fetch_instagram_videos_direct(username: str, start: int, count: int) -> "dict | None":
+    """Fallback: lista vídeos de perfil do Instagram via API direta quando yt-dlp falha.
+    Usa cookies do Firefox lidos do SQLite para autenticar."""
+    cookies = _read_firefox_cookies(".instagram.com")
+    if not cookies.get("sessionid"):
+        print("[ig-direct] sessionid não encontrado — usuário não está logado no Instagram pelo Firefox")
+        return None
+
+    cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+        ),
+        "X-IG-App-ID": "936619743392459",
+        "Cookie": cookie_str,
+        "Referer": f"https://www.instagram.com/{username}/",
+    }
+
+    # Passo 1: obtém o ID numérico do usuário
+    print(f"[ig-direct] Buscando perfil @{username}...")
+    try:
+        req = urllib.request.Request(
+            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            pdata = json.loads(resp.read().decode())
+    except Exception as exc:
+        print(f"[ig-direct] Erro ao buscar perfil: {exc}")
+        return None
+
+    user = (pdata.get("data") or {}).get("user") or {}
+    user_id = user.get("id")
+    if not user_id:
+        print("[ig-direct] Usuário não encontrado ou conta privada")
+        return None
+    full_name = user.get("full_name") or username
+
+    # Passo 2: obtém o feed de vídeos
+    print(f"[ig-direct] Buscando vídeos de {full_name} (id={user_id})...")
+    try:
+        req = urllib.request.Request(
+            f"https://i.instagram.com/api/v1/feed/user/{user_id}/?count={count}",
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            feed = json.loads(resp.read().decode())
+    except Exception as exc:
+        print(f"[ig-direct] Erro ao buscar feed: {exc}")
+        return None
+
+    videos = []
+    for item in (feed.get("items") or []):
+        if item.get("media_type") != 2:  # 2 = vídeo
+            continue
+        code = item.get("code", "")
+        thumbs = (item.get("image_versions2") or {}).get("candidates") or []
+        thumb = thumbs[0].get("url", "") if thumbs else ""
+        caption_text = (item.get("caption") or {}).get("text") or f"Vídeo de {username}"
+        videos.append({
+            "id":       item.get("pk", ""),
+            "title":    caption_text[:200],
+            "url":      f"https://www.instagram.com/reel/{code}/",
+            "thumb":    thumb,
+            "duration": int(item.get("video_duration") or 0),
+            "views":    int(item.get("view_count") or 0),
+            "date":     str(item.get("taken_at", "")),
+        })
+
+    if not videos:
+        print("[ig-direct] Nenhum vídeo encontrado (conta privada ou sem vídeos recentes)")
+        return None
+
+    print(f"[ig-direct] {len(videos)} vídeo(s) encontrado(s)")
+    return {
+        "ok":       True,
+        "videos":   videos,
+        "fetched":  len(videos),
+        "start":    start,
+        "has_more": bool(feed.get("next_max_id")),
+        "profile":  full_name,
+        "platform": "instagram",
+    }
+
+
 def _needs_cookies(url: str) -> bool:
     """Facebook e Instagram exigem cookies de sessão para acessar conteúdo."""
     host = (urlparse(url).hostname or "").lower()
@@ -233,23 +375,23 @@ def _friendly_error(stderr: str, url: str) -> str:
     if "Unsupported URL" in stderr:
         if fb:
             return (
-                "Esta versão do yt-dlp não suporta listagem de vídeos de páginas do Facebook. "
-                "Reinicie o agente local — ele atualizará o yt-dlp automaticamente. "
-                "Ou execute manualmente: yt-dlp -U"
+                "yt-dlp não suporta listagem de vídeos de páginas do Facebook. "
+                "Cole a URL de um vídeo específico "
+                "(ex: facebook.com/reel/ID  ou  facebook.com/watch?v=ID)."
             )
         if ig:
             return (
-                "URL do Instagram não reconhecida pelo yt-dlp. "
-                "Reinicie o agente local para atualizar o yt-dlp automaticamente. "
-                "Ou execute: yt-dlp -U"
+                "URL do Instagram não reconhecida. "
+                "Use o perfil direto (ex: instagram.com/usuario) — "
+                "certifique-se de estar logado pelo Firefox."
             )
         return "URL não reconhecida pelo yt-dlp. Verifique se está correta."
 
     if ig and ("Unable to extract data" in stderr or "Failed to extract" in stderr):
         return (
-            "Instagram bloqueou a extração de dados. Verifique:\n"
+            "Instagram bloqueou a extração via yt-dlp e a API direta também falhou. "
+            "Verifique:\n"
             "• Você está logado no Instagram pelo Firefox?\n"
-            "• Reinicie o agente local para atualizar o yt-dlp (ou execute: yt-dlp -U)\n"
             "• Tente novamente em alguns minutos (possível limite de requisições)."
         )
 
@@ -415,6 +557,20 @@ class Handler(BaseHTTPRequestHandler):
                 break  # sucesso — sai do loop
 
         if not r or not r.stdout.strip() or r.stdout.strip() == "null":
+            # Fallback: Instagram → tenta API direta via cookies do Firefox
+            ig_host = "instagram.com" in (urlparse(url).hostname or "").lower()
+            if ig_host:
+                path_parts = [p for p in urlparse(url).path.split("/") if p]
+                # Só tenta para URLs de perfil (não posts individuais)
+                is_profile = path_parts and path_parts[0] not in (
+                    "p", "reel", "tv", "stories", "explore", "accounts"
+                )
+                if is_profile:
+                    username = path_parts[0]
+                    print(f"[ig-direct] yt-dlp falhou — tentando API direta para @{username}")
+                    direct = _fetch_instagram_videos_direct(username, start, count)
+                    if direct:
+                        return self._json(direct)
             best_err = first_real_error or last_stderr
             msg = _friendly_error(best_err, url) if best_err else "Verifique se a URL é válida e pública."
             return self._json({"ok": False, "error": msg})
