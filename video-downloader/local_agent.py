@@ -565,9 +565,10 @@ def _scrape_ig_profile(page, url: str, count: int) -> "dict | None":
 
 _FB_VIDEO_JS = """() => {
     const out = [], seen = new Set();
+    const VID_RE = /(?:\\/watch(?:\\/|\\?v=)|\\/video(?:s)?\\/)([0-9]{8,})/;
     for (const a of document.querySelectorAll('a[href]')) {
         let href = a.href || '';
-        const m = href.match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
+        const m = href.match(VID_RE);
         if (!m) continue;
         const vid = m[1];
         if (seen.has(vid)) continue;
@@ -586,8 +587,9 @@ _FB_VIDEO_JS = """() => {
 
 _FB_COUNT_JS = """() => {
     const s = new Set();
+    const VID_RE = /(?:\\/watch(?:\\/|\\?v=)|\\/video(?:s)?\\/)([0-9]{8,})/;
     for (const a of document.querySelectorAll('a[href]')) {
-        const m = (a.href||'').match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
+        const m = (a.href||'').match(VID_RE);
         if (m) s.add(m[1]);
     }
     return s.size;
@@ -701,7 +703,14 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
         except Exception:
             pass
 
-    page.wait_for_timeout(3000)
+    # Espera mais tempo para que o JS do Facebook inicialize a página
+    page.wait_for_timeout(5000)
+
+    # Detecta redirecionamento para login (cookies expirados)
+    current_url = page.url
+    if "/login" in current_url or "login.php" in current_url:
+        print("[browser] Redirecionado para login — cookies do Facebook expirados")
+        return None
 
     # Rejeita diálogos de cookie se aparecerem
     for sel in (
@@ -710,50 +719,76 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
         "[title='Allow all cookies']",
         "[title='Aceitar todos os cookies']",
         "button[data-testid='cookie-policy-manage-dialog-accept-button']",
+        "[aria-label='Aceitar todos os cookies']",
     ):
         try:
             loc = page.locator(sel)
             if loc.first.is_visible(timeout=800):
                 loc.first.click()
-                page.wait_for_timeout(1000)
+                page.wait_for_timeout(1500)
                 break
         except Exception:
             pass
 
-    # Foca a página para que eventos de teclado funcionem
+    # Foca a página para que eventos de teclado e mouse funcionem
     try:
         page.mouse.click(640, 400)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(800)
     except Exception:
         pass
 
     prev_total = 0
     stable     = 0
-    MAX_SCROLLS = 35
+    MAX_SCROLLS = 40
     STABLE_STOP = 5   # para após 5 rounds idênticos
+
+    # JS para também tentar rolar dentro de containers overflow (grade de vídeos do FB)
+    _SCROLL_CONTAINERS_JS = """() => {
+        const scrolled = [];
+        document.querySelectorAll('[role="main"] *').forEach(el => {
+            try {
+                const s = window.getComputedStyle(el);
+                if ((s.overflow === 'auto' || s.overflow === 'scroll' ||
+                     s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+                    el.scrollHeight > el.clientHeight + 50) {
+                    el.scrollTop = el.scrollHeight;
+                    scrolled.push(el.tagName);
+                }
+            } catch(e) {}
+        });
+        return scrolled.length;
+    }"""
 
     for scroll_n in range(MAX_SCROLLS):
         # mouse.wheel dispara IntersectionObserver (ao contrário de window.scrollTo)
-        page.mouse.wheel(0, 4000)
-        page.wait_for_timeout(500)
-        page.mouse.wheel(0, 4000)
-        page.wait_for_timeout(2500)
+        page.mouse.wheel(0, 5000)
+        page.wait_for_timeout(400)
+        page.mouse.wheel(0, 5000)
+        page.wait_for_timeout(400)
 
         # Tecla End como reforço
         try:
             page.keyboard.press("End")
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(300)
         except Exception:
             pass
 
+        # Tenta também rolar containers com overflow (grade de vídeos do FB)
+        try:
+            page.evaluate(_SCROLL_CONTAINERS_JS)
+        except Exception:
+            pass
+
+        page.wait_for_timeout(2500)
+
         # Clica em botões "Ver mais" se existirem
         for txt in ("Ver mais vídeos", "Load more videos", "Ver mais", "See more",
-                    "Mostrar mais", "Show more"):
+                    "Mostrar mais", "Show more", "Carregar mais"):
             try:
                 btn = page.get_by_text(txt, exact=False).first
                 if btn.is_visible(timeout=300):
                     btn.click()
-                    page.wait_for_timeout(1500)
+                    page.wait_for_timeout(2000)
                     break
             except Exception:
                 pass
@@ -772,7 +807,7 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
             if stable >= STABLE_STOP:
                 print(f"[browser] Estabilizou em {cur_total} vídeos — página totalmente carregada")
                 break
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
         else:
             stable = 0
         prev_total = cur_total
@@ -809,11 +844,58 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
     }
 
 
+_STEALTH_INIT_JS = """
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+    window.chrome = {runtime: {}};
+"""
+
+_CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+
+def _launch_browser_ctx(p, pw_cookies: list, headless: bool, ch_used_ref: list):
+    """Tenta lançar Chrome/Edge e retorna (browser, ctx, page) ou None."""
+    launch_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+    ]
+    browser = None
+    for ch in ("chrome", "msedge"):
+        try:
+            browser = p.chromium.launch(
+                channel=ch, headless=headless, args=launch_args
+            )
+            ch_used_ref.append(ch)
+            break
+        except Exception:
+            continue
+    if not browser:
+        return None, None, None
+
+    ctx = browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        user_agent=_CHROME_UA,
+    )
+    ctx.add_init_script(_STEALTH_INIT_JS)
+    ctx.add_cookies(pw_cookies)
+    page = ctx.new_page()
+    return browser, ctx, page
+
+
 def _fetch_videos_via_browser(url: str, count: int) -> "dict | None":
     """Abre Chrome ou Edge do sistema via Playwright para listar vídeos.
     Injeta cookies do Firefox (que conseguimos ler) no browser do sistema.
     Funciona onde APIs falham porque É um browser real — mesma engine,
-    mesmo TLS, mesmo JavaScript do Instagram/Facebook."""
+    mesmo TLS, mesmo JavaScript do Instagram/Facebook.
+
+    Para o Facebook tenta primeiro com headless=True (mais rápido).
+    Se retornar muito poucos vídeos (<5), repete com headless=False
+    (janela visível — mais difícil de detectar como bot)."""
     pw = _try_import("playwright", "playwright")
     if pw is None:
         return None
@@ -841,30 +923,41 @@ def _fetch_videos_via_browser(url: str, count: int) -> "dict | None":
     print(f"[browser] Abrindo browser do sistema para {url}...")
     try:
         with sync_playwright() as p:
-            browser = None
-            ch_used = ""
-            for ch in ("chrome", "msedge"):
+            # Para o Facebook: tenta headless primeiro; se conseguir poucos vídeos
+            # (FB detecta headless e limita conteúdo), retenta com headless=False.
+            headless_modes = [True, False] if is_fb else [True]
+
+            result = None
+            for headless in headless_modes:
+                ch_used_ref: list = []
+                browser, ctx, page = _launch_browser_ctx(
+                    p, pw_cookies, headless, ch_used_ref
+                )
+                if not browser:
+                    print("[browser] Nem Chrome nem Edge encontrados no sistema")
+                    return None
+
+                ch_label = f"{ch_used_ref[0]} headless={'sim' if headless else 'NÃO'}"
+                print(f"[browser] Usando {ch_label}")
+
                 try:
-                    browser = p.chromium.launch(channel=ch, headless=True)
-                    ch_used = ch
-                    break
-                except Exception:
-                    continue
-            if not browser:
-                print("[browser] Nem Chrome nem Edge encontrados no sistema")
-                return None
+                    if is_ig:
+                        result = _scrape_ig_profile(page, url, count)
+                    else:
+                        result = _scrape_fb_videos(page, url, count)
+                finally:
+                    browser.close()
 
-            print(f"[browser] Usando {ch_used}")
-            ctx = browser.new_context(viewport={"width": 1280, "height": 900})
-            ctx.add_cookies(pw_cookies)
-            page = ctx.new_page()
-
-            if is_ig:
-                result = _scrape_ig_profile(page, url, count)
-            else:
-                result = _scrape_fb_videos(page, url, count)
-
-            browser.close()
+                # Para o Facebook: se conseguimos >=5 vídeos, OK; senão tenta headless=False
+                if result and result.get("ok"):
+                    n_found = result.get("fetched", 0)
+                    if is_fb and n_found < 5 and headless:
+                        print(f"[browser] headless retornou só {n_found} vídeo(s) "
+                              "— retentando com janela visível (headless=False)...")
+                        continue
+                    return result
+                if not headless:
+                    break  # Não há mais tentativas
             return result
     except Exception as exc:
         print(f"[browser] Erro: {type(exc).__name__}: {exc}")
@@ -1306,35 +1399,59 @@ class Handler(BaseHTTPRequestHandler):
                   "msg": f"Baixando vídeo {n} de {total}..."})
 
             out_tpl = str(DOWNLOAD_DIR / "%(title).80B.%(ext)s")
-            # Escolhe o primeiro browser que funcionar (fallback automático)
-            dl_browsers: list[str | None] = (
-                _COOKIE_BROWSERS if _needs_cookies(url) and _COOKIE_BROWSERS else [None]
-            )
-            dl_browser = dl_browsers[0] if dl_browsers else None
-            dl_cookie_args: list[str] = (
-                ["--cookies-from-browser", dl_browser] if dl_browser else []
-            )
-            cmd = ytdlp_cmd(_YTDLP_BIN) + [
-                "--no-playlist", "--no-warnings", "--ignore-errors",
+            base_cmd = ytdlp_cmd(_YTDLP_BIN) + [
+                "--no-playlist", "--no-warnings",
                 "--merge-output-format", "mp4",
                 "-o", out_tpl,
-            ] + _extra_args_for_url(url) + dl_cookie_args + [url]
+            ] + _extra_args_for_url(url)
 
-            try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-                if proc.returncode == 0:
-                    done += 1
-                    emit({"type": "done_one", "done": done, "total": total, "n": n})
-                else:
-                    failed += 1
-                    stderr = proc.stdout + proc.stderr  # yt-dlp mixes stdout/stderr
-                    err = next((l for l in reversed(stderr.splitlines()) if "ERROR" in l), "")
-                    emit({"type": "error", "done": done, "total": total, "n": n,
-                          "msg": f"Falha no vídeo {n}" + (f": {err[:120]}" if err else ".")})
-            except subprocess.TimeoutExpired:
+            # Tenta cada browser em sequência; cai em sem-cookie por último.
+            # Sem --ignore-errors: returncode reflete se o vídeo foi realmente baixado.
+            if _needs_cookies(url) and _COOKIE_BROWSERS:
+                browsers_to_try: list[str | None] = list(_COOKIE_BROWSERS) + [None]
+            else:
+                browsers_to_try = [None]
+
+            success = False
+            last_stderr = ""
+            err_msg = ""
+
+            for browser in browsers_to_try:
+                cookie_args = ["--cookies-from-browser", browser] if browser else []
+                cmd = base_cmd + cookie_args + [url]
+                print(f"[download] browser={browser or 'nenhum'}  url={url[:80]}")
+                try:
+                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                    stderr = (proc.stdout + proc.stderr).strip()
+                    last_stderr = stderr
+                    if proc.returncode == 0:
+                        success = True
+                        break
+                    if _is_cookie_error(stderr):
+                        print(f"[download] Erro de cookies ({browser}), tentando próximo...")
+                        continue
+                    # Erro real (não de cookie) — usa mensagem amigável e para
+                    err_msg = _friendly_error(stderr, url) if stderr else ""
+                    break
+                except subprocess.TimeoutExpired:
+                    err_msg = f"Vídeo {n}: timeout (>10 min)"
+                    break
+
+            if success:
+                done += 1
+                emit({"type": "done_one", "done": done, "total": total, "n": n})
+            else:
                 failed += 1
+                if not err_msg and last_stderr:
+                    err_msg = _friendly_error(last_stderr, url) or f"Falha ao baixar vídeo {n}"
+                elif not err_msg:
+                    err_msg = f"Falha ao baixar vídeo {n}"
                 emit({"type": "error", "done": done, "total": total, "n": n,
-                      "msg": f"Vídeo {n}: timeout (>10 min)"})
+                      "msg": err_msg[:200]})
+
+            # Pausa entre downloads para reduzir chance de rate-limit
+            if i < len(urls) - 1:
+                time.sleep(1.5)
 
         if done > 0:
             emit({"type": "complete", "done": done, "total": total, "failed": failed,
