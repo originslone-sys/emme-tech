@@ -62,6 +62,57 @@ def normalize_url(url: str) -> str:
     return url
 
 
+def _canonicalize_facebook_url(url: str) -> str:
+    """Converte URLs de perfil/página do Facebook para o formato de aba de vídeos
+    suportado pelo yt-dlp (FacebookUserVideosIE).
+
+    facebook.com/PAGE/              → facebook.com/PAGE/videos/
+    facebook.com/profile.php?id=X   → facebook.com/X/videos/
+    URLs que já têm /videos/ ou são de vídeo específico → sem alteração.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if "facebook.com" not in host and "fb.com" not in host:
+        return url
+
+    # URLs que já apontam para conteúdo específico — não mexer
+    path = parsed.path
+    specific = ("/videos", "/video", "/reel", "/reels", "/watch", "/posts", "/photos")
+    if any(s in path for s in specific):
+        return url
+    if parse_qs(parsed.query).get("v"):  # watch?v=...
+        return url
+
+    # profile.php?id=XXXXX → /XXXXX/videos/ (format que o yt-dlp reconhece)
+    if "profile.php" in path:
+        qs = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        profile_id = qs.get("id", "")
+        if profile_id:
+            new_url = urlunparse(parsed._replace(path=f"/{profile_id}/videos/", query=""))
+            print(f"[facebook] profile.php → aba de vídeos: {new_url}")
+            return new_url
+        return url
+
+    # /PAGE ou /PAGE/ (único segmento) → /PAGE/videos/
+    segments = [s for s in path.split("/") if s]
+    if len(segments) == 1:
+        new_url = urlunparse(parsed._replace(path=f"/{segments[0]}/videos/"))
+        print(f"[facebook] Ajustado para aba de vídeos: {new_url}")
+        return new_url
+
+    return url
+
+
+def _extra_args_for_url(url: str) -> list[str]:
+    """Retorna flags extras do yt-dlp específicas por plataforma."""
+    host = (urlparse(url).hostname or "").lower()
+    if "instagram.com" in host:
+        # Instagram exige este header para a Graph API — sem ele retorna
+        # "Unable to extract data" mesmo com cookies válidos.
+        return ["--add-headers", "X-IG-App-ID:936619743392459"]
+    return []
+
+
 def _resolve_facebook_share(url: str) -> str:
     """Resolve facebook.com/share/... seguindo o redirect HTTP para obter
     a URL real do conteúdo, depois limpa parâmetros de rastreamento."""
@@ -273,6 +324,7 @@ class Handler(BaseHTTPRequestHandler):
 
         url = normalize_url(url)
         url = _resolve_facebook_share(url)
+        url = _canonicalize_facebook_url(url)
 
         # Facebook e Instagram exigem cookies de sessão.
         # Tenta cada browser detectado em sequência até um funcionar.
@@ -291,7 +343,7 @@ class Handler(BaseHTTPRequestHandler):
             "--no-warnings", "--ignore-errors",
             "--playlist-start", str(start),
             "--playlist-end",   str(start + count - 1),
-        ]
+        ] + _extra_args_for_url(url)
         for browser in browsers_to_try:
             cookie_args = ["--cookies-from-browser", browser] if browser else []
             print(f"[fetch] browser={browser or 'nenhum'}  url={url[:80]}")
@@ -437,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
                 "--no-playlist", "--no-warnings", "--ignore-errors",
                 "--merge-output-format", "mp4",
                 "-o", out_tpl,
-            ] + dl_cookie_args + [url]
+            ] + _extra_args_for_url(url) + dl_cookie_args + [url]
 
             try:
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
