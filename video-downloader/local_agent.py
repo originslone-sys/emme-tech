@@ -309,40 +309,53 @@ def _fetch_instagram_curl_cffi(username: str, count: int) -> "dict | None":
         full_name = user.get("full_name") or username
         print(f"[ig] Perfil: {full_name} (id={uid})")
 
-        # ── Passo 2: feed de vídeos ───────────────────────────────────────────
-        r2 = session.get(
-            f"https://www.instagram.com/api/v1/feed/user/{uid}/?count={count}",
-            headers=headers, cookies=cookies, timeout=20,
-        )
-        print(f"[ig] feed/user → HTTP {r2.status_code}")
+        # ── Passo 2: feed paginado (API retorna max ~12 por req) ─────────────────
+        videos   = []
+        max_id   = None
+        max_pages = min(20, -(-count // 12) + 1)   # ceil(count/12) + 1 margem
+        for pg in range(max_pages):
+            feed_url = (
+                f"https://www.instagram.com/api/v1/feed/user/{uid}/?count=12"
+                + (f"&max_id={max_id}" if max_id else "")
+            )
+            r2 = session.get(feed_url, headers=headers, cookies=cookies, timeout=20)
 
-        if r2.status_code == 429:
-            _IG_RL_UNTIL = time.time() + 35 * 60
-            print("[ig] 429 no feed — rate limit. Tente de novo em ~35 minutos.")
-            return {"__ratelimit_mins": 35}
+            if r2.status_code == 429:
+                _IG_RL_UNTIL = time.time() + 35 * 60
+                print(f"[ig] 429 na página {pg+1} — guardando {len(videos)} vídeos até agora")
+                break
+            if r2.status_code != 200:
+                print(f"[ig] Feed HTTP {r2.status_code} na página {pg+1}")
+                break
 
-        if r2.status_code != 200:
-            print(f"[ig] Feed HTTP {r2.status_code}")
-            return None
+            feed     = r2.json()
+            new_vids = 0
+            for item in (feed.get("items") or []):
+                if item.get("media_type") != 2:   # 2 = vídeo
+                    continue
+                code   = item.get("code", "")
+                thumbs = (item.get("image_versions2") or {}).get("candidates") or []
+                thumb  = thumbs[0].get("url", "") if thumbs else ""
+                caption = ((item.get("caption") or {}).get("text")
+                           or f"Vídeo de {username}")[:200]
+                videos.append({
+                    "id":       item.get("pk", ""),
+                    "title":    caption,
+                    "url":      f"https://www.instagram.com/reel/{code}/",
+                    "thumb":    thumb,
+                    "duration": int(item.get("video_duration") or 0),
+                    "views":    int(item.get("view_count") or 0),
+                    "date":     str(item.get("taken_at", "")),
+                })
+                new_vids += 1
 
-        feed   = r2.json()
-        videos = []
-        for item in (feed.get("items") or []):
-            if item.get("media_type") != 2:   # 2 = vídeo
-                continue
-            code    = item.get("code", "")
-            thumbs  = (item.get("image_versions2") or {}).get("candidates") or []
-            thumb   = thumbs[0].get("url", "") if thumbs else ""
-            caption = ((item.get("caption") or {}).get("text") or f"Vídeo de {username}")[:200]
-            videos.append({
-                "id":       item.get("pk", ""),
-                "title":    caption,
-                "url":      f"https://www.instagram.com/reel/{code}/",
-                "thumb":    thumb,
-                "duration": int(item.get("video_duration") or 0),
-                "views":    int(item.get("view_count") or 0),
-                "date":     str(item.get("taken_at", "")),
-            })
+            max_id = feed.get("next_max_id")
+            print(f"[ig] Página {pg+1}: +{new_vids} vídeos (total={len(videos)}) "
+                  f"{'→ mais disponíveis' if max_id else '→ fim'}")
+
+            if not max_id or len(videos) >= count:
+                break
+            time.sleep(0.5)   # pausa curta para não acionar rate-limit
 
         print(f"[ig] {len(videos)} vídeo(s) encontrado(s)")
         if not videos:
@@ -351,9 +364,9 @@ def _fetch_instagram_curl_cffi(username: str, count: int) -> "dict | None":
 
         return {
             "ok":       True,
-            "videos":   videos,
-            "fetched":  len(videos),
-            "has_more": bool(feed.get("next_max_id")),
+            "videos":   videos[:count],
+            "fetched":  len(videos[:count]),
+            "has_more": bool(max_id),
             "profile":  full_name,
             "platform": "instagram",
         }
@@ -388,16 +401,35 @@ def _scrape_ig_profile(page, url: str, count: int) -> "dict | None":
     page.on("response", _on_resp)
 
     try:
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.goto(url, wait_until="networkidle", timeout=45000)
     except Exception:
-        page.goto(url, wait_until="load", timeout=30000)
+        page.goto(url, wait_until="load", timeout=45000)
 
     page.wait_for_timeout(3000)
 
-    # Scroll para carregar mais posts
-    for _ in range(3):
+    # Scroll inteligente: para quando a página para de carregar novos posts
+    prev_count = 0
+    stable = 0
+    for scroll_n in range(30):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page.wait_for_timeout(2000)
+        cur_count = page.evaluate("""() => {
+            const s = new Set();
+            document.querySelectorAll('a[href*="/reel/"],a[href*="/p/"]').forEach(a=>{
+                const h=a.getAttribute('href')||''; if(h) s.add(h);
+            });
+            return s.size;
+        }""")
+        if cur_count >= count * 2:   # posts encontrados (inclui fotos) suficientes
+            break
+        if cur_count == prev_count:
+            stable += 1
+            if stable >= 3:
+                break
+            page.wait_for_timeout(1500)
+        else:
+            stable = 0
+        prev_count = cur_count
 
     full_name = username
 
@@ -482,47 +514,96 @@ def _scrape_ig_profile(page, url: str, count: int) -> "dict | None":
     }
 
 
+_FB_VIDEO_JS = """() => {
+    const out = [], seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+        let href = a.href || '';
+        const m = href.match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
+        if (!m) continue;
+        const vid = m[1];
+        if (seen.has(vid)) continue;
+        seen.add(vid);
+        const img = a.querySelector('img');
+        const txt = (a.textContent || '').trim().substring(0, 200);
+        out.push({
+            url:   href.startsWith('http') ? href : 'https://www.facebook.com' + href,
+            id:    vid,
+            thumb: img ? img.src : '',
+            title: txt,
+        });
+    }
+    return out;
+}"""
+
+
 def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
-    """Extrai vídeos de página do Facebook dentro de um Playwright page autenticado."""
+    """Extrai vídeos de página do Facebook.
+    Usa scroll inteligente: para quando não aparecem novos vídeos (page estabilizou)
+    ou quando já tem vídeos suficientes."""
     try:
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.goto(url, wait_until="networkidle", timeout=45000)
     except Exception:
-        page.goto(url, wait_until="load", timeout=30000)
+        page.goto(url, wait_until="load", timeout=45000)
 
     page.wait_for_timeout(3000)
 
-    # Scroll para carregar mais vídeos
-    for _ in range(5):
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
+    path_parts = [p for p in urlparse(url).path.split("/") if p]
+    page_name  = path_parts[0] if path_parts else "Facebook"
 
-    links = page.evaluate("""() => {
-        const out = [], seen = new Set();
-        for (const a of document.querySelectorAll('a[href]')) {
-            let href = a.href || '';
-            const m = href.match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
-            if (!m) continue;
-            const vid = m[1];
-            if (seen.has(vid)) continue;
-            seen.add(vid);
-            const img = a.querySelector('img');
-            const txt = (a.textContent || '').trim().substring(0, 200);
-            out.push({
-                url: href.startsWith('http') ? href : 'https://www.facebook.com' + href,
-                id:    vid,
-                thumb: img ? img.src : '',
-                title: txt,
-            });
-        }
-        return out;
-    }""")
+    prev_count = 0
+    stable     = 0   # nº de rounds sem novos vídeos
+    MAX_SCROLLS  = 40   # limite máximo de scrolls
+    STABLE_STOP  = 4    # para após N rounds sem novidade
+
+    for scroll_n in range(MAX_SCROLLS):
+        # Scroll até o fim da página
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(2500)
+
+        # Tenta clicar em botões "Ver mais" / "Load more" se existirem
+        for btn_text in ("Ver mais vídeos", "Load more videos", "Ver mais", "See more"):
+            try:
+                btn = page.get_by_text(btn_text, exact=False).first
+                if btn.is_visible(timeout=500):
+                    btn.click()
+                    page.wait_for_timeout(1500)
+            except Exception:
+                pass
+
+        # Conta vídeos únicos já visíveis
+        cur_count = page.evaluate("""() => {
+            const seen = new Set();
+            for (const a of document.querySelectorAll('a[href]')) {
+                const m = (a.href||'').match(/(?:\\/watch\\/\\?v=|\\/videos\\/|\\/reel\\/)([0-9]+)/);
+                if (m) seen.add(m[1]);
+            }
+            return seen.size;
+        }""")
+
+        print(f"[browser] Scroll {scroll_n+1}/{MAX_SCROLLS}: {cur_count} vídeos na página")
+
+        if cur_count >= count:
+            print(f"[browser] Atingiu {count} vídeos solicitados — parando")
+            break
+
+        if cur_count == prev_count:
+            stable += 1
+            if stable >= STABLE_STOP:
+                print(f"[browser] Página estabilizou ({STABLE_STOP} rounds sem novos) — parando")
+                break
+            # Aguarda um pouco mais caso o carregamento seja lento
+            page.wait_for_timeout(1500)
+        else:
+            stable = 0
+
+        prev_count = cur_count
+
+    # Extrai todos os links de vídeo encontrados
+    links = page.evaluate(_FB_VIDEO_JS)
 
     if not links:
         print("[browser] Nenhum vídeo encontrado na página do Facebook")
         return None
-
-    path_parts = [p for p in urlparse(url).path.split("/") if p]
-    page_name = path_parts[0] if path_parts else "Facebook"
 
     videos = []
     for lk in links[:count]:
@@ -536,11 +617,14 @@ def _scrape_fb_videos(page, url: str, count: int) -> "dict | None":
             "date":     "",
         })
 
-    print(f"[browser] {len(videos)} vídeo(s) do Facebook")
+    has_more = len(links) > count
+    print(f"[browser] {len(videos)} vídeo(s) retornados"
+          + (" (há mais disponíveis)" if has_more else " (todos carregados)"))
     return {
         "ok":       True,
         "videos":   videos,
         "fetched":  len(videos),
+        "has_more": has_more,
         "profile":  page_name,
         "platform": "facebook",
     }
