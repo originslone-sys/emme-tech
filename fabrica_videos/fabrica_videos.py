@@ -569,7 +569,8 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
         "-i", str(input_file)
     ]
     if musica_escolhida:
-        comando.extend(["-i", str(musica_escolhida)])
+        music_limit = round(duracao * 1.06 + 10, 1)  # margem para speed + intro/outro
+        comando.extend(["-t", str(music_limit), "-i", str(musica_escolhida)])
     music_idx = 1  # índice do input de música (sempre 1 quando presente)
 
     # Decide se precisa de filter_complex ou pode usar -vf/-af
@@ -616,7 +617,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
 
         if musica_escolhida or (not musica_escolhida and asrc):
             comando.extend(["-map", "[aout]"])
-        if musica_escolhida:
+        if musica_escolhida and not asrc:
             comando.append("-shortest")
 
     else:
