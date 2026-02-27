@@ -4,29 +4,21 @@
  * Endpoints para gerenciar arquivos e pastas via IDrive E2
  */
 
-require_once __DIR__ . '/vendor/autoload.php';
-
-use Nuvem\Storage;
+// Mostrar erros em JSON em vez de 500 generico
+error_reporting(E_ALL);
+set_error_handler(function ($severity, $message, $file, $line) {
+    throw new \ErrorException($message, 0, $severity, $file, $line);
+});
 
 // Headers
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
-// Carregar configuracao
-$configFile = __DIR__ . '/config.php';
-if (!file_exists($configFile)) {
-    http_response_code(500);
-    echo json_encode(['error' => 'config.php nao encontrado. Copie config.example.php para config.php']);
-    exit;
-}
-
-$config = require $configFile;
-
-// Verificar autenticacao simples via sessao
+// Sessao e acao
 session_start();
 $action = $_GET['action'] ?? '';
 
-// Acoes que NAO precisam de Storage (resolver antes de conectar ao S3)
+// Acoes que NAO precisam de Storage nem de vendor/autoload
 switch ($action) {
     case 'check-auth':
         echo json_encode(['authenticated' => !empty($_SESSION['nuvem_auth'])]);
@@ -50,9 +42,27 @@ if (empty($_SESSION['nuvem_auth'])) {
     exit;
 }
 
-// Inicializar storage somente quando necessario
+// Carregar dependencias somente quando necessario
+$autoloadFile = __DIR__ . '/vendor/autoload.php';
+if (!file_exists($autoloadFile)) {
+    http_response_code(500);
+    echo json_encode(['error' => 'vendor/autoload.php nao encontrado. Execute: composer install']);
+    exit;
+}
+require_once $autoloadFile;
+
+// Carregar configuracao
+$configFile = __DIR__ . '/config.php';
+if (!file_exists($configFile)) {
+    http_response_code(500);
+    echo json_encode(['error' => 'config.php nao encontrado. Copie config.example.php para config.php']);
+    exit;
+}
+$config = require $configFile;
+
+// Inicializar storage
 try {
-    $storage = new Storage($config['e2']);
+    $storage = new \Nuvem\Storage($config['e2']);
 } catch (\Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Erro ao conectar com o storage: ' . $e->getMessage()]);
