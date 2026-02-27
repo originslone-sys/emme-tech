@@ -8,39 +8,19 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
-    <!-- Tela de Login -->
-    <div id="login-screen" class="login-screen">
+    <!-- Tela de Login (oculta - uso pessoal) -->
+    <div id="login-screen" class="login-screen" style="display:none">
         <div class="login-window">
-            <div class="login-window-titlebar">
-                <span><i class="fas fa-cloud"></i> Nuvem - Login</span>
-                <div class="titlebar-buttons">
-                    <span class="btn-minimize">&#9472;</span>
-                    <span class="btn-maximize">&#9723;</span>
-                    <span class="btn-close">&#10005;</span>
-                </div>
-            </div>
             <div class="login-body">
-                <div class="login-icon">
-                    <i class="fas fa-cloud-arrow-up"></i>
-                </div>
-                <h2>Nuvem Storage</h2>
-                <p>Digite a senha para acessar seus arquivos</p>
-                <form id="login-form">
-                    <div class="input-group">
-                        <i class="fas fa-lock"></i>
-                        <input type="password" id="login-password" placeholder="Senha de acesso" autocomplete="current-password" required>
-                    </div>
-                    <button type="submit" class="btn-login">
-                        <i class="fas fa-sign-in-alt"></i> Entrar
-                    </button>
-                    <div id="login-error" class="login-error" style="display:none"></div>
-                </form>
+                <div class="login-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                <h2>Carregando...</h2>
+                <form id="login-form"><input type="hidden" id="login-password"><div id="login-error" class="login-error" style="display:none"></div></form>
             </div>
         </div>
     </div>
 
     <!-- Aplicacao Principal -->
-    <div id="app" class="app" style="display:none">
+    <div id="app" class="app">
         <!-- Desktop / Area de Trabalho -->
         <div class="desktop">
             <!-- Janela Principal -->

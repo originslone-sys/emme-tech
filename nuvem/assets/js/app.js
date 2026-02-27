@@ -124,27 +124,12 @@
         setupEventListeners();
         setupDragDrop();
 
+        // Auto-login (uso pessoal, sem senha)
         try {
-            const auth = await api.checkAuth();
-            if (auth.authenticated) {
-                showApp();
-                await navigateTo('');
-            } else {
-                // Auto-login (uso pessoal, sem senha)
-                await api.login('');
-                showApp();
-                await navigateTo('');
-            }
-        } catch {
-            // Fallback: tentar login direto
-            try {
-                await api.login('');
-                showApp();
-                await navigateTo('');
-            } catch {
-                showLogin();
-            }
-        }
+            await api.login('');
+        } catch { /* ignora se ja logado */ }
+        showApp();
+        await navigateTo('');
     }
 
     // === Autenticacao ===
