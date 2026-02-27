@@ -112,6 +112,10 @@
         async logout() {
             return this.request('logout');
         },
+
+        async storageUsage() {
+            return this.request('storage-usage');
+        },
     };
 
     // === Elementos DOM ===
@@ -130,6 +134,7 @@
         } catch { /* ignora se ja logado */ }
         showApp();
         await navigateTo('');
+        updateStorageInfo();
     }
 
     // === Autenticacao ===
@@ -737,6 +742,20 @@
         const total = state.folders.length + state.files.length;
         $('#status-items').textContent = `${total} item(ns)`;
         $('#status-path').textContent = state.currentPath || 'Raiz';
+    }
+
+    async function updateStorageInfo() {
+        try {
+            const data = await api.storageUsage();
+            const used = formatSize(data.usedBytes);
+            $('#storage-text').textContent = `${used} usado (${data.totalFiles} arquivos)`;
+            // Barra visual - escala ate 10GB como referencia
+            const maxRef = 10 * 1024 * 1024 * 1024;
+            const pct = Math.min((data.usedBytes / maxRef) * 100, 100);
+            $('#storage-used-bar').style.width = pct + '%';
+        } catch {
+            $('#storage-text').textContent = 'Erro ao calcular';
+        }
     }
 
     function updateWindowTitle() {
