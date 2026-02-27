@@ -130,21 +130,14 @@
                             <div class="col-actions">Acoes</div>
                         </div>
 
-                        <!-- Lista de Arquivos -->
-                        <div class="file-list" id="file-list">
-                            <!-- Carregando -->
-                            <div class="loading" id="loading">
-                                <i class="fas fa-spinner fa-spin"></i>
-                                <span>Carregando arquivos...</span>
-                            </div>
-
-                            <!-- Estado vazio -->
-                            <div class="empty-state" id="empty-state" style="display:none">
-                                <i class="fas fa-folder-open"></i>
-                                <h3>Pasta vazia</h3>
-                                <p>Arraste arquivos aqui ou clique em "Upload"</p>
-                            </div>
+                        <!-- Carregando (fora do file-list para nao ser destruido pelo innerHTML) -->
+                        <div class="loading" id="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Carregando arquivos...</span>
                         </div>
+
+                        <!-- Lista de Arquivos -->
+                        <div class="file-list" id="file-list"></div>
                     </div>
                 </div>
 
