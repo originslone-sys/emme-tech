@@ -44,7 +44,7 @@
         },
 
         async list(path = '') {
-            return this.request(`list&path=${encodeURIComponent(path)}`);
+            return this.request(`list?path=${encodeURIComponent(path)}`);
         },
 
         async createFolder(path) {
@@ -82,7 +82,7 @@
         },
 
         async download(path) {
-            return this.request(`download&path=${encodeURIComponent(path)}`);
+            return this.request(`download?path=${encodeURIComponent(path)}`);
         },
 
         async move(oldPath, newPath) {
@@ -94,7 +94,7 @@
         },
 
         async getInfo(path) {
-            return this.request(`info&path=${encodeURIComponent(path)}`);
+            return this.request(`info?path=${encodeURIComponent(path)}`);
         },
 
         async login(password) {
