@@ -38,13 +38,13 @@ class Config:
     # Se true, apaga bruto no servidor ao concluir
     delete_on_server: bool = True
 
-    local_root: str = r"D:\automacao_videos"
-    input_dir: str = r"D:\automacao_videos\input"
-    output_dir: str = r"D:\automacao_videos\output"
-    processed_dir: str = r"D:\automacao_videos\processed"
-    failed_dir: str = r"D:\automacao_videos\failed"
-    logs_dir: str = r"D:\automacao_videos\logs"
-    music_dir: str = r"D:\automacao_videos\musicas_fundo"
+    local_root: str = r"D:\fabrica_videos"
+    input_dir: str = r"D:\fabrica_videos\input"
+    output_dir: str = r"D:\fabrica_videos\output"
+    processed_dir: str = r"D:\fabrica_videos\processed"
+    failed_dir: str = r"D:\fabrica_videos\failed"
+    logs_dir: str = r"D:\fabrica_videos\logs"
+    music_dir: str = r"D:\fabrica_videos\musicas_fundo"
 
     # Endpoints
     claim_ep: str = "/api/edicao_claim.php"
