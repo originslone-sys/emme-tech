@@ -4,11 +4,7 @@
  * Endpoints para gerenciar arquivos e pastas via IDrive E2
  */
 
-// Mostrar erros em JSON em vez de 500 generico
-error_reporting(E_ALL);
-set_error_handler(function ($severity, $message, $file, $line) {
-    throw new \ErrorException($message, 0, $severity, $file, $line);
-});
+use Nuvem\Storage;
 
 // Headers
 header('Content-Type: application/json; charset=utf-8');
@@ -63,7 +59,7 @@ $config = require $configFile;
 // Inicializar storage
 try {
     $storage = new \Nuvem\Storage($config['e2']);
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Erro ao conectar com o storage: ' . $e->getMessage()]);
     exit;
@@ -103,7 +99,7 @@ try {
 } catch (\Aws\S3\Exception\S3Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Erro S3: ' . $e->getAwsErrorMessage()]);
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);
 }
