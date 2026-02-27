@@ -1,0 +1,1448 @@
+/* ============================================
+   NUVEM - Cloud Storage Application
+   Estilo Windows Desktop
+   ============================================ */
+
+/* === Reset e Base === */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --win-blue: #0078d4;
+    --win-blue-hover: #106ebe;
+    --win-blue-dark: #005a9e;
+    --win-bg: #1e1e2e;
+    --win-surface: #2d2d3f;
+    --win-surface-hover: #383850;
+    --win-surface-active: #44446a;
+    --win-border: #404060;
+    --win-text: #e0e0e0;
+    --win-text-secondary: #a0a0b0;
+    --win-titlebar: #1a1a2e;
+    --win-titlebar-inactive: #2a2a3a;
+    --win-close: #c42b1c;
+    --win-close-hover: #e04030;
+    --win-minimize: #ffa500;
+    --win-maximize: #00c853;
+    --win-scrollbar: #555580;
+    --win-scrollbar-hover: #7070a0;
+    --sidebar-width: 220px;
+    --titlebar-height: 36px;
+    --toolbar-height: 42px;
+    --actionbar-height: 40px;
+    --statusbar-height: 28px;
+    --taskbar-height: 44px;
+    --folder-yellow: #ffc107;
+    --file-blue: #42a5f5;
+    --danger: #f44336;
+    --success: #4caf50;
+    --warning: #ff9800;
+    --radius: 6px;
+    --radius-sm: 4px;
+    --shadow: 0 4px 20px rgba(0,0,0,0.4);
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    color: var(--win-text);
+    background: var(--win-bg);
+    user-select: none;
+}
+
+/* === Scrollbar Custom === */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--win-surface);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--win-scrollbar);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--win-scrollbar-hover);
+}
+
+/* ============================================
+   TELA DE LOGIN
+   ============================================ */
+
+.login-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    z-index: 10000;
+}
+
+.login-window {
+    width: 400px;
+    background: var(--win-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--win-border);
+    overflow: hidden;
+}
+
+.login-window-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    height: var(--titlebar-height);
+    background: var(--win-titlebar);
+    font-size: 12px;
+}
+
+.login-window-titlebar i {
+    margin-right: 6px;
+    color: var(--win-blue);
+}
+
+.login-body {
+    padding: 30px;
+    text-align: center;
+}
+
+.login-icon {
+    font-size: 48px;
+    color: var(--win-blue);
+    margin-bottom: 16px;
+}
+
+.login-body h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.login-body p {
+    color: var(--win-text-secondary);
+    margin-bottom: 24px;
+    font-size: 13px;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    background: var(--win-bg);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+}
+
+.input-group:focus-within {
+    border-color: var(--win-blue);
+}
+
+.input-group i {
+    color: var(--win-text-secondary);
+    margin-right: 10px;
+    font-size: 14px;
+}
+
+.input-group input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--win-text);
+    font-size: 14px;
+}
+
+.input-group input::placeholder {
+    color: var(--win-text-secondary);
+}
+
+.btn-login {
+    width: 100%;
+    padding: 10px;
+    background: var(--win-blue);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-login:hover {
+    background: var(--win-blue-hover);
+}
+
+.login-error {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(244, 67, 54, 0.15);
+    color: var(--danger);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+}
+
+/* ============================================
+   APLICACAO PRINCIPAL
+   ============================================ */
+
+.app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* === Desktop === */
+.desktop {
+    flex: 1;
+    padding: 10px;
+    display: flex;
+    overflow: hidden;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+/* ============================================
+   JANELA PRINCIPAL (Windows-style)
+   ============================================ */
+
+.window {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--win-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--win-border);
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* === Barra de Titulo === */
+.window-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 0 14px;
+    height: var(--titlebar-height);
+    background: var(--win-titlebar);
+    flex-shrink: 0;
+    cursor: default;
+}
+
+.titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.titlebar-left i {
+    color: var(--win-blue);
+}
+
+.titlebar-buttons {
+    display: flex;
+    gap: 2px;
+}
+
+.titlebar-buttons span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+
+.titlebar-buttons span:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.titlebar-buttons .btn-close:hover {
+    background: var(--win-close);
+    color: white;
+}
+
+/* === Barra de Ferramentas === */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    height: var(--toolbar-height);
+    background: var(--win-bg);
+    border-bottom: 1px solid var(--win-border);
+    flex-shrink: 0;
+}
+
+.toolbar-left {
+    display: flex;
+    gap: 2px;
+}
+
+.tool-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--win-text);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 14px;
+}
+
+.tool-btn:hover:not(:disabled) {
+    background: var(--win-surface-hover);
+    border-color: var(--win-border);
+}
+
+.tool-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.path-bar {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    padding: 0 12px;
+    height: 32px;
+    min-width: 0;
+}
+
+.path-bar i {
+    color: var(--folder-yellow);
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.breadcrumb::-webkit-scrollbar {
+    height: 3px;
+}
+
+.crumb {
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--win-text-secondary);
+    font-size: 12px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.crumb:hover {
+    background: var(--win-surface-hover);
+    color: var(--win-text);
+}
+
+.crumb:last-child {
+    color: var(--win-text);
+    font-weight: 500;
+}
+
+.crumb-separator {
+    color: var(--win-text-secondary);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.toolbar-right {
+    flex-shrink: 0;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    padding: 0 10px;
+    height: 32px;
+    width: 200px;
+    transition: border-color 0.2s;
+}
+
+.search-box:focus-within {
+    border-color: var(--win-blue);
+}
+
+.search-box i {
+    color: var(--win-text-secondary);
+    font-size: 12px;
+}
+
+.search-box input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--win-text);
+    font-size: 12px;
+    width: 100%;
+}
+
+.search-box input::placeholder {
+    color: var(--win-text-secondary);
+}
+
+/* === Barra de Acoes === */
+.action-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    height: var(--actionbar-height);
+    background: var(--win-bg);
+    border-bottom: 1px solid var(--win-border);
+    flex-shrink: 0;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--win-text);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.action-btn:hover {
+    background: var(--win-surface-hover);
+    border-color: var(--win-border);
+}
+
+.action-btn.active {
+    background: var(--win-surface-active);
+    border-color: var(--win-blue);
+}
+
+.action-btn.danger {
+    color: var(--danger);
+}
+
+.action-btn.danger:hover {
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.action-btn i {
+    font-size: 13px;
+}
+
+.action-separator {
+    width: 1px;
+    height: 22px;
+    background: var(--win-border);
+    margin: 0 4px;
+}
+
+/* ============================================
+   CONTEUDO PRINCIPAL
+   ============================================ */
+
+.window-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* === Painel Lateral === */
+.sidebar {
+    width: var(--sidebar-width);
+    background: var(--win-bg);
+    border-right: 1px solid var(--win-border);
+    overflow-y: auto;
+    padding: 8px 0;
+    flex-shrink: 0;
+}
+
+.sidebar-section {
+    margin-bottom: 12px;
+}
+
+.sidebar-section h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--win-text-secondary);
+    letter-spacing: 0.5px;
+}
+
+.sidebar-section h3 i {
+    font-size: 12px;
+}
+
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px 7px 24px;
+    cursor: pointer;
+    color: var(--win-text-secondary);
+    font-size: 13px;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+}
+
+.sidebar-item:hover {
+    background: var(--win-surface-hover);
+    color: var(--win-text);
+}
+
+.sidebar-item.active {
+    background: var(--win-surface-active);
+    color: var(--win-text);
+    border-left-color: var(--win-blue);
+}
+
+.sidebar-item i {
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+}
+
+/* Storage Info */
+.storage-info {
+    padding: 8px 14px 8px 24px;
+}
+
+.storage-bar {
+    height: 6px;
+    background: var(--win-surface);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.storage-used {
+    height: 100%;
+    background: linear-gradient(90deg, var(--win-blue), #00c9ff);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.storage-text {
+    font-size: 11px;
+    color: var(--win-text-secondary);
+}
+
+/* ============================================
+   AREA DE ARQUIVOS
+   ============================================ */
+
+.file-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* === Header da Lista === */
+.file-list-header {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    height: 32px;
+    background: var(--win-bg);
+    border-bottom: 1px solid var(--win-border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--win-text-secondary);
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+}
+
+.file-list-header > div {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+}
+
+.file-list-header > div:hover {
+    color: var(--win-text);
+}
+
+.col-check {
+    width: 36px;
+    flex-shrink: 0;
+}
+
+.col-check input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--win-blue);
+}
+
+.col-icon {
+    width: 36px;
+    flex-shrink: 0;
+}
+
+.col-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.col-size {
+    width: 100px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.col-date {
+    width: 150px;
+    flex-shrink: 0;
+}
+
+.col-actions {
+    width: 80px;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+/* === Lista de Arquivos === */
+.file-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0;
+}
+
+/* === Item de Arquivo (lista) === */
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    height: 36px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border: 1px solid transparent;
+    margin: 0 4px;
+    border-radius: var(--radius-sm);
+}
+
+.file-item:hover {
+    background: var(--win-surface-hover);
+}
+
+.file-item.selected {
+    background: rgba(0, 120, 212, 0.2);
+    border-color: rgba(0, 120, 212, 0.4);
+}
+
+.file-item .col-check input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--win-blue);
+}
+
+.file-item .col-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.file-item .col-icon .folder-icon {
+    color: var(--folder-yellow);
+}
+
+.file-item .col-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+.file-item .col-name .file-rename-input {
+    background: var(--win-bg);
+    border: 1px solid var(--win-blue);
+    color: var(--win-text);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    width: 80%;
+    outline: none;
+}
+
+.file-item .col-size {
+    font-size: 12px;
+    color: var(--win-text-secondary);
+    text-align: right;
+}
+
+.file-item .col-date {
+    font-size: 12px;
+    color: var(--win-text-secondary);
+}
+
+.file-item .col-actions {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.file-item:hover .col-actions {
+    opacity: 1;
+}
+
+.file-item .col-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--win-text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+}
+
+.file-item .col-actions button:hover {
+    background: var(--win-surface);
+    border-color: var(--win-border);
+    color: var(--win-text);
+}
+
+.file-item .col-actions button.delete-btn:hover {
+    color: var(--danger);
+    background: rgba(244, 67, 54, 0.1);
+}
+
+/* === Visualizacao em Grid === */
+.file-list.grid-view {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    align-content: flex-start;
+}
+
+.file-list.grid-view .file-item {
+    flex-direction: column;
+    width: 110px;
+    height: 110px;
+    padding: 10px;
+    margin: 0;
+    text-align: center;
+    border-radius: var(--radius);
+    gap: 6px;
+    justify-content: center;
+}
+
+.file-list.grid-view .file-item .col-check {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+}
+
+.file-list.grid-view .file-item .col-icon {
+    font-size: 36px;
+    width: auto;
+}
+
+.file-list.grid-view .file-item .col-name {
+    font-size: 11px;
+    width: 100%;
+    text-align: center;
+}
+
+.file-list.grid-view .file-item .col-size,
+.file-list.grid-view .file-item .col-date,
+.file-list.grid-view .file-item .col-actions {
+    display: none;
+}
+
+.file-list.grid-view + .file-list-header,
+.grid-view ~ .file-list-header {
+    display: none;
+}
+
+/* === Loading e Empty State === */
+.loading, .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 60px 20px;
+    color: var(--win-text-secondary);
+}
+
+.loading i {
+    font-size: 28px;
+    color: var(--win-blue);
+}
+
+.empty-state i {
+    font-size: 48px;
+    opacity: 0.3;
+}
+
+.empty-state h3 {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.empty-state p {
+    font-size: 13px;
+}
+
+/* ============================================
+   BARRA DE STATUS
+   ============================================ */
+
+.statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    height: var(--statusbar-height);
+    background: var(--win-titlebar);
+    border-top: 1px solid var(--win-border);
+    font-size: 11px;
+    color: var(--win-text-secondary);
+    flex-shrink: 0;
+}
+
+/* ============================================
+   BARRA DE TAREFAS (Windows-style)
+   ============================================ */
+
+.taskbar {
+    height: var(--taskbar-height);
+    background: var(--win-titlebar);
+    border-top: 1px solid var(--win-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    flex-shrink: 0;
+}
+
+.taskbar-left {
+    display: flex;
+    align-items: center;
+}
+
+.start-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--win-blue);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s;
+}
+
+.start-btn:hover {
+    background: var(--win-blue-hover);
+}
+
+.start-btn i {
+    font-size: 16px;
+}
+
+.taskbar-center {
+    display: flex;
+    gap: 4px;
+}
+
+.taskbar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.taskbar-item:hover {
+    background: var(--win-surface-hover);
+}
+
+.taskbar-item.active {
+    background: var(--win-surface-active);
+    border-bottom: 2px solid var(--win-blue);
+}
+
+.taskbar-item i {
+    color: var(--folder-yellow);
+}
+
+.taskbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.taskbar-clock {
+    font-size: 12px;
+    color: var(--win-text-secondary);
+}
+
+.taskbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--win-text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.taskbar-btn:hover {
+    background: rgba(244, 67, 54, 0.2);
+    color: var(--danger);
+}
+
+/* ============================================
+   OVERLAY DE DRAG & DROP
+   ============================================ */
+
+.drop-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 120, 212, 0.15);
+    backdrop-filter: blur(4px);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drop-content {
+    text-align: center;
+    padding: 40px 60px;
+    background: var(--win-surface);
+    border: 2px dashed var(--win-blue);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+}
+
+.drop-content i {
+    font-size: 48px;
+    color: var(--win-blue);
+    margin-bottom: 16px;
+}
+
+.drop-content h2 {
+    font-size: 20px;
+    margin-bottom: 8px;
+}
+
+.drop-content p {
+    color: var(--win-text-secondary);
+}
+
+/* ============================================
+   MENU DE CONTEXTO
+   ============================================ */
+
+.context-menu {
+    position: fixed;
+    z-index: 9500;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 4px 0;
+    min-width: 200px;
+}
+
+.context-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.1s;
+}
+
+.context-item:hover {
+    background: var(--win-surface-hover);
+}
+
+.context-item.danger {
+    color: var(--danger);
+}
+
+.context-item.danger:hover {
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.context-item i {
+    width: 18px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.context-separator {
+    height: 1px;
+    background: var(--win-border);
+    margin: 4px 8px;
+}
+
+/* ============================================
+   MODAL / DIALOGO (Windows-style)
+   ============================================ */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-window {
+    width: 440px;
+    max-width: 90vw;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.modal-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    height: var(--titlebar-height);
+    background: var(--win-titlebar);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.modal-titlebar .btn-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+
+.modal-titlebar .btn-close:hover {
+    background: var(--win-close);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-body label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--win-text-secondary);
+}
+
+.modal-body input[type="text"] {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--win-bg);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    color: var(--win-text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.modal-body input[type="text"]:focus {
+    border-color: var(--win-blue);
+}
+
+.modal-body .info-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    font-size: 13px;
+}
+
+.modal-body .info-grid dt {
+    color: var(--win-text-secondary);
+    font-weight: 500;
+}
+
+.modal-body .info-grid dd {
+    color: var(--win-text);
+    word-break: break-all;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--win-border);
+}
+
+.modal-footer .btn {
+    padding: 7px 20px;
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+
+.modal-footer .btn-primary {
+    background: var(--win-blue);
+    color: white;
+    border-color: var(--win-blue);
+}
+
+.modal-footer .btn-primary:hover {
+    background: var(--win-blue-hover);
+}
+
+.modal-footer .btn-secondary {
+    background: var(--win-surface-hover);
+    color: var(--win-text);
+}
+
+.modal-footer .btn-secondary:hover {
+    background: var(--win-surface-active);
+}
+
+.modal-footer .btn-danger {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+}
+
+.modal-footer .btn-danger:hover {
+    background: #d32f2f;
+}
+
+/* ============================================
+   UPLOAD PROGRESS
+   ============================================ */
+
+.upload-progress-container {
+    position: fixed;
+    bottom: 60px;
+    right: 16px;
+    z-index: 9600;
+}
+
+.upload-progress-window {
+    width: 340px;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.upload-progress-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    height: 30px;
+    background: var(--win-titlebar);
+    font-size: 12px;
+}
+
+.upload-progress-titlebar i {
+    margin-right: 6px;
+    color: var(--win-blue);
+}
+
+.upload-progress-titlebar .btn-close {
+    cursor: pointer;
+    font-size: 11px;
+    transition: color 0.15s;
+}
+
+.upload-progress-titlebar .btn-close:hover {
+    color: var(--danger);
+}
+
+.upload-progress-body {
+    padding: 14px;
+}
+
+.upload-file-name {
+    font-size: 12px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--win-text-secondary);
+}
+
+.upload-bar-container {
+    height: 6px;
+    background: var(--win-bg);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.upload-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--win-blue), #00c9ff);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.upload-percent {
+    font-size: 11px;
+    color: var(--win-text-secondary);
+    text-align: right;
+}
+
+/* ============================================
+   ICONES DE ARQUIVO POR EXTENSAO
+   ============================================ */
+
+.icon-image { color: #e91e63; }
+.icon-video { color: #9c27b0; }
+.icon-audio { color: #ff5722; }
+.icon-pdf { color: #f44336; }
+.icon-doc { color: #2196f3; }
+.icon-sheet { color: #4caf50; }
+.icon-code { color: #00bcd4; }
+.icon-archive { color: #795548; }
+.icon-text { color: #607d8b; }
+.icon-default { color: #90a4ae; }
+
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+
+.toast-container {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--win-surface);
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    animation: slideInRight 0.3s ease;
+    min-width: 280px;
+    max-width: 400px;
+}
+
+.toast.success {
+    border-left: 3px solid var(--success);
+}
+
+.toast.error {
+    border-left: 3px solid var(--danger);
+}
+
+.toast.info {
+    border-left: 3px solid var(--win-blue);
+}
+
+.toast i {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.toast.success i { color: var(--success); }
+.toast.error i { color: var(--danger); }
+.toast.info i { color: var(--win-blue); }
+
+.toast .toast-close {
+    margin-left: auto;
+    cursor: pointer;
+    color: var(--win-text-secondary);
+    font-size: 12px;
+    padding: 4px;
+}
+
+.toast .toast-close:hover {
+    color: var(--win-text);
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* ============================================
+   MOVE DIALOG - Folder Tree
+   ============================================ */
+
+.folder-tree {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--win-border);
+    border-radius: var(--radius-sm);
+    background: var(--win-bg);
+    padding: 6px;
+}
+
+.folder-tree-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    transition: background 0.1s;
+}
+
+.folder-tree-item:hover {
+    background: var(--win-surface-hover);
+}
+
+.folder-tree-item.selected {
+    background: rgba(0, 120, 212, 0.2);
+    border: 1px solid rgba(0, 120, 212, 0.4);
+}
+
+.folder-tree-item i {
+    color: var(--folder-yellow);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+    .sidebar {
+        display: none;
+    }
+
+    .search-box {
+        width: 120px;
+    }
+
+    .col-date {
+        display: none;
+    }
+
+    .col-size {
+        width: 70px;
+    }
+
+    .action-btn span {
+        display: none;
+    }
+
+    .desktop {
+        padding: 4px;
+    }
+
+    .window {
+        border-radius: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .col-size {
+        display: none;
+    }
+
+    .toolbar-right {
+        display: none;
+    }
+
+    .action-bar {
+        overflow-x: auto;
+    }
+}
