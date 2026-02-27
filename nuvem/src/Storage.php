@@ -259,6 +259,32 @@ class Storage
     }
 
     /**
+     * Calcular espaco total usado no bucket
+     */
+    public function getStorageUsage(): array
+    {
+        $totalSize = 0;
+        $totalFiles = 0;
+        $params = ['Bucket' => $this->bucket];
+
+        do {
+            $result = $this->client->listObjectsV2($params);
+            if (!empty($result['Contents'])) {
+                foreach ($result['Contents'] as $obj) {
+                    $totalSize += $obj['Size'];
+                    $totalFiles++;
+                }
+            }
+            $params['ContinuationToken'] = $result['NextContinuationToken'] ?? null;
+        } while (!empty($result['IsTruncated']));
+
+        return [
+            'usedBytes' => $totalSize,
+            'totalFiles' => $totalFiles,
+        ];
+    }
+
+    /**
      * Verificar se um objeto existe
      */
     public function exists(string $path): bool

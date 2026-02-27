@@ -92,6 +92,10 @@ try {
         case 'info':
             handleInfo($storage);
             break;
+        case 'storage-usage':
+            $usage = $storage->getStorageUsage();
+            echo json_encode($usage);
+            break;
         default:
             http_response_code(404);
             echo json_encode(['error' => 'Acao nao encontrada']);
