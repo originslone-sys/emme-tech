@@ -616,7 +616,7 @@ def processar_video(input_file: Path, output_file: Path, logs_dir: Path, pasta_m
 
         if musica_escolhida or (not musica_escolhida and asrc):
             comando.extend(["-map", "[aout]"])
-        if musica_escolhida and not asrc:
+        if musica_escolhida:
             comando.append("-shortest")
 
     else:
