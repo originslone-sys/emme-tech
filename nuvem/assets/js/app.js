@@ -747,12 +747,9 @@
 
     function showLoading(show) {
         const loading = $('#loading');
-        if (show) {
-            loading.style.display = 'flex';
-            loading.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Carregando arquivos...</span>';
-        } else {
-            loading.style.display = 'none';
-        }
+        const fileList = $('#file-list');
+        if (loading) loading.style.display = show ? 'flex' : 'none';
+        if (fileList) fileList.style.display = show ? 'none' : '';
     }
 
     // === Menu de Contexto ===
