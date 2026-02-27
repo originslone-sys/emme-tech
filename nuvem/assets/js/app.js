@@ -130,10 +130,20 @@
                 showApp();
                 await navigateTo('');
             } else {
-                showLogin();
+                // Auto-login (uso pessoal, sem senha)
+                await api.login('');
+                showApp();
+                await navigateTo('');
             }
         } catch {
-            showLogin();
+            // Fallback: tentar login direto
+            try {
+                await api.login('');
+                showApp();
+                await navigateTo('');
+            } catch {
+                showLogin();
+            }
         }
     }
 

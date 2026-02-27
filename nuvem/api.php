@@ -26,16 +26,31 @@ $config = require $configFile;
 session_start();
 $action = $_GET['action'] ?? '';
 
-// Acoes que nao precisam de autenticacao
-$publicActions = ['login', 'check-auth'];
+// Acoes que NAO precisam de Storage (resolver antes de conectar ao S3)
+switch ($action) {
+    case 'check-auth':
+        echo json_encode(['authenticated' => !empty($_SESSION['nuvem_auth'])]);
+        exit;
 
-if (!in_array($action, $publicActions) && empty($_SESSION['nuvem_auth'])) {
+    case 'login':
+        $_SESSION['nuvem_auth'] = true;
+        echo json_encode(['success' => true]);
+        exit;
+
+    case 'logout':
+        session_destroy();
+        echo json_encode(['success' => true]);
+        exit;
+}
+
+// Todas as outras acoes precisam de autenticacao
+if (empty($_SESSION['nuvem_auth'])) {
     http_response_code(401);
     echo json_encode(['error' => 'Nao autenticado']);
     exit;
 }
 
-// Inicializar storage
+// Inicializar storage somente quando necessario
 try {
     $storage = new Storage($config['e2']);
 } catch (\Exception $e) {
@@ -44,18 +59,9 @@ try {
     exit;
 }
 
-// Roteamento
+// Roteamento de acoes que precisam do Storage
 try {
     switch ($action) {
-        case 'login':
-            handleLogin($config);
-            break;
-        case 'check-auth':
-            handleCheckAuth();
-            break;
-        case 'logout':
-            handleLogout();
-            break;
         case 'list':
             handleList($storage);
             break;
@@ -93,31 +99,6 @@ try {
 }
 
 // === Handlers ===
-
-function handleLogin(array $config): void
-{
-    $input = json_decode(file_get_contents('php://input'), true);
-    $password = $input['password'] ?? '';
-
-    if ($password === $config['app']['password']) {
-        $_SESSION['nuvem_auth'] = true;
-        echo json_encode(['success' => true]);
-    } else {
-        http_response_code(401);
-        echo json_encode(['error' => 'Senha incorreta']);
-    }
-}
-
-function handleCheckAuth(): void
-{
-    echo json_encode(['authenticated' => !empty($_SESSION['nuvem_auth'])]);
-}
-
-function handleLogout(): void
-{
-    session_destroy();
-    echo json_encode(['success' => true]);
-}
 
 function handleList(Storage $storage): void
 {
