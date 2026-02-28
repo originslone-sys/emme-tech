@@ -1,6 +1,7 @@
 /**
  * NUVEM - Cloud Storage Application
- * Frontend JavaScript - Windows-style File Manager
+ * Frontend JavaScript - Windows 11 Style File Manager
+ * Professional AAA+ with Mobile Support
  */
 
 (function () {
@@ -19,7 +20,14 @@
         sortDir: 'asc',
         contextTarget: null,
         isAuthenticated: false,
+        isMobile: false,
+        sidebarOpen: false,
     };
+
+    // === Detect Mobile ===
+    function checkMobile() {
+        state.isMobile = window.innerWidth <= 768;
+    }
 
     // === API Helper ===
     const api = {
@@ -124,9 +132,11 @@
 
     // === Inicializacao ===
     async function init() {
+        checkMobile();
         setupClock();
         setupEventListeners();
         setupDragDrop();
+        setupMobile();
 
         // Auto-login (uso pessoal, sem senha)
         try {
@@ -151,6 +161,152 @@
         $('#app').style.display = 'flex';
     }
 
+    // === Mobile Sidebar ===
+    function openSidebar() {
+        state.sidebarOpen = true;
+        const sidebar = $('#sidebar');
+        const overlay = $('#sidebar-overlay');
+        if (sidebar) sidebar.classList.add('open');
+        if (overlay) overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+        state.sidebarOpen = false;
+        const sidebar = $('#sidebar');
+        const overlay = $('#sidebar-overlay');
+        if (sidebar) sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    // === Mobile Bottom Sheet ===
+    function showBottomSheet(items) {
+        const sheet = $('#bottom-sheet');
+        const overlay = $('#bottom-sheet-overlay');
+        const content = $('#bottom-sheet-content');
+
+        if (!sheet || !content) return;
+
+        content.innerHTML = '';
+        items.forEach((item) => {
+            if (item.separator) {
+                const sep = document.createElement('div');
+                sep.className = 'context-separator';
+                content.appendChild(sep);
+                return;
+            }
+
+            const el = document.createElement('div');
+            el.className = 'context-item' + (item.danger ? ' danger' : '');
+            el.innerHTML = `<i class="${item.icon}"></i> ${item.label}`;
+            el.addEventListener('click', () => {
+                hideBottomSheet();
+                if (item.action) item.action();
+            });
+            content.appendChild(el);
+        });
+
+        sheet.style.display = 'block';
+        overlay.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function hideBottomSheet() {
+        const sheet = $('#bottom-sheet');
+        const overlay = $('#bottom-sheet-overlay');
+        if (sheet) sheet.style.display = 'none';
+        if (overlay) overlay.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    function showMobileItemMenu(item) {
+        const isFolder = item.type === 'folder';
+        const items = [];
+
+        if (isFolder) {
+            items.push({ icon: 'fas fa-folder-open', label: 'Abrir', action: () => navigateTo(item.path) });
+        } else {
+            items.push({ icon: 'fas fa-download', label: 'Baixar', action: () => downloadFile(item.path) });
+        }
+
+        items.push({ separator: true });
+        items.push({ icon: 'fas fa-pen', label: 'Renomear', action: () => showRenameDialog(item) });
+        items.push({ icon: 'fas fa-arrows-alt', label: 'Mover para...', action: () => showMoveDialog(item) });
+        items.push({ separator: true });
+        items.push({ icon: 'fas fa-info-circle', label: 'Propriedades', action: () => showInfoDialog(item) });
+        items.push({ separator: true });
+        items.push({ icon: 'fas fa-trash', label: 'Excluir', danger: true, action: () => showDeleteConfirm(item) });
+
+        showBottomSheet(items);
+    }
+
+    function showMobileAreaMenu() {
+        showBottomSheet([
+            { icon: 'fas fa-folder-plus', label: 'Nova Pasta', action: () => showNewFolderDialog() },
+            { icon: 'fas fa-cloud-arrow-up', label: 'Upload', action: () => $('#file-input').click() },
+            { separator: true },
+            { icon: 'fas fa-rotate-right', label: 'Atualizar', action: () => navigateTo(state.currentPath) },
+            { separator: true },
+            { icon: 'fas fa-check-double', label: 'Selecionar Tudo', action: () => selectAll() },
+        ]);
+    }
+
+    // === Setup Mobile ===
+    function setupMobile() {
+        // Resize listener
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                checkMobile();
+                if (!state.isMobile && state.sidebarOpen) {
+                    closeSidebar();
+                }
+            }, 150);
+        });
+
+        // Mobile menu button
+        const menuBtn = $('#btn-mobile-menu');
+        if (menuBtn) {
+            menuBtn.addEventListener('click', () => {
+                if (state.sidebarOpen) {
+                    closeSidebar();
+                } else {
+                    openSidebar();
+                }
+            });
+        }
+
+        // Sidebar close button
+        const closeBtn = $('#btn-sidebar-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeSidebar);
+        }
+
+        // Sidebar overlay click
+        const overlay = $('#sidebar-overlay');
+        if (overlay) {
+            overlay.addEventListener('click', closeSidebar);
+        }
+
+        // Bottom sheet overlay
+        const sheetOverlay = $('#bottom-sheet-overlay');
+        if (sheetOverlay) {
+            sheetOverlay.addEventListener('click', hideBottomSheet);
+        }
+
+        // Prevent double-tap zoom on mobile
+        let lastTap = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTap < 300) {
+                e.preventDefault();
+            }
+            lastTap = now;
+        }, { passive: false });
+    }
+
     // === Navegacao ===
     async function navigateTo(path, addToHistory = true) {
         state.currentPath = path;
@@ -158,13 +314,17 @@
         updateSelectionUI();
         showLoading(true);
 
+        // Close sidebar on mobile after navigation
+        if (state.isMobile && state.sidebarOpen) {
+            closeSidebar();
+        }
+
         try {
             const data = await api.list(path);
             state.folders = data.folders || [];
             state.files = data.files || [];
 
             if (addToHistory) {
-                // Remover entradas futuras se voltamos no historico
                 if (state.historyIndex < state.history.length - 1) {
                     state.history = state.history.slice(0, state.historyIndex + 1);
                 }
@@ -290,7 +450,7 @@
             </div>
         `;
 
-        // Eventos
+        // Double click / tap to open
         div.addEventListener('dblclick', (e) => {
             e.preventDefault();
             if (isFolder) {
@@ -300,6 +460,7 @@
             }
         });
 
+        // Click
         div.addEventListener('click', (e) => {
             if (e.target.closest('.col-actions') || e.target.tagName === 'INPUT') return;
 
@@ -312,6 +473,7 @@
             }
         });
 
+        // Context menu / long press
         div.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             state.contextTarget = item;
@@ -320,7 +482,45 @@
                 state.selectedItems.add(item.path);
                 updateSelectionUI();
             }
-            showContextMenu(e.clientX, e.clientY, 'item');
+
+            if (state.isMobile) {
+                showMobileItemMenu(item);
+            } else {
+                showContextMenu(e.clientX, e.clientY, 'item');
+            }
+        });
+
+        // Long press for mobile (touchstart/touchend)
+        let longPressTimer = null;
+        let touchMoved = false;
+
+        div.addEventListener('touchstart', (e) => {
+            touchMoved = false;
+            longPressTimer = setTimeout(() => {
+                if (!touchMoved) {
+                    e.preventDefault();
+                    state.contextTarget = item;
+                    state.selectedItems.clear();
+                    state.selectedItems.add(item.path);
+                    updateSelectionUI();
+                    showMobileItemMenu(item);
+                }
+            }, 500);
+        }, { passive: false });
+
+        div.addEventListener('touchmove', () => {
+            touchMoved = true;
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        });
+
+        div.addEventListener('touchend', () => {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
         });
 
         // Checkbox
@@ -417,7 +617,6 @@
             progressContainer.style.display = 'block';
 
             try {
-                // Simular progresso (fetch nao tem progresso nativo de upload)
                 let progress = 0;
                 const progressInterval = setInterval(() => {
                     progress = Math.min(progress + Math.random() * 15, 90);
@@ -442,6 +641,7 @@
         }, 1000);
 
         await navigateTo(state.currentPath);
+        updateStorageInfo();
     }
 
     // === Dialogos ===
@@ -510,7 +710,6 @@
         setTimeout(() => {
             const input = $('#rename-input');
             input.focus();
-            // Selecionar nome sem extensao para arquivos
             if (!isFolder && currentName.includes('.')) {
                 input.setSelectionRange(0, currentName.lastIndexOf('.'));
             } else {
@@ -573,6 +772,7 @@
                     toast(`"${name}" excluido com sucesso`, 'success');
                     closeModal();
                     await navigateTo(state.currentPath);
+                    updateStorageInfo();
                 } catch (err) {
                     toast('Erro ao excluir: ' + err.message, 'error');
                 }
@@ -603,6 +803,7 @@
                     closeModal();
                     state.selectedItems.clear();
                     await navigateTo(state.currentPath);
+                    updateStorageInfo();
                 } catch (err) {
                     toast('Erro ao excluir itens: ' + err.message, 'error');
                 }
@@ -624,7 +825,6 @@
              <button class="btn btn-primary" id="btn-confirm-move" disabled>Mover</button>`
         );
 
-        // Carregar pastas disponiveis
         setTimeout(async () => {
             const tree = $('#move-folder-tree');
             let selectedMovePath = null;
@@ -680,7 +880,6 @@
             return;
         }
 
-        // Para arquivos, buscar informacoes adicionais
         api.getInfo(item.path).then((info) => {
             showModal(
                 'Propriedades',
@@ -719,7 +918,7 @@
 
                 const sep = document.createElement('span');
                 sep.className = 'crumb-separator';
-                sep.textContent = '>';
+                sep.innerHTML = '<i class="fas fa-chevron-right"></i>';
                 bc.appendChild(sep);
 
                 const crumb = document.createElement('span');
@@ -749,7 +948,6 @@
             const data = await api.storageUsage();
             const used = formatSize(data.usedBytes);
             $('#storage-text').textContent = `${used} usado (${data.totalFiles} arquivos)`;
-            // Barra visual - escala ate 10GB como referencia
             const maxRef = 10 * 1024 * 1024 * 1024;
             const pct = Math.min((data.usedBytes / maxRef) * 100, 100);
             $('#storage-used-bar').style.width = pct + '%';
@@ -778,7 +976,6 @@
         const menu = type === 'item' ? $('#context-menu') : $('#area-context-menu');
         menu.style.display = 'block';
 
-        // Ajustar posicao para nao sair da tela
         const rect = menu.getBoundingClientRect();
         const winW = window.innerWidth;
         const winH = window.innerHeight;
@@ -789,7 +986,6 @@
         menu.style.left = x + 'px';
         menu.style.top = y + 'px';
 
-        // Atualizar visibilidade dos itens do menu baseado no tipo
         if (type === 'item' && state.contextTarget) {
             const isFolder = state.contextTarget.type === 'folder';
             const openItem = menu.querySelector('[data-action="open"]');
@@ -800,8 +996,10 @@
     }
 
     function hideAllContextMenus() {
-        $('#context-menu').style.display = 'none';
-        $('#area-context-menu').style.display = 'none';
+        const ctx = $('#context-menu');
+        const areaCtx = $('#area-context-menu');
+        if (ctx) ctx.style.display = 'none';
+        if (areaCtx) areaCtx.style.display = 'none';
     }
 
     // === Event Listeners ===
@@ -881,11 +1079,15 @@
         $('#file-area').addEventListener('contextmenu', (e) => {
             if (!e.target.closest('.file-item')) {
                 e.preventDefault();
-                showContextMenu(e.clientX, e.clientY, 'area');
+                if (state.isMobile) {
+                    showMobileAreaMenu();
+                } else {
+                    showContextMenu(e.clientX, e.clientY, 'area');
+                }
             }
         });
 
-        // Acoes do menu de contexto (item)
+        // Acoes do menu de contexto (item) - desktop only
         $$('#context-menu .context-item').forEach((item) => {
             item.addEventListener('click', () => {
                 const action = item.dataset.action;
@@ -916,7 +1118,7 @@
             });
         });
 
-        // Acoes do menu de contexto (area)
+        // Acoes do menu de contexto (area) - desktop only
         $$('#area-context-menu .context-item').forEach((item) => {
             item.addEventListener('click', () => {
                 const action = item.dataset.action;
@@ -986,6 +1188,8 @@
                 state.selectedItems.clear();
                 updateSelectionUI();
                 hideAllContextMenus();
+                hideBottomSheet();
+                if (state.sidebarOpen) closeSidebar();
             }
         });
 
@@ -1015,7 +1219,7 @@
             });
         });
 
-        // Botao minimizar/maximizar da janela (visual apenas)
+        // Botao minimizar da janela (visual apenas)
         $('#btn-minimize-window').addEventListener('click', () => {
             const win = $('#main-window');
             win.style.display = 'none';
@@ -1030,9 +1234,7 @@
 
     // === Drag & Drop ===
     function setupDragDrop() {
-        const fileArea = $('#file-area');
         const overlay = $('#drop-overlay');
-
         let dragCounter = 0;
 
         document.addEventListener('dragenter', (e) => {
@@ -1111,7 +1313,6 @@
 
         container.appendChild(toastEl);
 
-        // Auto-remover apos 5s
         setTimeout(() => {
             if (toastEl.parentNode) {
                 toastEl.style.animation = 'fadeOut 0.3s ease forwards';

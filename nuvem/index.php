@@ -2,10 +2,16 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="msapplication-navbutton-color" content="#0d1117">
     <title>Nuvem - Armazenamento em Nuvem</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="manifest" href="data:application/json,{}">
 </head>
 <body>
     <!-- Tela de Login (oculta - uso pessoal) -->
@@ -40,6 +46,11 @@
 
                 <!-- Barra de Ferramentas -->
                 <div class="toolbar">
+                    <!-- Mobile menu toggle -->
+                    <button class="mobile-menu-btn" id="btn-mobile-menu" title="Menu">
+                        <i class="fas fa-bars"></i>
+                    </button>
+
                     <div class="toolbar-left">
                         <button class="tool-btn" id="btn-back" title="Voltar" disabled>
                             <i class="fas fa-arrow-left"></i>
@@ -74,31 +85,37 @@
                 <!-- Area de Acoes -->
                 <div class="action-bar">
                     <button class="action-btn" id="btn-new-folder">
-                        <i class="fas fa-folder-plus"></i> Nova Pasta
+                        <i class="fas fa-folder-plus"></i> <span>Nova Pasta</span>
                     </button>
                     <button class="action-btn" id="btn-upload">
-                        <i class="fas fa-cloud-arrow-up"></i> Upload
+                        <i class="fas fa-cloud-arrow-up"></i> <span>Upload</span>
                     </button>
                     <div class="action-separator"></div>
-                    <button class="action-btn" id="btn-view-grid" title="Visualizacao em grade">
+                    <button class="action-btn" id="btn-view-grid" title="Grade">
                         <i class="fas fa-th-large"></i>
                     </button>
-                    <button class="action-btn active" id="btn-view-list" title="Visualizacao em lista">
+                    <button class="action-btn active" id="btn-view-list" title="Lista">
                         <i class="fas fa-list"></i>
                     </button>
                     <div class="action-separator"></div>
                     <button class="action-btn" id="btn-select-all" title="Selecionar todos">
-                        <i class="fas fa-check-double"></i> Selecionar Tudo
+                        <i class="fas fa-check-double"></i> <span>Selecionar</span>
                     </button>
                     <button class="action-btn danger" id="btn-delete-selected" title="Excluir selecionados" style="display:none">
-                        <i class="fas fa-trash"></i> Excluir Selecionados
+                        <i class="fas fa-trash"></i> <span>Excluir</span>
                     </button>
                 </div>
 
                 <!-- Conteudo Principal -->
                 <div class="window-content">
+                    <!-- Sidebar overlay (mobile) -->
+                    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
                     <!-- Painel Lateral -->
-                    <div class="sidebar">
+                    <div class="sidebar" id="sidebar">
+                        <button class="sidebar-close-btn" id="btn-sidebar-close">
+                            <i class="fas fa-times"></i> Fechar Menu
+                        </button>
                         <div class="sidebar-section">
                             <h3><i class="fas fa-star"></i> Acesso Rapido</h3>
                             <ul>
@@ -130,7 +147,7 @@
                             <div class="col-actions">Acoes</div>
                         </div>
 
-                        <!-- Carregando (fora do file-list para nao ser destruido pelo innerHTML) -->
+                        <!-- Carregando -->
                         <div class="loading" id="loading">
                             <i class="fas fa-spinner fa-spin"></i>
                             <span>Carregando arquivos...</span>
@@ -154,12 +171,12 @@
         <div class="taskbar">
             <div class="taskbar-left">
                 <button class="start-btn" id="btn-start">
-                    <i class="fas fa-cloud"></i> Nuvem
+                    <i class="fas fa-cloud"></i> <span>Nuvem</span>
                 </button>
             </div>
             <div class="taskbar-center">
                 <div class="taskbar-item active" id="taskbar-window">
-                    <i class="fas fa-folder"></i> Meus Arquivos
+                    <i class="fas fa-folder"></i> <span>Meus Arquivos</span>
                 </div>
             </div>
             <div class="taskbar-right">
@@ -180,7 +197,7 @@
         </div>
     </div>
 
-    <!-- Menu de Contexto -->
+    <!-- Menu de Contexto (desktop) -->
     <div class="context-menu" id="context-menu" style="display:none">
         <div class="context-item" data-action="open"><i class="fas fa-folder-open"></i> Abrir</div>
         <div class="context-item" data-action="download"><i class="fas fa-download"></i> Baixar</div>
@@ -193,7 +210,7 @@
         <div class="context-item danger" data-action="delete"><i class="fas fa-trash"></i> Excluir</div>
     </div>
 
-    <!-- Menu de Contexto da Area Vazia -->
+    <!-- Menu de Contexto da Area Vazia (desktop) -->
     <div class="context-menu" id="area-context-menu" style="display:none">
         <div class="context-item" data-action="new-folder"><i class="fas fa-folder-plus"></i> Nova Pasta</div>
         <div class="context-item" data-action="upload"><i class="fas fa-cloud-arrow-up"></i> Upload</div>
@@ -201,6 +218,13 @@
         <div class="context-item" data-action="refresh"><i class="fas fa-rotate-right"></i> Atualizar</div>
         <div class="context-separator"></div>
         <div class="context-item" data-action="select-all"><i class="fas fa-check-double"></i> Selecionar Tudo</div>
+    </div>
+
+    <!-- Bottom Sheet (mobile context menu) -->
+    <div class="bottom-sheet-overlay" id="bottom-sheet-overlay"></div>
+    <div class="bottom-sheet" id="bottom-sheet">
+        <div class="bottom-sheet-handle"></div>
+        <div id="bottom-sheet-content"></div>
     </div>
 
     <!-- Modal de Dialogo -->

@@ -1,7 +1,10 @@
 /* ============================================
    NUVEM - Cloud Storage Application
-   Estilo Windows Desktop
+   Visual AAA+ Professional - Windows 11 Style
    ============================================ */
+
+/* === Google Font === */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* === Reset e Base === */
 *, *::before, *::after {
@@ -11,65 +14,116 @@
 }
 
 :root {
+    /* Primary Palette */
     --win-blue: #0078d4;
-    --win-blue-hover: #106ebe;
+    --win-blue-hover: #1a86d9;
     --win-blue-dark: #005a9e;
-    --win-bg: #1e1e2e;
-    --win-surface: #2d2d3f;
-    --win-surface-hover: #383850;
-    --win-surface-active: #44446a;
-    --win-border: #404060;
-    --win-text: #e0e0e0;
-    --win-text-secondary: #a0a0b0;
-    --win-titlebar: #1a1a2e;
-    --win-titlebar-inactive: #2a2a3a;
+    --win-blue-light: #60cdff;
+    --win-blue-glow: rgba(0, 120, 212, 0.35);
+
+    /* Surfaces - Windows 11 Mica/Acrylic */
+    --win-bg: #0d1117;
+    --win-bg-secondary: #161b22;
+    --win-surface: rgba(30, 36, 48, 0.85);
+    --win-surface-solid: #1e2430;
+    --win-surface-hover: rgba(55, 62, 78, 0.65);
+    --win-surface-active: rgba(0, 120, 212, 0.18);
+    --win-surface-card: rgba(22, 27, 34, 0.75);
+
+    /* Borders */
+    --win-border: rgba(255, 255, 255, 0.06);
+    --win-border-light: rgba(255, 255, 255, 0.1);
+    --win-border-focus: var(--win-blue);
+
+    /* Text */
+    --win-text: #e6edf3;
+    --win-text-secondary: #8b949e;
+    --win-text-muted: #6e7681;
+
+    /* Titlebar */
+    --win-titlebar: rgba(13, 17, 23, 0.92);
+    --win-titlebar-inactive: #1a1f2b;
+
+    /* Window Controls */
     --win-close: #c42b1c;
-    --win-close-hover: #e04030;
-    --win-minimize: #ffa500;
-    --win-maximize: #00c853;
-    --win-scrollbar: #555580;
-    --win-scrollbar-hover: #7070a0;
-    --sidebar-width: 220px;
-    --titlebar-height: 36px;
-    --toolbar-height: 42px;
-    --actionbar-height: 40px;
-    --statusbar-height: 28px;
-    --taskbar-height: 44px;
-    --folder-yellow: #ffc107;
-    --file-blue: #42a5f5;
-    --danger: #f44336;
-    --success: #4caf50;
-    --warning: #ff9800;
-    --radius: 6px;
-    --radius-sm: 4px;
-    --shadow: 0 4px 20px rgba(0,0,0,0.4);
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+    --win-close-hover: #e81123;
+    --win-minimize: #ffc107;
+    --win-maximize: #4caf50;
+
+    /* Scrollbar */
+    --win-scrollbar: rgba(139, 148, 158, 0.2);
+    --win-scrollbar-hover: rgba(139, 148, 158, 0.4);
+
+    /* Dimensions */
+    --sidebar-width: 240px;
+    --titlebar-height: 38px;
+    --toolbar-height: 46px;
+    --actionbar-height: 42px;
+    --statusbar-height: 30px;
+    --taskbar-height: 48px;
+
+    /* Semantic Colors */
+    --folder-yellow: #e8a517;
+    --folder-yellow-light: #ffca28;
+    --file-blue: #58a6ff;
+    --danger: #f85149;
+    --danger-bg: rgba(248, 81, 73, 0.12);
+    --success: #3fb950;
+    --success-bg: rgba(63, 185, 80, 0.12);
+    --warning: #d29922;
+    --warning-bg: rgba(210, 153, 34, 0.12);
+    --info-bg: rgba(0, 120, 212, 0.12);
+
+    /* Radius */
+    --radius: 8px;
+    --radius-sm: 6px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+
+    /* Shadows */
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+    --shadow-glow: 0 0 20px var(--win-blue-glow);
+
+    /* Transitions */
+    --transition-fast: 0.12s ease;
+    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html, body {
     height: 100%;
     overflow: hidden;
-    font-family: 'Segoe UI', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 13px;
     color: var(--win-text);
     background: var(--win-bg);
     user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* === Scrollbar Custom === */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 ::-webkit-scrollbar-track {
-    background: var(--win-surface);
+    background: transparent;
 }
 ::-webkit-scrollbar-thumb {
     background: var(--win-scrollbar);
-    border-radius: 4px;
+    border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
     background: var(--win-scrollbar-hover);
+}
+
+/* === Selection === */
+::selection {
+    background: rgba(0, 120, 212, 0.35);
+    color: #fff;
 }
 
 /* ============================================
@@ -82,36 +136,22 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    background: var(--win-bg);
     z-index: 10000;
 }
 
 .login-window {
     width: 400px;
-    background: var(--win-surface);
-    border-radius: var(--radius);
+    background: var(--win-surface-solid);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
-    border: 1px solid var(--win-border);
+    border: 1px solid var(--win-border-light);
     overflow: hidden;
-}
-
-.login-window-titlebar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 12px;
-    height: var(--titlebar-height);
-    background: var(--win-titlebar);
-    font-size: 12px;
-}
-
-.login-window-titlebar i {
-    margin-right: 6px;
-    color: var(--win-blue);
+    backdrop-filter: blur(20px);
 }
 
 .login-body {
-    padding: 30px;
+    padding: 40px 30px;
     text-align: center;
 }
 
@@ -125,6 +165,7 @@ html, body {
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 8px;
+    letter-spacing: -0.3px;
 }
 
 .login-body p {
@@ -137,15 +178,16 @@ html, body {
     display: flex;
     align-items: center;
     background: var(--win-bg);
-    border: 1px solid var(--win-border);
+    border: 1px solid var(--win-border-light);
     border-radius: var(--radius-sm);
     padding: 10px 14px;
     margin-bottom: 16px;
-    transition: border-color 0.2s;
+    transition: border-color var(--transition);
 }
 
 .input-group:focus-within {
     border-color: var(--win-blue);
+    box-shadow: 0 0 0 2px var(--win-blue-glow);
 }
 
 .input-group i {
@@ -161,33 +203,36 @@ html, body {
     outline: none;
     color: var(--win-text);
     font-size: 14px;
+    font-family: inherit;
 }
 
 .input-group input::placeholder {
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
 }
 
 .btn-login {
     width: 100%;
-    padding: 10px;
+    padding: 11px;
     background: var(--win-blue);
     color: white;
     border: none;
     border-radius: var(--radius-sm);
     font-size: 14px;
     font-weight: 500;
+    font-family: inherit;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all var(--transition);
 }
 
 .btn-login:hover {
     background: var(--win-blue-hover);
+    box-shadow: var(--shadow-glow);
 }
 
 .login-error {
     margin-top: 12px;
     padding: 8px 12px;
-    background: rgba(244, 67, 54, 0.15);
+    background: var(--danger-bg);
     color: var(--danger);
     border-radius: var(--radius-sm);
     font-size: 13px;
@@ -199,6 +244,7 @@ html, body {
 
 .app {
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
 }
@@ -206,14 +252,18 @@ html, body {
 /* === Desktop === */
 .desktop {
     flex: 1;
-    padding: 10px;
+    padding: 8px;
     display: flex;
     overflow: hidden;
-    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    background:
+        radial-gradient(ellipse at 20% 50%, rgba(0, 120, 212, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 20%, rgba(96, 205, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(0, 90, 158, 0.06) 0%, transparent 50%),
+        linear-gradient(180deg, #0d1117 0%, #0f1923 50%, #0d1117 100%);
 }
 
 /* ============================================
-   JANELA PRINCIPAL (Windows-style)
+   JANELA PRINCIPAL (Windows 11 style)
    ============================================ */
 
 .window {
@@ -221,11 +271,13 @@ html, body {
     display: flex;
     flex-direction: column;
     background: var(--win-surface);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
-    border: 1px solid var(--win-border);
+    border: 1px solid var(--win-border-light);
     overflow: hidden;
     min-width: 0;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
 /* === Barra de Titulo === */
@@ -233,48 +285,53 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 8px 0 14px;
+    padding: 0 6px 0 16px;
     height: var(--titlebar-height);
     background: var(--win-titlebar);
     flex-shrink: 0;
     cursor: default;
+    border-bottom: 1px solid var(--win-border);
 }
 
 .titlebar-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     font-size: 13px;
     font-weight: 500;
+    letter-spacing: -0.2px;
 }
 
 .titlebar-left i {
-    color: var(--win-blue);
+    color: var(--win-blue-light);
+    font-size: 15px;
 }
 
 .titlebar-buttons {
     display: flex;
-    gap: 2px;
+    gap: 1px;
 }
 
 .titlebar-buttons span {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 28px;
+    width: 36px;
+    height: 30px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 12px;
-    transition: background 0.15s;
+    font-size: 11px;
+    transition: all var(--transition-fast);
+    color: var(--win-text-secondary);
 }
 
 .titlebar-buttons span:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--win-text);
 }
 
 .titlebar-buttons .btn-close:hover {
-    background: var(--win-close);
+    background: var(--win-close-hover);
     color: white;
 }
 
@@ -282,10 +339,10 @@ html, body {
 .toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
+    gap: 6px;
+    padding: 5px 12px;
     height: var(--toolbar-height);
-    background: var(--win-bg);
+    background: var(--win-bg-secondary);
     border-bottom: 1px solid var(--win-border);
     flex-shrink: 0;
 }
@@ -293,30 +350,36 @@ html, body {
 .toolbar-left {
     display: flex;
     gap: 2px;
+    flex-shrink: 0;
 }
 
 .tool-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    color: var(--win-text);
+    color: var(--win-text-secondary);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--transition);
     font-size: 14px;
 }
 
 .tool-btn:hover:not(:disabled) {
     background: var(--win-surface-hover);
-    border-color: var(--win-border);
+    border-color: var(--win-border-light);
+    color: var(--win-text);
+}
+
+.tool-btn:active:not(:disabled) {
+    transform: scale(0.94);
 }
 
 .tool-btn:disabled {
-    opacity: 0.35;
+    opacity: 0.3;
     cursor: default;
 }
 
@@ -325,12 +388,17 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--win-surface);
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--win-border);
     border-radius: var(--radius-sm);
     padding: 0 12px;
-    height: 32px;
+    height: 34px;
     min-width: 0;
+    transition: border-color var(--transition);
+}
+
+.path-bar:hover {
+    border-color: var(--win-border-light);
 }
 
 .path-bar i {
@@ -342,23 +410,24 @@ html, body {
 .breadcrumb {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     overflow-x: auto;
     white-space: nowrap;
     min-width: 0;
+    scrollbar-width: none;
 }
 
 .breadcrumb::-webkit-scrollbar {
-    height: 3px;
+    display: none;
 }
 
 .crumb {
-    padding: 2px 8px;
-    border-radius: 3px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     color: var(--win-text-secondary);
     font-size: 12px;
-    transition: all 0.15s;
+    transition: all var(--transition);
     flex-shrink: 0;
 }
 
@@ -373,9 +442,10 @@ html, body {
 }
 
 .crumb-separator {
-    color: var(--win-text-secondary);
-    font-size: 10px;
+    color: var(--win-text-muted);
+    font-size: 9px;
     flex-shrink: 0;
+    margin: 0 1px;
 }
 
 .toolbar-right {
@@ -385,22 +455,24 @@ html, body {
 .search-box {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: var(--win-surface);
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--win-border);
     border-radius: var(--radius-sm);
-    padding: 0 10px;
-    height: 32px;
-    width: 200px;
-    transition: border-color 0.2s;
+    padding: 0 12px;
+    height: 34px;
+    width: 220px;
+    transition: all var(--transition);
 }
 
 .search-box:focus-within {
     border-color: var(--win-blue);
+    box-shadow: 0 0 0 2px var(--win-blue-glow);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .search-box i {
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     font-size: 12px;
 }
 
@@ -410,12 +482,13 @@ html, body {
     border: none;
     outline: none;
     color: var(--win-text);
-    font-size: 12px;
+    font-size: 12.5px;
+    font-family: inherit;
     width: 100%;
 }
 
 .search-box input::placeholder {
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
 }
 
 /* === Barra de Acoes === */
@@ -423,9 +496,9 @@ html, body {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 10px;
+    padding: 4px 12px;
     height: var(--actionbar-height);
-    background: var(--win-bg);
+    background: var(--win-bg-secondary);
     border-bottom: 1px solid var(--win-border);
     flex-shrink: 0;
 }
@@ -433,26 +506,33 @@ html, body {
 .action-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    gap: 7px;
+    padding: 6px 14px;
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
-    color: var(--win-text);
+    color: var(--win-text-secondary);
     cursor: pointer;
     font-size: 12px;
-    transition: all 0.15s;
+    font-family: inherit;
+    transition: all var(--transition);
     white-space: nowrap;
 }
 
 .action-btn:hover {
     background: var(--win-surface-hover);
-    border-color: var(--win-border);
+    border-color: var(--win-border-light);
+    color: var(--win-text);
+}
+
+.action-btn:active {
+    transform: scale(0.96);
 }
 
 .action-btn.active {
     background: var(--win-surface-active);
-    border-color: var(--win-blue);
+    border-color: rgba(0, 120, 212, 0.3);
+    color: var(--win-blue-light);
 }
 
 .action-btn.danger {
@@ -460,7 +540,8 @@ html, body {
 }
 
 .action-btn.danger:hover {
-    background: rgba(244, 67, 54, 0.15);
+    background: var(--danger-bg);
+    border-color: rgba(248, 81, 73, 0.2);
 }
 
 .action-btn i {
@@ -490,40 +571,43 @@ html, body {
     background: var(--win-bg);
     border-right: 1px solid var(--win-border);
     overflow-y: auto;
-    padding: 8px 0;
+    padding: 10px 0;
     flex-shrink: 0;
+    transition: transform var(--transition-slow), width var(--transition-slow);
 }
 
 .sidebar-section {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .sidebar-section h3 {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 14px;
-    font-size: 11px;
+    padding: 8px 16px 6px;
+    font-size: 10.5px;
     font-weight: 600;
     text-transform: uppercase;
-    color: var(--win-text-secondary);
-    letter-spacing: 0.5px;
+    color: var(--win-text-muted);
+    letter-spacing: 0.8px;
 }
 
 .sidebar-section h3 i {
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .sidebar-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 7px 14px 7px 24px;
+    padding: 8px 16px 8px 20px;
     cursor: pointer;
     color: var(--win-text-secondary);
     font-size: 13px;
-    transition: all 0.15s;
+    transition: all var(--transition);
     border-left: 3px solid transparent;
+    margin: 1px 8px 1px 0;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .sidebar-item:hover {
@@ -533,7 +617,7 @@ html, body {
 
 .sidebar-item.active {
     background: var(--win-surface-active);
-    color: var(--win-text);
+    color: var(--win-blue-light);
     border-left-color: var(--win-blue);
 }
 
@@ -545,27 +629,41 @@ html, body {
 
 /* Storage Info */
 .storage-info {
-    padding: 8px 14px 8px 24px;
+    padding: 10px 16px 10px 20px;
 }
 
 .storage-bar {
-    height: 6px;
-    background: var(--win-surface);
-    border-radius: 3px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
     overflow: hidden;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .storage-used {
     height: 100%;
-    background: linear-gradient(90deg, var(--win-blue), #00c9ff);
-    border-radius: 3px;
-    transition: width 0.5s ease;
+    background: linear-gradient(90deg, var(--win-blue), var(--win-blue-light));
+    border-radius: 2px;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.storage-used::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    background: var(--win-blue-light);
+    filter: blur(4px);
+    opacity: 0.6;
 }
 
 .storage-text {
     font-size: 11px;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
+    line-height: 1.4;
 }
 
 /* ============================================
@@ -578,21 +676,22 @@ html, body {
     flex-direction: column;
     overflow: hidden;
     min-width: 0;
+    background: rgba(255, 255, 255, 0.01);
 }
 
 /* === Header da Lista === */
 .file-list-header {
     display: flex;
     align-items: center;
-    padding: 0 10px;
-    height: 32px;
-    background: var(--win-bg);
+    padding: 0 12px;
+    height: 34px;
+    background: var(--win-bg-secondary);
     border-bottom: 1px solid var(--win-border);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     text-transform: uppercase;
-    color: var(--win-text-secondary);
-    letter-spacing: 0.3px;
+    color: var(--win-text-muted);
+    letter-spacing: 0.5px;
     flex-shrink: 0;
 }
 
@@ -602,6 +701,7 @@ html, body {
     align-items: center;
     gap: 4px;
     padding: 0 4px;
+    transition: color var(--transition);
 }
 
 .file-list-header > div:hover {
@@ -611,11 +711,16 @@ html, body {
 .col-check {
     width: 36px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .col-check input[type="checkbox"] {
     cursor: pointer;
     accent-color: var(--win-blue);
+    width: 15px;
+    height: 15px;
 }
 
 .col-icon {
@@ -640,7 +745,7 @@ html, body {
 }
 
 .col-actions {
-    width: 80px;
+    width: 90px;
     flex-shrink: 0;
     text-align: center;
 }
@@ -650,7 +755,7 @@ html, body {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 4px 0;
+    padding: 4px 6px;
 }
 
 /* === Item de Arquivo (lista) === */
@@ -658,12 +763,13 @@ html, body {
     display: flex;
     align-items: center;
     padding: 0 10px;
-    height: 36px;
+    height: 38px;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: all var(--transition-fast);
     border: 1px solid transparent;
-    margin: 0 4px;
+    margin: 1px 0;
     border-radius: var(--radius-sm);
+    position: relative;
 }
 
 .file-item:hover {
@@ -671,13 +777,26 @@ html, body {
 }
 
 .file-item.selected {
-    background: rgba(0, 120, 212, 0.2);
-    border-color: rgba(0, 120, 212, 0.4);
+    background: var(--win-surface-active);
+    border-color: rgba(0, 120, 212, 0.25);
+}
+
+.file-item.selected::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    background: var(--win-blue);
+    border-radius: 2px;
 }
 
 .file-item .col-check input[type="checkbox"] {
     cursor: pointer;
     accent-color: var(--win-blue);
+    width: 15px;
+    height: 15px;
 }
 
 .file-item .col-icon {
@@ -689,6 +808,7 @@ html, body {
 
 .file-item .col-icon .folder-icon {
     color: var(--folder-yellow);
+    filter: drop-shadow(0 1px 2px rgba(232, 165, 23, 0.3));
 }
 
 .file-item .col-name {
@@ -696,36 +816,40 @@ html, body {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 13px;
+    font-weight: 400;
 }
 
 .file-item .col-name .file-rename-input {
     background: var(--win-bg);
     border: 1px solid var(--win-blue);
     color: var(--win-text);
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
+    font-family: inherit;
     width: 80%;
     outline: none;
+    box-shadow: 0 0 0 2px var(--win-blue-glow);
 }
 
 .file-item .col-size {
     font-size: 12px;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .file-item .col-date {
     font-size: 12px;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
 }
 
 .file-item .col-actions {
     display: flex;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--transition);
 }
 
 .file-item:hover .col-actions {
@@ -736,57 +860,74 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--win-text-secondary);
     cursor: pointer;
     font-size: 12px;
-    transition: all 0.15s;
+    transition: all var(--transition);
 }
 
 .file-item .col-actions button:hover {
-    background: var(--win-surface);
-    border-color: var(--win-border);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--win-border-light);
     color: var(--win-text);
+}
+
+.file-item .col-actions button:active {
+    transform: scale(0.9);
 }
 
 .file-item .col-actions button.delete-btn:hover {
     color: var(--danger);
-    background: rgba(244, 67, 54, 0.1);
+    background: var(--danger-bg);
+    border-color: rgba(248, 81, 73, 0.2);
 }
 
 /* === Visualizacao em Grid === */
 .file-list.grid-view {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px;
+    gap: 10px;
+    padding: 16px;
     align-content: flex-start;
 }
 
 .file-list.grid-view .file-item {
     flex-direction: column;
-    width: 110px;
-    height: 110px;
-    padding: 10px;
+    width: 120px;
+    height: 120px;
+    padding: 12px 8px;
     margin: 0;
     text-align: center;
     border-radius: var(--radius);
     gap: 6px;
     justify-content: center;
+    position: relative;
+}
+
+.file-list.grid-view .file-item::before {
+    display: none;
+}
+
+.file-list.grid-view .file-item.selected {
+    background: var(--win-surface-active);
+    border-color: rgba(0, 120, 212, 0.3);
+    box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.15);
 }
 
 .file-list.grid-view .file-item .col-check {
     position: absolute;
-    top: 4px;
-    left: 4px;
+    top: 6px;
+    left: 6px;
+    width: auto;
 }
 
 .file-list.grid-view .file-item .col-icon {
-    font-size: 36px;
+    font-size: 38px;
     width: auto;
 }
 
@@ -794,6 +935,7 @@ html, body {
     font-size: 11px;
     width: 100%;
     text-align: center;
+    line-height: 1.3;
 }
 
 .file-list.grid-view .file-item .col-size,
@@ -813,28 +955,37 @@ html, body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
+    gap: 14px;
     padding: 60px 20px;
     color: var(--win-text-secondary);
 }
 
 .loading i {
-    font-size: 28px;
+    font-size: 32px;
     color: var(--win-blue);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
 }
 
 .empty-state i {
-    font-size: 48px;
-    opacity: 0.3;
+    font-size: 52px;
+    opacity: 0.15;
+    color: var(--win-text-secondary);
 }
 
 .empty-state h3 {
     font-size: 16px;
     font-weight: 500;
+    color: var(--win-text-secondary);
 }
 
 .empty-state p {
     font-size: 13px;
+    color: var(--win-text-muted);
 }
 
 /* ============================================
@@ -845,28 +996,30 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 14px;
+    padding: 0 16px;
     height: var(--statusbar-height);
     background: var(--win-titlebar);
     border-top: 1px solid var(--win-border);
     font-size: 11px;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     flex-shrink: 0;
 }
 
 /* ============================================
-   BARRA DE TAREFAS (Windows-style)
+   BARRA DE TAREFAS (Windows 11 style)
    ============================================ */
 
 .taskbar {
     height: var(--taskbar-height);
     background: var(--win-titlebar);
-    border-top: 1px solid var(--win-border);
+    border-top: 1px solid var(--win-border-light);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 8px;
+    padding: 0 10px;
     flex-shrink: 0;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .taskbar-left {
@@ -878,19 +1031,27 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 16px;
-    background: var(--win-blue);
+    padding: 7px 18px;
+    background: linear-gradient(135deg, var(--win-blue) 0%, var(--win-blue-dark) 100%);
     color: white;
     border: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 13px;
     font-weight: 500;
-    transition: background 0.15s;
+    font-family: inherit;
+    transition: all var(--transition);
+    box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
 }
 
 .start-btn:hover {
-    background: var(--win-blue-hover);
+    background: linear-gradient(135deg, var(--win-blue-hover) 0%, var(--win-blue) 100%);
+    box-shadow: 0 4px 12px rgba(0, 120, 212, 0.4);
+    transform: translateY(-1px);
+}
+
+.start-btn:active {
+    transform: translateY(0);
 }
 
 .start-btn i {
@@ -906,22 +1067,25 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 16px;
-    background: var(--win-surface);
+    padding: 7px 18px;
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--win-border);
     border-radius: var(--radius-sm);
     font-size: 12px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--transition);
+    color: var(--win-text-secondary);
 }
 
 .taskbar-item:hover {
     background: var(--win-surface-hover);
+    color: var(--win-text);
 }
 
 .taskbar-item.active {
     background: var(--win-surface-active);
     border-bottom: 2px solid var(--win-blue);
+    color: var(--win-text);
 }
 
 .taskbar-item i {
@@ -937,24 +1101,25 @@ html, body {
 .taskbar-clock {
     font-size: 12px;
     color: var(--win-text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 
 .taskbar-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     background: none;
     border: none;
     border-radius: var(--radius-sm);
     color: var(--win-text-secondary);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all var(--transition);
 }
 
 .taskbar-btn:hover {
-    background: rgba(244, 67, 54, 0.2);
+    background: var(--danger-bg);
     color: var(--danger);
 }
 
@@ -965,36 +1130,49 @@ html, body {
 .drop-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 120, 212, 0.15);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 120, 212, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 9000;
     display: flex;
     align-items: center;
     justify-content: center;
+    animation: fadeIn 0.2s ease;
 }
 
 .drop-content {
     text-align: center;
-    padding: 40px 60px;
+    padding: 48px 64px;
     background: var(--win-surface);
     border: 2px dashed var(--win-blue);
-    border-radius: 12px;
-    box-shadow: var(--shadow);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .drop-content i {
-    font-size: 48px;
-    color: var(--win-blue);
+    font-size: 52px;
+    color: var(--win-blue-light);
     margin-bottom: 16px;
+    animation: bounce 1s ease infinite;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
 }
 
 .drop-content h2 {
     font-size: 20px;
     margin-bottom: 8px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
 }
 
 .drop-content p {
     color: var(--win-text-secondary);
+    font-size: 13px;
 }
 
 /* ============================================
@@ -1004,26 +1182,43 @@ html, body {
 .context-menu {
     position: fixed;
     z-index: 9500;
-    background: var(--win-surface);
-    border: 1px solid var(--win-border);
+    background: var(--win-surface-solid);
+    border: 1px solid var(--win-border-light);
     border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 4px 0;
-    min-width: 200px;
+    box-shadow: var(--shadow-lg);
+    padding: 6px;
+    min-width: 220px;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    animation: contextMenuIn 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes contextMenuIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .context-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 16px;
+    gap: 12px;
+    padding: 8px 14px;
     cursor: pointer;
     font-size: 13px;
-    transition: background 0.1s;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    color: var(--win-text-secondary);
 }
 
 .context-item:hover {
     background: var(--win-surface-hover);
+    color: var(--win-text);
 }
 
 .context-item.danger {
@@ -1031,54 +1226,76 @@ html, body {
 }
 
 .context-item.danger:hover {
-    background: rgba(244, 67, 54, 0.15);
+    background: var(--danger-bg);
 }
 
 .context-item i {
     width: 18px;
     text-align: center;
     font-size: 13px;
+    flex-shrink: 0;
 }
 
 .context-separator {
     height: 1px;
     background: var(--win-border);
-    margin: 4px 8px;
+    margin: 4px 6px;
 }
 
 /* ============================================
-   MODAL / DIALOGO (Windows-style)
+   MODAL / DIALOGO (Windows 11 style)
    ============================================ */
 
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     z-index: 9800;
     display: flex;
     align-items: center;
     justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 .modal-window {
     width: 440px;
-    max-width: 90vw;
-    background: var(--win-surface);
-    border: 1px solid var(--win-border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    max-width: 92vw;
+    background: var(--win-surface-solid);
+    border: 1px solid var(--win-border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
+    animation: modalIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .modal-titlebar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;
+    padding: 0 14px;
     height: var(--titlebar-height);
     background: var(--win-titlebar);
     font-size: 13px;
     font-weight: 500;
+    border-bottom: 1px solid var(--win-border);
 }
 
 .modal-titlebar .btn-close {
@@ -1090,49 +1307,54 @@ html, body {
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 12px;
-    transition: background 0.15s;
+    color: var(--win-text-secondary);
+    transition: all var(--transition-fast);
 }
 
 .modal-titlebar .btn-close:hover {
-    background: var(--win-close);
+    background: var(--win-close-hover);
+    color: white;
 }
 
 .modal-body {
-    padding: 20px;
+    padding: 24px;
 }
 
 .modal-body label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     font-size: 13px;
     color: var(--win-text-secondary);
+    font-weight: 500;
 }
 
 .modal-body input[type="text"] {
     width: 100%;
-    padding: 8px 12px;
+    padding: 10px 14px;
     background: var(--win-bg);
-    border: 1px solid var(--win-border);
+    border: 1px solid var(--win-border-light);
     border-radius: var(--radius-sm);
     color: var(--win-text);
     font-size: 14px;
+    font-family: inherit;
     outline: none;
-    transition: border-color 0.2s;
+    transition: all var(--transition);
 }
 
 .modal-body input[type="text"]:focus {
     border-color: var(--win-blue);
+    box-shadow: 0 0 0 2px var(--win-blue-glow);
 }
 
 .modal-body .info-grid {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 8px 16px;
+    gap: 10px 16px;
     font-size: 13px;
 }
 
 .modal-body .info-grid dt {
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     font-weight: 500;
 }
 
@@ -1145,17 +1367,23 @@ html, body {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    padding: 12px 20px;
+    padding: 14px 24px;
     border-top: 1px solid var(--win-border);
 }
 
 .modal-footer .btn {
-    padding: 7px 20px;
+    padding: 8px 22px;
     border: 1px solid var(--win-border);
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 13px;
-    transition: all 0.15s;
+    font-family: inherit;
+    font-weight: 500;
+    transition: all var(--transition);
+}
+
+.modal-footer .btn:active {
+    transform: scale(0.96);
 }
 
 .modal-footer .btn-primary {
@@ -1166,15 +1394,17 @@ html, body {
 
 .modal-footer .btn-primary:hover {
     background: var(--win-blue-hover);
+    box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
 }
 
 .modal-footer .btn-secondary {
-    background: var(--win-surface-hover);
+    background: rgba(255, 255, 255, 0.06);
     color: var(--win-text);
+    border-color: var(--win-border-light);
 }
 
 .modal-footer .btn-secondary:hover {
-    background: var(--win-surface-active);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .modal-footer .btn-danger {
@@ -1184,7 +1414,8 @@ html, body {
 }
 
 .modal-footer .btn-danger:hover {
-    background: #d32f2f;
+    background: #e5443d;
+    box-shadow: 0 2px 8px rgba(248, 81, 73, 0.3);
 }
 
 /* ============================================
@@ -1196,25 +1427,34 @@ html, body {
     bottom: 60px;
     right: 16px;
     z-index: 9600;
+    animation: slideUp 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .upload-progress-window {
-    width: 340px;
-    background: var(--win-surface);
-    border: 1px solid var(--win-border);
+    width: 360px;
+    background: var(--win-surface-solid);
+    border: 1px solid var(--win-border-light);
     border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .upload-progress-titlebar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;
-    height: 30px;
+    padding: 0 14px;
+    height: 32px;
     background: var(--win-titlebar);
     font-size: 12px;
+    border-bottom: 1px solid var(--win-border);
 }
 
 .upload-progress-titlebar i {
@@ -1225,7 +1465,8 @@ html, body {
 .upload-progress-titlebar .btn-close {
     cursor: pointer;
     font-size: 11px;
-    transition: color 0.15s;
+    color: var(--win-text-secondary);
+    transition: color var(--transition-fast);
 }
 
 .upload-progress-titlebar .btn-close:hover {
@@ -1233,12 +1474,12 @@ html, body {
 }
 
 .upload-progress-body {
-    padding: 14px;
+    padding: 16px;
 }
 
 .upload-file-name {
     font-size: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1246,41 +1487,60 @@ html, body {
 }
 
 .upload-bar-container {
-    height: 6px;
-    background: var(--win-bg);
-    border-radius: 3px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
     overflow: hidden;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .upload-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--win-blue), #00c9ff);
-    border-radius: 3px;
+    background: linear-gradient(90deg, var(--win-blue), var(--win-blue-light));
+    border-radius: 2px;
     width: 0%;
     transition: width 0.3s ease;
+    position: relative;
+}
+
+.upload-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.15) 50%, transparent 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
 
 .upload-percent {
     font-size: 11px;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ============================================
    ICONES DE ARQUIVO POR EXTENSAO
    ============================================ */
 
-.icon-image { color: #e91e63; }
-.icon-video { color: #9c27b0; }
-.icon-audio { color: #ff5722; }
-.icon-pdf { color: #f44336; }
-.icon-doc { color: #2196f3; }
-.icon-sheet { color: #4caf50; }
-.icon-code { color: #00bcd4; }
-.icon-archive { color: #795548; }
-.icon-text { color: #607d8b; }
-.icon-default { color: #90a4ae; }
+.icon-image { color: #f472b6; }
+.icon-video { color: #c084fc; }
+.icon-audio { color: #fb923c; }
+.icon-pdf { color: #f87171; }
+.icon-doc { color: #60a5fa; }
+.icon-sheet { color: #4ade80; }
+.icon-code { color: #22d3ee; }
+.icon-archive { color: #a8a29e; }
+.icon-text { color: #94a3b8; }
+.icon-default { color: #64748b; }
 
 /* ============================================
    TOAST NOTIFICATIONS
@@ -1299,16 +1559,18 @@ html, body {
 .toast {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    background: var(--win-surface);
-    border: 1px solid var(--win-border);
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--win-surface-solid);
+    border: 1px solid var(--win-border-light);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow);
     font-size: 13px;
-    animation: slideInRight 0.3s ease;
-    min-width: 280px;
-    max-width: 400px;
+    animation: slideInRight 0.3s cubic-bezier(0.2, 0, 0, 1);
+    min-width: 300px;
+    max-width: 420px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .toast.success {
@@ -1332,16 +1594,25 @@ html, body {
 .toast.error i { color: var(--danger); }
 .toast.info i { color: var(--win-blue); }
 
+.toast span {
+    flex: 1;
+    min-width: 0;
+}
+
 .toast .toast-close {
     margin-left: auto;
     cursor: pointer;
-    color: var(--win-text-secondary);
+    color: var(--win-text-muted);
     font-size: 12px;
     padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
 }
 
 .toast .toast-close:hover {
     color: var(--win-text);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 @keyframes slideInRight {
@@ -1378,12 +1649,12 @@ html, body {
 .folder-tree-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
+    gap: 10px;
+    padding: 8px 12px;
     cursor: pointer;
     border-radius: var(--radius-sm);
     font-size: 13px;
-    transition: background 0.1s;
+    transition: all var(--transition-fast);
 }
 
 .folder-tree-item:hover {
@@ -1391,8 +1662,8 @@ html, body {
 }
 
 .folder-tree-item.selected {
-    background: rgba(0, 120, 212, 0.2);
-    border: 1px solid rgba(0, 120, 212, 0.4);
+    background: var(--win-surface-active);
+    border: 1px solid rgba(0, 120, 212, 0.3);
 }
 
 .folder-tree-item i {
@@ -1400,49 +1671,427 @@ html, body {
 }
 
 /* ============================================
-   RESPONSIVE
+   MOBILE SIDEBAR TOGGLE
+   ============================================ */
+
+.mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--win-text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all var(--transition);
+    flex-shrink: 0;
+}
+
+.mobile-menu-btn:hover {
+    background: var(--win-surface-hover);
+    color: var(--win-text);
+}
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 998;
+}
+
+/* ============================================
+   MOBILE BOTTOM SHEET (Context Menu)
+   ============================================ */
+
+.bottom-sheet {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9600;
+    background: var(--win-surface-solid);
+    border-top: 1px solid var(--win-border-light);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 8px);
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+    animation: sheetUp 0.3s cubic-bezier(0.2, 0, 0, 1);
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.bottom-sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--win-border-light);
+    border-radius: 2px;
+    margin: 4px auto 12px;
+}
+
+.bottom-sheet .context-item {
+    padding: 14px 20px;
+    font-size: 15px;
+    gap: 14px;
+}
+
+.bottom-sheet .context-item i {
+    font-size: 16px;
+    width: 22px;
+}
+
+@keyframes sheetUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.bottom-sheet-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 9500;
+}
+
+/* ============================================
+   RESPONSIVE - TABLET (max-width: 1024px)
+   ============================================ */
+
+@media (max-width: 1024px) {
+    .search-box {
+        width: 160px;
+    }
+
+    .col-date {
+        width: 120px;
+    }
+}
+
+/* ============================================
+   RESPONSIVE - MOBILE (max-width: 768px)
    ============================================ */
 
 @media (max-width: 768px) {
+    :root {
+        --titlebar-height: 44px;
+        --toolbar-height: 50px;
+        --actionbar-height: 46px;
+        --statusbar-height: 32px;
+        --taskbar-height: 52px;
+    }
+
+    .desktop {
+        padding: 0;
+    }
+
+    .window {
+        border-radius: 0;
+        border: none;
+    }
+
+    /* Mobile menu button */
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    /* Sidebar as overlay drawer */
     .sidebar {
-        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 280px;
+        z-index: 999;
+        transform: translateX(-100%);
+        background: var(--win-bg);
+        border-right: 1px solid var(--win-border-light);
+        box-shadow: var(--shadow-lg);
+        padding-top: 16px;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+    }
+
+    /* Sidebar close button */
+    .sidebar-close-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        margin: 0 12px 12px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--win-text);
+        cursor: pointer;
+        border-radius: var(--radius-sm);
+        transition: background var(--transition);
+        border: none;
+        background: none;
+        width: calc(100% - 24px);
+        font-family: inherit;
+    }
+
+    .sidebar-close-btn:hover {
+        background: var(--win-surface-hover);
+    }
+
+    .sidebar-close-btn i {
+        color: var(--win-text-secondary);
+    }
+
+    /* Toolbar adjustments */
+    .toolbar {
+        padding: 4px 8px;
+        gap: 4px;
+    }
+
+    .path-bar {
+        min-width: 0;
     }
 
     .search-box {
-        width: 120px;
+        display: none;
     }
 
+    /* Show mobile search in toolbar */
+    .mobile-search-toggle {
+        display: flex;
+    }
+
+    /* Action bar */
+    .action-bar {
+        padding: 4px 8px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .action-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .action-btn span,
+    .action-btn-text {
+        display: none;
+    }
+
+    .action-btn {
+        padding: 8px 10px;
+        min-width: 36px;
+        justify-content: center;
+    }
+
+    /* File list */
     .col-date {
         display: none;
     }
 
     .col-size {
-        width: 70px;
+        width: 65px;
     }
 
-    .action-btn span {
+    .col-actions {
+        width: 40px;
+    }
+
+    .file-item {
+        height: 44px;
+        padding: 0 8px;
+    }
+
+    .file-item .col-actions {
+        opacity: 1;
+    }
+
+    .file-item .col-actions button {
+        width: 32px;
+        height: 32px;
+    }
+
+    /* Only show delete on mobile, rest via context */
+    .file-item .col-actions .download-btn,
+    .file-item .col-actions .rename-btn {
         display: none;
     }
 
-    .desktop {
-        padding: 4px;
+    /* Grid view */
+    .file-list.grid-view {
+        gap: 8px;
+        padding: 12px 8px;
+        justify-content: center;
     }
 
-    .window {
-        border-radius: 0;
+    .file-list.grid-view .file-item {
+        width: calc(33.33% - 8px);
+        min-width: 90px;
+        max-width: 120px;
+        height: 100px;
+    }
+
+    /* Taskbar */
+    .taskbar {
+        padding: 0 8px;
+    }
+
+    .start-btn {
+        padding: 7px 12px;
+        font-size: 12px;
+    }
+
+    .start-btn span {
+        display: none;
+    }
+
+    .taskbar-item {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+
+    .taskbar-item span {
+        display: none;
+    }
+
+    .taskbar-clock {
+        font-size: 11px;
+    }
+
+    /* Upload progress */
+    .upload-progress-container {
+        left: 12px;
+        right: 12px;
+        bottom: 60px;
+    }
+
+    .upload-progress-window {
+        width: 100%;
+    }
+
+    /* Toast */
+    .toast-container {
+        left: 12px;
+        right: 12px;
+    }
+
+    .toast {
+        min-width: 0;
+        width: 100%;
+    }
+
+    /* Context menus - use bottom sheet on mobile */
+    .context-menu {
+        display: none !important;
+    }
+
+    /* Titlebar */
+    .titlebar-left span {
+        font-size: 12px;
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Modal */
+    .modal-window {
+        width: calc(100vw - 24px);
+        max-height: calc(100vh - 48px);
     }
 }
+
+/* ============================================
+   RESPONSIVE - SMALL PHONE (max-width: 480px)
+   ============================================ */
 
 @media (max-width: 480px) {
     .col-size {
         display: none;
     }
 
-    .toolbar-right {
+    .col-actions {
+        width: 36px;
+    }
+
+    .toolbar-left .tool-btn:not(#btn-back):not(#btn-refresh) {
         display: none;
     }
 
-    .action-bar {
-        overflow-x: auto;
+    .titlebar-buttons .btn-minimize,
+    .titlebar-buttons .btn-maximize {
+        display: none;
+    }
+
+    .file-list.grid-view .file-item {
+        width: calc(33.33% - 6px);
+        min-width: 80px;
+        height: 90px;
+    }
+
+    .file-list.grid-view .file-item .col-icon {
+        font-size: 30px;
+    }
+
+    .file-list.grid-view .file-item .col-name {
+        font-size: 10px;
+    }
+
+    .action-separator {
+        display: none;
+    }
+}
+
+/* ============================================
+   SAFE AREA (notch / home indicator)
+   ============================================ */
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .taskbar {
+        padding-bottom: env(safe-area-inset-bottom);
+        height: calc(var(--taskbar-height) + env(safe-area-inset-bottom));
+    }
+}
+
+/* ============================================
+   TOUCH ENHANCEMENTS
+   ============================================ */
+
+@media (pointer: coarse) {
+    .file-item {
+        min-height: 44px;
+    }
+
+    .tool-btn,
+    .action-btn,
+    .taskbar-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .context-item {
+        min-height: 44px;
+    }
+
+    .sidebar-item {
+        min-height: 44px;
+    }
+}
+
+/* ============================================
+   PRINT (hidden)
+   ============================================ */
+
+@media print {
+    .taskbar,
+    .statusbar,
+    .toolbar,
+    .action-bar,
+    .sidebar {
+        display: none !important;
     }
 }
