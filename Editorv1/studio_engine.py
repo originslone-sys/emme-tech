@@ -234,10 +234,10 @@ class ModeConfig:
 
 
 MODES: Dict[str, ModeConfig] = {
-    "lofi":     ModeConfig(30*60,  60*60,  300,  900,  3,  8,  0.15),
-    "relaxing": ModeConfig(30*60,  60*60,  300,  900,  3,  8,  0.10),
-    "study":    ModeConfig(60*60, 180*60,  600, 1800,  4, 12,  0.05),
-    "shorts":   ModeConfig(30,     60,      30,   60,  1,  1,  0.30),
+    "lofi":     ModeConfig(30*60,  60*60,    1,  900,  3,  8,  0.15),
+    "relaxing": ModeConfig(30*60,  60*60,    1,  900,  3,  8,  0.10),
+    "study":    ModeConfig(60*60, 180*60,    1, 1800,  4, 12,  0.05),
+    "shorts":   ModeConfig(30,     60,       1,   60,  1,  1,  0.30),
 }
 
 
@@ -444,49 +444,68 @@ class StudioEngine:
         shuffled = list(videos)
         random.shuffle(shuffled)
 
-        clip_min = self.mode_cfg.clip_len_min
-
+        # Accept all valid videos regardless of duration (short clips will be looped)
         infos: List[Dict] = []
-        for v in shuffled[:max(self.mode_cfg.max_clips * 3, 12)]:
+        for v in shuffled:
             inf = self.get_video_info(v)
-            if inf["duration"] >= clip_min:
+            if float(inf["duration"]) > 0:
                 infos.append(inf)
 
         if not infos:
-            print(f"⚠️ Nenhum vídeo com duração >= {clip_min}s encontrado.")
+            print("⚠️ Nenhum vídeo válido encontrado em input_videos/.")
             return []
 
-        desired = random.randint(self.mode_cfg.min_clips,
-                                 min(self.mode_cfg.max_clips, len(infos)))
-        pool = list(infos)
+        # How many distinct clips to use (allow reuse when fewer videos than min_clips)
+        desired = max(1, min(self.mode_cfg.max_clips, len(infos)))
+        desired = max(self.mode_cfg.min_clips, desired)
+
+        # Build pool — repeat source list if fewer videos than desired
+        pool: List[Dict] = []
+        while len(pool) < desired:
+            pool.extend(infos)
+        pool = pool[:desired]
         random.shuffle(pool)
-        clips: List[Dict] = []
-        total = 0.0
 
         def make_segment(inf: Dict, seg_len: float) -> Dict:
             d = float(inf["duration"])
-            seg_len = min(seg_len, d)
-            start = random.uniform(0.0, max(0.0, d - seg_len))
+            needs_loop = d < seg_len
+            if needs_loop:
+                # Loop from the beginning; start offset not meaningful when looping
+                start = 0.0
+            else:
+                seg_len = min(seg_len, d)
+                start = random.uniform(0.0, max(0.0, d - seg_len))
             c = dict(inf)
-            c.update({"start": start, "end": start + seg_len, "seg_len": seg_len})
+            c.update({"start": start, "end": start + seg_len,
+                      "seg_len": seg_len, "loop": needs_loop})
             return c
 
-        for inf in pool[:desired]:
-            seg = random.uniform(self.mode_cfg.clip_len_min,
-                                 min(self.mode_cfg.clip_len_max, float(inf["duration"])))
+        clips: List[Dict] = []
+        total = 0.0
+        # Distribute target duration evenly across the pool
+        base_seg = target_total_s / desired
+        for inf in pool:
+            seg = random.uniform(
+                base_seg * 0.8,
+                min(base_seg * 1.2, self.mode_cfg.clip_len_max),
+            )
+            seg = max(seg, 1.0)
             clips.append(make_segment(inf, seg))
             total += clips[-1]["seg_len"]
 
-        extras = pool[desired:]
-        while total < target_total_s and extras and len(clips) < int(self.mode_cfg.max_clips * 2):
+        # Top-up if still short (reuse any video)
+        extras = list(infos) * 4
+        random.shuffle(extras)
+        while total < target_total_s and len(clips) < int(self.mode_cfg.max_clips * 2):
             inf = random.choice(extras)
-            extras.remove(inf)
-            seg = random.uniform(self.mode_cfg.clip_len_min,
-                                 min(self.mode_cfg.clip_len_max, float(inf["duration"])))
+            remaining = target_total_s - total
+            seg = max(1.0, min(remaining, self.mode_cfg.clip_len_max))
             clips.append(make_segment(inf, seg))
             total += clips[-1]["seg_len"]
 
-        print(f"\n  Clips selecionados: {len(clips)} | alvo={target_total_s//60}min | total≈{int(total)//60}min")
+        looped = sum(1 for c in clips if c.get("loop"))
+        print(f"\n  Clips selecionados: {len(clips)} ({looped} com loop) | "
+              f"alvo={target_total_s//60}min | total≈{int(total)//60}min")
         return clips
 
     # ------------------------------------------------------------------ #
@@ -648,11 +667,15 @@ class StudioEngine:
             mult=self.clip_timeout_mult,
         )
 
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner",
-            "-fflags", "+genpts",
-            "-ss", str(start),
-            "-i", str(src),
+        needs_loop = clip.get("loop", False) or seg_len > float(clip.get("duration", seg_len)) * 0.99
+
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-fflags", "+genpts"]
+        if needs_loop:
+            # Loop the source before seeking so short clips fill the full seg_len
+            cmd += ["-stream_loop", "-1", "-i", str(src)]
+        else:
+            cmd += ["-ss", str(start), "-i", str(src)]
+        cmd += [
             "-t", str(seg_len),
             "-vf", vf,
             "-an",
