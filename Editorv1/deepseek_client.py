@@ -17,90 +17,90 @@ from typing import Dict, List, Optional
 # ---------------------------------------------------------------------------
 
 FALLBACK_PHRASES: Dict[str, List[str]] = {
-    "reflexao": [
-        "O silêncio é a música da alma.",
-        "Quem olha para fora, sonha. Quem olha para dentro, desperta.",
-        "A vida é um eco: o que você envia, volta para você.",
-        "Conhece-te a ti mesmo e conhecerás o universo.",
-        "O tempo que perdemos é o tempo que não vivemos.",
-        "Cada amanhecer é um convite para recomeçar.",
-        "A profundidade de uma mente se mede pelo seu silêncio.",
-        "Somos feitos do mesmo material que os sonhos.",
-        "A água que passa não move o moinho.",
-        "Viver é a coisa mais rara do mundo. A maioria apenas existe.",
-        "O caminho se faz caminhando.",
-        "Nada é permanente exceto a mudança.",
-        "A alma que contempla é a alma que transforma.",
-        "Nas pequenas coisas reside a grandeza.",
-        "O universo é infinito dentro de nós.",
+    "reflection": [
+        "Silence is the music of the soul.",
+        "Who looks outside dreams. Who looks inside awakes.",
+        "Life is an echo — what you send out comes back.",
+        "Know thyself and you shall know the universe.",
+        "Time we lose is time we never lived.",
+        "Every sunrise is an invitation to begin again.",
+        "The depth of a mind is measured by its silence.",
+        "We are made of the same stuff that dreams are made on.",
+        "Still waters run deep.",
+        "To live is the rarest thing. Most people just exist.",
+        "The path is made by walking.",
+        "Nothing is permanent except change.",
+        "The contemplating soul is the transforming soul.",
+        "In small things lies greatness.",
+        "The universe is infinite within us.",
     ],
-    "motivacao": [
-        "Um passo de cada vez constrói a jornada de mil milhas.",
-        "A persistência é o caminho do êxito.",
-        "Não espere o momento perfeito. Tome o momento e torne-o perfeito.",
-        "O segredo para avançar é começar.",
-        "Sua única limitação é a que você aceita.",
-        "Grandes conquistas nascem de pequenas ações diárias.",
-        "Acredite que você pode e você já está na metade do caminho.",
-        "O fracasso é apenas a oportunidade de recomeçar com mais sabedoria.",
-        "Você é mais forte do que imagina.",
-        "A coragem não é ausência de medo, é agir apesar dele.",
-        "Faça o que você pode, com o que você tem, onde você está.",
-        "O futuro pertence a quem acredita na beleza de seus sonhos.",
-        "Cada dia é uma nova chance de crescer.",
-        "Não desista. Grandes coisas levam tempo.",
-        "O esforço de hoje é o resultado de amanhã.",
+    "motivation": [
+        "One step at a time builds the journey of a thousand miles.",
+        "Persistence is the path to achievement.",
+        "Don't wait for the perfect moment. Make the moment perfect.",
+        "The secret of getting ahead is getting started.",
+        "Your only limitation is the one you accept.",
+        "Great achievements are born from small daily actions.",
+        "Believe you can and you're already halfway there.",
+        "Failure is simply the chance to begin again with more wisdom.",
+        "You are stronger than you think.",
+        "Courage is not the absence of fear — it's acting despite it.",
+        "Do what you can, with what you have, where you are.",
+        "The future belongs to those who believe in their dreams.",
+        "Every day is a new chance to grow.",
+        "Don't give up. Great things take time.",
+        "Today's effort is tomorrow's result.",
     ],
     "mindfulness": [
-        "Respire. Este momento é tudo que existe.",
-        "Esteja presente. A vida acontece agora.",
-        "A paz não é a ausência de caos, é a calma dentro dele.",
-        "Cada respiração é um recomeço.",
-        "Solte o que não pode mudar. Abrace o que pode.",
-        "A atenção plena transforma o ordinário em extraordinário.",
-        "Observe seus pensamentos como nuvens passando.",
-        "O presente é o único tempo em que você tem poder.",
-        "Você não precisa de mais tempo, apenas de mais presença.",
-        "Quando você desacelera, a vida se expande.",
-        "Pare. Sinta. Agradeça.",
-        "O corpo sabe o que a mente esqueceu.",
-        "Em cada momento há uma escolha: reagir ou responder.",
-        "A calma é um superpoder.",
-        "Simplifique. O suficiente é abundante.",
+        "Breathe. This moment is all there is.",
+        "Be present. Life happens now.",
+        "Peace is not the absence of chaos — it's calm within it.",
+        "Each breath is a new beginning.",
+        "Release what you cannot change. Embrace what you can.",
+        "Mindfulness turns the ordinary into the extraordinary.",
+        "Observe your thoughts like clouds passing by.",
+        "The present is the only time where you have power.",
+        "You don't need more time — just more presence.",
+        "When you slow down, life expands.",
+        "Stop. Feel. Be grateful.",
+        "The body knows what the mind has forgotten.",
+        "In every moment there's a choice: react or respond.",
+        "Calmness is a superpower.",
+        "Simplify. Enough is abundant.",
     ],
-    "positividade": [
-        "A gratidão transforma o que temos em suficiente.",
-        "Pequenas alegrias constroem uma vida grande.",
-        "Você irradia o que cultiva por dentro.",
-        "A bondade é uma linguagem que todos entendem.",
-        "Sorrir é a maneira mais curta de conectar dois corações.",
-        "O amanhã será melhor porque você está aqui hoje.",
-        "Há beleza esperando ser notada em cada detalhe.",
-        "A energia que você oferece é a energia que você recebe.",
-        "Cada dia tem vinte e quatro horas de possibilidades.",
-        "Você é um milagre em movimento.",
-        "A vida é curta demais para não ser gentil.",
-        "Celebre o caminho, não apenas o destino.",
-        "Há sempre algo pelo qual ser grato.",
-        "Você é exatamente onde precisa estar.",
-        "A felicidade é uma prática diária, não um destino.",
+    "positivity": [
+        "Gratitude turns what we have into enough.",
+        "Small joys build a great life.",
+        "You radiate what you cultivate within.",
+        "Kindness is a language everyone understands.",
+        "A smile is the shortest distance between two hearts.",
+        "Tomorrow will be better because you are here today.",
+        "Beauty is waiting to be noticed in every detail.",
+        "The energy you offer is the energy you receive.",
+        "Every day holds twenty-four hours of possibility.",
+        "You are a miracle in motion.",
+        "Life is too short not to be kind.",
+        "Celebrate the journey, not just the destination.",
+        "There is always something to be grateful for.",
+        "You are exactly where you need to be.",
+        "Happiness is a daily practice, not a destination.",
     ],
-    "estoicismo": [
-        "Não procures que os acontecimentos sejam como desejas. Aceita-os como são.",
-        "O homem sábio não sente falta do que não tem.",
-        "A tranquilidade é encontrada em quem não deseja nem teme nada.",
-        "Não é o que acontece com você, mas como você responde.",
-        "Controla o que é teu: a tua mente, os teus valores, a tua ação.",
-        "A virtude é a única riqueza verdadeira.",
-        "Suporta e abstém-te.",
-        "A vida não é longa ou curta por si só, mas como a preenchemos.",
-        "O sábio carrega seu próprio lar dentro de si.",
-        "Que isso não te perturbe: tudo passa.",
-        "Age bem agora. O resto é vaidade.",
-        "O obstáculo é o caminho.",
-        "Prefere estar errado com a razão a estar certo por acaso.",
-        "A morte lembra-nos de viver com propósito.",
-        "Apenas o presente é nosso. O passado e o futuro, não.",
+    "stoicism": [
+        "Wish for things to happen as they are, not as you desire.",
+        "The wise man wants for nothing he does not have.",
+        "Tranquility belongs to one who neither desires nor fears.",
+        "It's not what happens to you — it's how you respond.",
+        "Control what is yours: your mind, your values, your actions.",
+        "Virtue is the only true wealth.",
+        "Endure and abstain.",
+        "Life is not long or short — it depends on how we fill it.",
+        "The wise man carries his home within himself.",
+        "Let this not disturb you: everything passes.",
+        "Act well now. The rest is vanity.",
+        "The obstacle is the way.",
+        "Prefer to be wrong with reason than right by chance.",
+        "Death reminds us to live with purpose.",
+        "Only the present is ours. The past and future are not.",
     ],
 }
 
@@ -185,10 +185,10 @@ class DeepSeekClient:
     # ------------------------------------------------------------------
 
     def generate_phrases(self, categories: List[str] = None, count: int = 6,
-                         language: str = "pt-BR") -> List[str]:
+                         language: str = "en-US") -> List[str]:
         """
-        Gera `count` frases de reflexão/motivação via DeepSeek.
-        Fallback para banco local se API falhar.
+        Generates `count` reflection/motivation phrases via DeepSeek.
+        Falls back to local bank if API is unavailable.
         """
         categories = categories or list(FALLBACK_PHRASES.keys())
 
@@ -197,16 +197,16 @@ class DeepSeekClient:
 
         cats_str = ", ".join(categories)
         system = (
-            "Você é um escritor de frases inspiradoras para canais de YouTube "
-            "no estilo lo-fi e relaxing. Suas frases são profundas, poéticas e "
-            "adequadas para aparecer em vídeos de estudo e relaxamento."
+            "You are a writer of inspirational phrases for lo-fi and relaxing "
+            "YouTube channels. Your phrases are deep, poetic, and suitable "
+            "for study and relaxation videos."
         )
         user = (
-            f"Gere exatamente {count} frases inspiradoras em {language}. "
-            f"Categorias (misture): {cats_str}. "
-            "Regras: cada frase com no máximo 60 caracteres, uma por linha, "
-            "sem numeração, sem aspas, sem emojis. "
-            "Prefira frases curtas e impactantes."
+            f"Generate exactly {count} inspirational phrases in English. "
+            f"Mix these categories: {cats_str}. "
+            "Rules: max 60 characters each, one per line, "
+            "no numbering, no quotes, no emojis. "
+            "Prefer short and impactful phrases."
         )
 
         text = self._chat(system, user, max_tokens=count * 80, temperature=0.92)
@@ -242,32 +242,32 @@ class DeepSeekClient:
     # ------------------------------------------------------------------
 
     def generate_youtube_metadata(self, style: str, phrases: List[str],
-                                  duration_min: int, language: str = "pt-BR") -> Dict:
+                                  duration_min: int, language: str = "en-US") -> Dict:
         """
-        Gera título, descrição e tags para o vídeo no YouTube.
+        Generates title, description and tags for YouTube upload.
         """
         default = self._default_metadata(style, duration_min)
 
         if not self.available:
             return default
 
-        sample = phrases[:3] if phrases else ["música relaxante", "lo-fi", "estudo"]
+        sample = phrases[:3] if phrases else ["relaxing music", "lo-fi", "study"]
         sample_str = " | ".join(sample)
 
         system = (
-            "Você é especialista em SEO para canais de YouTube no nicho lo-fi, "
-            "relaxing e study music. Cria títulos atrativos e descrições que geram "
-            "cliques e retenção."
+            "You are an SEO expert for YouTube channels in the lo-fi, "
+            "relaxing and study music niche. You write attractive titles and "
+            "descriptions that maximize clicks and watch time."
         )
         user = (
-            f"Crie metadados para um vídeo YouTube em {language}:\n"
-            f"- Estilo: {style}\n"
-            f"- Duração: {duration_min} minutos\n"
-            f"- Frases do vídeo: {sample_str}\n\n"
-            "Responda APENAS em JSON válido com este formato:\n"
+            f"Create YouTube metadata in English for this video:\n"
+            f"- Style: {style}\n"
+            f"- Duration: {duration_min} minutes\n"
+            f"- Video phrases: {sample_str}\n\n"
+            "Reply ONLY with valid JSON in this exact format:\n"
             '{"title": "...", "description": "...", "tags": ["tag1", "tag2", ...]}\n\n'
-            "Regras: título com 50-70 chars, descrição com 400-600 chars "
-            f"em {language}, 15-20 tags relevantes em inglês e {language}."
+            "Rules: title 50-70 chars, description 400-600 chars in English, "
+            "15-20 relevant tags in English."
         )
 
         text = self._chat(system, user, max_tokens=700, temperature=0.75)

@@ -2,7 +2,7 @@
   "_comment": "Configuração central do Studio Engine — vídeos evergreen lo-fi/relaxing para YouTube",
 
   "deepseek": {
-    "api_key": "",
+    "api_key": "YOUR_DEEPSEEK_KEY_HERE",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com/v1",
     "timeout_s": 30,
@@ -16,8 +16,8 @@
     "display_duration_s": 9,
     "fade_in_s": 0.9,
     "fade_out_s": 0.9,
-    "categories": ["reflexao", "motivacao", "mindfulness", "positividade", "estoicismo"],
-    "language": "pt-BR"
+    "categories": ["reflection", "motivation", "mindfulness", "positivity", "stoicism"],
+    "language": "en-US"
   },
 
   "text": {
