@@ -669,27 +669,57 @@ class StudioEngine:
 
         needs_loop = clip.get("loop", False) or seg_len > float(clip.get("duration", seg_len)) * 0.99
 
-        cmd = ["ffmpeg", "-y", "-hide_banner", "-fflags", "+genpts"]
+        concat_file: Optional[Path] = None
         if needs_loop:
-            # Loop the source before seeking so short clips fill the full seg_len
-            cmd += ["-stream_loop", "-1", "-i", str(src)]
+            # Use concat demuxer to repeat the clip — more reliable than -stream_loop
+            src_dur = max(0.1, float(clip.get("duration", 1.0)))
+            repeats = int(seg_len / src_dur) + 2
+            concat_file = out.parent / f"loop_{idx:03d}.txt"
+            with concat_file.open("w", encoding="utf-8") as cf:
+                # FFmpeg concat demuxer: use forward slashes (works on Windows too)
+                path_str = str(src.resolve()).replace("\\", "/").replace("'", "\\'")
+                line = f"file '{path_str}'\n"
+                for _ in range(repeats):
+                    cf.write(line)
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner",
+                "-f", "concat", "-safe", "0",
+                "-i", str(concat_file),
+                "-t", str(seg_len),
+                "-vf", vf, "-an",
+                "-movflags", "+faststart",
+            ]
         else:
-            cmd += ["-ss", str(start), "-i", str(src)]
-        cmd += [
-            "-t", str(seg_len),
-            "-vf", vf,
-            "-an",
-            "-movflags", "+faststart",
-            "-video_track_timescale", "90000",
-        ]
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner",
+                "-fflags", "+genpts",
+                "-ss", str(start), "-i", str(src),
+                "-t", str(seg_len),
+                "-vf", vf, "-an",
+                "-movflags", "+faststart",
+            ]
         cmd += self._clip_encoder_args(crf)
         cmd += [str(out)]
 
         res = run_cmd_capture(cmd, log, timeout_s=timeout_s, proc_reg=self.proc_reg)
 
+        # Clean up temporary concat list
+        if concat_file and concat_file.exists():
+            try:
+                concat_file.unlink()
+            except Exception:
+                pass
+
         if res.rc != 0 or not out.exists() or out.stat().st_size < 1024:
             tag = "TIMEOUT" if res.timed_out else f"rc={res.rc}"
             print(f"  ⚠  Clip {idx} falhou [{tag}] ({int(res.elapsed)}s): {src.name}")
+            # Print first meaningful FFmpeg error line to help diagnose
+            for line in (res.stderr or "").splitlines():
+                stripped = line.strip()
+                if stripped and not stripped.startswith("ffmpeg version") and \
+                        not stripped.startswith("built") and not stripped.startswith("lib"):
+                    print(f"     FFmpeg: {stripped}")
+                    break
             try:
                 out.unlink(missing_ok=True)
             except Exception:
