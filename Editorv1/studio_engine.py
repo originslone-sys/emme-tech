@@ -314,9 +314,12 @@ class StudioEngine:
         self.fade_out          = float(args.fade_out or _a.get("fade_out_s", 4.0))
         self.audio_sr          = int(_a.get("sample_rate", 44100))
 
-        # IA / texto
+        # IA / texto — chave sempre lida do config.json (ou variável de ambiente)
         _ds = self.cfg_json.get("deepseek", {})
-        api_key = args.deepseek_key or _ds.get("api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
+        api_key = _ds.get("api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
+        # Chave placeholder não conta como válida
+        if api_key in ("", "YOUR_DEEPSEEK_KEY_HERE"):
+            api_key = ""
         self.deepseek = DeepSeekClient(
             api_key=api_key,
             model=_ds.get("model", "deepseek-chat"),
@@ -325,11 +328,14 @@ class StudioEngine:
         )
 
         _ph = self.cfg_json.get("phrases", {})
-        self.phrases_enabled   = _ph.get("enabled", True)
+        # --no-ai desativa IA completamente (sem frases e sem metadados)
+        ai_enabled = not getattr(args, "no_ai", False)
+        self.phrases_enabled   = ai_enabled and _ph.get("enabled", True)
         self.phrases_count     = int(getattr(args, "phrases_count", None) or _ph.get("count_per_video", 6))
         self.phrase_display    = float(_ph.get("display_duration_s", 9.0))
         self.phrase_fade       = float(_ph.get("fade_in_s", 0.9))
-        self.phrase_categories = _ph.get("categories", ["reflexao", "motivacao", "mindfulness", "positividade", "estoicismo"])
+        self.phrase_categories = _ph.get("categories", ["reflection", "motivation", "mindfulness", "positivity", "stoicism"])
+        self._ai_enabled       = ai_enabled
 
         _tx = self.cfg_json.get("text", {})
         self.text_animator = TextAnimator(
@@ -1046,11 +1052,12 @@ class StudioEngine:
                     print("  ⚠  Não foi possível gerar thumbnail.")
 
             # --- Metadados YouTube ---
-            dur_min = int(_get_duration(out_final) // 60)
-            meta = self.deepseek.generate_youtube_metadata(
-                style=self.mode, phrases=phrases, duration_min=dur_min
-            )
-            self._save_metadata(out_final, meta)
+            if self._ai_enabled:
+                dur_min = int(_get_duration(out_final) // 60)
+                meta = self.deepseek.generate_youtube_metadata(
+                    style=self.mode, phrases=phrases, duration_min=dur_min
+                )
+                self._save_metadata(out_final, meta)
 
             # --- Move fontes para processed ---
             used_sources = {Path(c["path"]) for c in clips}
@@ -1097,8 +1104,16 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos:
+  # Lo-fi com IA ativa (chave em config.json)
   python studio_engine.py --mode lofi --input-dir ./input_videos --thumbnails
+
+  # Sem IA (frases e metadados desativados)
+  python studio_engine.py --mode relaxing --input-dir ./input_videos --no-ai
+
+  # Sessão de estudo longa, 3 vídeos em paralelo
   python studio_engine.py --mode study --input-dir ./input_videos --num-videos 3 --workers 2
+
+  # YouTube Shorts (9:16 automático)
   python studio_engine.py --mode shorts --input-dir ./input_videos --encoder nvenc
         """,
     )
@@ -1150,9 +1165,10 @@ Exemplos:
     p.add_argument("--fade-out",    type=float, default=None)
 
     # IA / frases
-    p.add_argument("--deepseek-key",   default="", help="Chave API DeepSeek (ou use DEEPSEEK_API_KEY env)")
+    p.add_argument("--no-ai",          action="store_true",
+                   help="Desativar IA completamente (sem frases animadas, sem metadados YouTube). "
+                        "A chave API é configurada em config.json.")
     p.add_argument("--phrases-count",  type=int, default=6, help="Número de frases por vídeo")
-    p.add_argument("--no-phrases",     action="store_true", help="Desativar frases de texto")
     p.add_argument("--no-visualizer",  action="store_true", help="Desativar waveform visualizer")
 
     # Saída
@@ -1165,17 +1181,10 @@ def main():
     parser = build_parser()
     args   = parser.parse_args()
 
-    # Ajustes pós-parse
-    if args.no_phrases:
-        args.phrases_count = 0
-
     engine = StudioEngine(args)
 
     if args.no_visualizer:
         engine.visualizer_enabled = False
-
-    if args.phrases_count == 0:
-        engine.phrases_enabled = False
 
     outs = engine.run_batch(int(args.num_videos))
 
