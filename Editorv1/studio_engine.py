@@ -531,9 +531,12 @@ class StudioEngine:
         dx = f"(iw-{ow})"  # espaço horizontal disponível após crop
         dy = f"(ih-{oh})"  # espaço vertical disponível após crop
 
-        # Commas inside min() must be escaped as \, — FFmpeg uses comma as filter separator in -vf
-        m = f"min(t/{dur:.3f}\\,1.0)"
-        mi = f"(1-min(t/{dur:.3f}\\,1.0))"
+        # Use t/dur directly — no min() needed because:
+        # 1. -t seg_len in FFmpeg limits t to [0, dur]
+        # 2. crop filter auto-clamps coordinates that exceed the valid range
+        # This avoids any comma inside expressions (FFmpeg uses comma as filter separator)
+        m = f"t/{dur:.3f}"
+        mi = f"(1-t/{dur:.3f})"
 
         if direction == "right":
             cx, cy = f"{dx}*{m}", f"{dy}/2"
