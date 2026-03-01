@@ -2,7 +2,7 @@
   "_comment": "Configuração central do Studio Engine — vídeos evergreen lo-fi/relaxing para YouTube",
 
   "deepseek": {
-    "api_key": "sk-267844413d514f1a9a38f80b6444c0ed",
+    "api_key": "secret key aqui",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com/v1",
     "timeout_s": 30,
@@ -75,4 +75,5 @@
     "quality": 2
   }
 }
+
 
