@@ -713,13 +713,23 @@ class StudioEngine:
         if res.rc != 0 or not out.exists() or out.stat().st_size < 1024:
             tag = "TIMEOUT" if res.timed_out else f"rc={res.rc}"
             print(f"  ⚠  Clip {idx} falhou [{tag}] ({int(res.elapsed)}s): {src.name}")
-            # Print first meaningful FFmpeg error line to help diagnose
+            # Print lines that look like actual errors (skip FFmpeg header/info)
+            _skip = {"ffmpeg version", "built with", "built on", "libav", "configuration",
+                     "auto-inserting", "auto inserting", "[info]", "encoder ", "decoder "}
+            error_lines = []
             for line in (res.stderr or "").splitlines():
-                stripped = line.strip()
-                if stripped and not stripped.startswith("ffmpeg version") and \
-                        not stripped.startswith("built") and not stripped.startswith("lib"):
-                    print(f"     FFmpeg: {stripped}")
-                    break
+                sl = line.strip().lower()
+                if not sl:
+                    continue
+                if any(sl.startswith(s) for s in _skip):
+                    continue
+                error_lines.append(line.strip())
+            # Show last 8 lines — FFmpeg errors always appear near the end
+            for el in error_lines[-8:]:
+                print(f"     {el}")
+            # On the first failure, also print the full command for manual debugging
+            if idx == 0:
+                print(f"     CMD: {' '.join(cmd)}")
             try:
                 out.unlink(missing_ok=True)
             except Exception:
