@@ -531,18 +531,22 @@ class StudioEngine:
         dx = f"(iw-{ow})"  # espaço horizontal disponível após crop
         dy = f"(ih-{oh})"  # espaço vertical disponível após crop
 
+        # Commas inside min() must be escaped as \, — FFmpeg uses comma as filter separator in -vf
+        m = f"min(t/{dur:.3f}\\,1.0)"
+        mi = f"(1-min(t/{dur:.3f}\\,1.0))"
+
         if direction == "right":
-            cx, cy = f"{dx}*min(t/{dur:.3f},1.0)", f"{dy}/2"
+            cx, cy = f"{dx}*{m}", f"{dy}/2"
         elif direction == "left":
-            cx, cy = f"{dx}*(1-min(t/{dur:.3f},1.0))", f"{dy}/2"
+            cx, cy = f"{dx}*{mi}", f"{dy}/2"
         elif direction == "down":
-            cx, cy = f"{dx}/2", f"{dy}*min(t/{dur:.3f},1.0)"
+            cx, cy = f"{dx}/2", f"{dy}*{m}"
         elif direction == "up":
-            cx, cy = f"{dx}/2", f"{dy}*(1-min(t/{dur:.3f},1.0))"
+            cx, cy = f"{dx}/2", f"{dy}*{mi}"
         elif direction == "diag_rd":
-            cx, cy = f"{dx}*min(t/{dur:.3f},1.0)", f"{dy}*min(t/{dur:.3f},1.0)"
+            cx, cy = f"{dx}*{m}", f"{dy}*{m}"
         else:  # diag_lu
-            cx, cy = f"{dx}*(1-min(t/{dur:.3f},1.0))", f"{dy}*(1-min(t/{dur:.3f},1.0))"
+            cx, cy = f"{dx}*{mi}", f"{dy}*{mi}"
 
         filt = (
             f"scale={sw}:{sh}:flags=lanczos,"
