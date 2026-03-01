@@ -604,44 +604,194 @@
         }
     }
 
+    // === Upload Queue (multi-file parallel) ===
+    const uploadQueue = {
+        files: [],       // { id, file, status: 'waiting'|'uploading'|'done'|'error', progress: 0 }
+        active: 0,
+        maxConcurrent: 3,
+        completed: 0,
+        total: 0,
+        collapsed: false,
+    };
+
     async function uploadFiles(files) {
         if (!files || files.length === 0) return;
 
-        const progressContainer = $('#upload-progress');
+        const container = $('#upload-progress');
+        const fileList = $('#upload-file-list');
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            $('#upload-file-name').textContent = `${file.name} (${i + 1}/${files.length})`;
-            $('#upload-bar').style.width = '0%';
-            $('#upload-percent').textContent = '0%';
-            progressContainer.style.display = 'block';
-
-            try {
-                let progress = 0;
-                const progressInterval = setInterval(() => {
-                    progress = Math.min(progress + Math.random() * 15, 90);
-                    $('#upload-bar').style.width = progress + '%';
-                    $('#upload-percent').textContent = Math.round(progress) + '%';
-                }, 200);
-
-                await api.upload(file, state.currentPath);
-
-                clearInterval(progressInterval);
-                $('#upload-bar').style.width = '100%';
-                $('#upload-percent').textContent = '100%';
-
-                toast(`"${file.name}" enviado com sucesso`, 'success');
-            } catch (err) {
-                toast(`Erro ao enviar "${file.name}": ${err.message}`, 'error');
-            }
+        // If starting fresh (no ongoing uploads)
+        if (uploadQueue.active === 0 && uploadQueue.files.every(f => f.status === 'done' || f.status === 'error')) {
+            uploadQueue.files = [];
+            uploadQueue.completed = 0;
+            uploadQueue.total = 0;
+            fileList.innerHTML = '';
         }
 
-        setTimeout(() => {
-            progressContainer.style.display = 'none';
-        }, 1000);
+        // Add files to queue
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const id = 'upload-' + Date.now() + '-' + i;
+            const entry = { id, file, status: 'waiting', progress: 0 };
+            uploadQueue.files.push(entry);
+            uploadQueue.total++;
+            renderUploadItem(entry);
+        }
 
-        await navigateTo(state.currentPath);
-        updateStorageInfo();
+        container.style.display = 'block';
+        updateUploadSummary();
+
+        // Start processing
+        processUploadQueue();
+    }
+
+    function renderUploadItem(entry) {
+        const fileList = $('#upload-file-list');
+        const el = document.createElement('div');
+        el.className = 'upload-file-item';
+        el.id = entry.id;
+        el.innerHTML = `
+            <div class="upload-file-icon status-waiting"><i class="fas fa-clock"></i></div>
+            <div class="upload-file-info">
+                <div class="upload-fname">${escapeHtml(entry.file.name)}</div>
+                <div class="upload-fbar"><div class="upload-fbar-inner"></div></div>
+            </div>
+            <div class="upload-file-size">${formatSize(entry.file.size)}</div>
+        `;
+        fileList.appendChild(el);
+    }
+
+    function updateUploadItemStatus(entry) {
+        const el = $(`#${entry.id}`);
+        if (!el) return;
+
+        const iconEl = el.querySelector('.upload-file-icon');
+        const barInner = el.querySelector('.upload-fbar-inner');
+
+        // Icon and class
+        iconEl.className = 'upload-file-icon';
+        el.className = 'upload-file-item';
+
+        switch (entry.status) {
+            case 'waiting':
+                iconEl.classList.add('status-waiting');
+                iconEl.innerHTML = '<i class="fas fa-clock"></i>';
+                break;
+            case 'uploading':
+                iconEl.classList.add('status-uploading');
+                iconEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                break;
+            case 'done':
+                iconEl.classList.add('status-done');
+                iconEl.innerHTML = '<i class="fas fa-check-circle"></i>';
+                el.classList.add('done');
+                break;
+            case 'error':
+                iconEl.classList.add('status-error');
+                iconEl.innerHTML = '<i class="fas fa-times-circle"></i>';
+                el.classList.add('error');
+                break;
+        }
+
+        if (barInner) {
+            barInner.style.width = entry.progress + '%';
+        }
+    }
+
+    function updateUploadSummary() {
+        const done = uploadQueue.files.filter(f => f.status === 'done').length;
+        const errors = uploadQueue.files.filter(f => f.status === 'error').length;
+        const total = uploadQueue.files.length;
+        const finished = done + errors;
+
+        const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+        const summaryBar = $('#upload-summary-bar');
+        const summaryText = $('#upload-summary-text');
+        const titleText = $('#upload-title');
+
+        if (summaryBar) summaryBar.style.width = pct + '%';
+
+        let text = `${finished} de ${total} arquivo${total > 1 ? 's' : ''}`;
+        if (errors > 0) text += ` (${errors} erro${errors > 1 ? 's' : ''})`;
+        if (summaryText) summaryText.textContent = text;
+
+        if (titleText) {
+            if (finished === total) {
+                titleText.textContent = errors > 0
+                    ? `Upload concluido (${errors} erro${errors > 1 ? 's' : ''})`
+                    : 'Upload concluido';
+            } else {
+                titleText.textContent = `Enviando ${total - finished} arquivo${(total - finished) > 1 ? 's' : ''}...`;
+            }
+        }
+    }
+
+    async function processUploadQueue() {
+        const waiting = uploadQueue.files.filter(f => f.status === 'waiting');
+        if (waiting.length === 0 && uploadQueue.active === 0) {
+            // All done
+            const errors = uploadQueue.files.filter(f => f.status === 'error').length;
+            const done = uploadQueue.files.filter(f => f.status === 'done').length;
+
+            if (done > 0) {
+                toast(`${done} arquivo${done > 1 ? 's' : ''} enviado${done > 1 ? 's' : ''} com sucesso`, 'success');
+            }
+            if (errors > 0) {
+                toast(`${errors} arquivo${errors > 1 ? 's' : ''} com erro no upload`, 'error');
+            }
+
+            // Auto-hide after 3s
+            setTimeout(() => {
+                if (uploadQueue.active === 0) {
+                    $('#upload-progress').style.display = 'none';
+                }
+            }, 3000);
+
+            await navigateTo(state.currentPath);
+            updateStorageInfo();
+            return;
+        }
+
+        // Launch concurrent uploads up to max
+        while (uploadQueue.active < uploadQueue.maxConcurrent && waiting.length > 0) {
+            const entry = waiting.shift();
+            uploadQueue.active++;
+            uploadSingleFile(entry);
+        }
+    }
+
+    async function uploadSingleFile(entry) {
+        entry.status = 'uploading';
+        entry.progress = 0;
+        updateUploadItemStatus(entry);
+        updateUploadSummary();
+
+        // Simulated progress while uploading
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(progress + Math.random() * 12, 90);
+            entry.progress = progress;
+            updateUploadItemStatus(entry);
+        }, 250);
+
+        try {
+            await api.upload(entry.file, state.currentPath);
+
+            clearInterval(progressInterval);
+            entry.status = 'done';
+            entry.progress = 100;
+        } catch (err) {
+            clearInterval(progressInterval);
+            entry.status = 'error';
+            entry.progress = 0;
+        }
+
+        uploadQueue.active--;
+        updateUploadItemStatus(entry);
+        updateUploadSummary();
+
+        // Continue processing queue
+        processUploadQueue();
     }
 
     // === Dialogos ===
@@ -1226,10 +1376,24 @@
             setTimeout(() => { win.style.display = 'flex'; }, 300);
         });
 
-        // Upload cancel
+        // Upload cancel / close
         $('#upload-cancel').addEventListener('click', () => {
             $('#upload-progress').style.display = 'none';
         });
+
+        // Upload toggle (collapse/expand file list)
+        const toggleBtn = $('#upload-toggle');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                const list = $('#upload-file-list');
+                if (!list) return;
+                uploadQueue.collapsed = !uploadQueue.collapsed;
+                list.classList.toggle('collapsed', uploadQueue.collapsed);
+                toggleBtn.innerHTML = uploadQueue.collapsed
+                    ? '<i class="fas fa-chevron-up"></i>'
+                    : '<i class="fas fa-chevron-down"></i>';
+            });
+        }
     }
 
     // === Drag & Drop ===
