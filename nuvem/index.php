@@ -239,19 +239,24 @@
         </div>
     </div>
 
-    <!-- Upload Progress -->
+    <!-- Upload Progress (multi-file queue) -->
     <div class="upload-progress-container" id="upload-progress" style="display:none">
         <div class="upload-progress-window">
             <div class="upload-progress-titlebar">
-                <span><i class="fas fa-upload"></i> Enviando arquivo</span>
-                <span class="btn-close" id="upload-cancel">&#10005;</span>
-            </div>
-            <div class="upload-progress-body">
-                <div class="upload-file-name" id="upload-file-name">arquivo.txt</div>
-                <div class="upload-bar-container">
-                    <div class="upload-bar" id="upload-bar"></div>
+                <span><i class="fas fa-upload"></i> <span id="upload-title">Enviando arquivos</span></span>
+                <div class="upload-titlebar-actions">
+                    <span class="upload-toggle" id="upload-toggle" title="Minimizar"><i class="fas fa-chevron-down"></i></span>
+                    <span class="btn-close" id="upload-cancel" title="Fechar">&#10005;</span>
                 </div>
-                <div class="upload-percent" id="upload-percent">0%</div>
+            </div>
+            <div class="upload-summary" id="upload-summary">
+                <div class="upload-summary-bar-container">
+                    <div class="upload-summary-bar" id="upload-summary-bar"></div>
+                </div>
+                <span class="upload-summary-text" id="upload-summary-text">0 de 0 arquivos</span>
+            </div>
+            <div class="upload-file-list" id="upload-file-list">
+                <!-- Items inserted by JS -->
             </div>
         </div>
     </div>
