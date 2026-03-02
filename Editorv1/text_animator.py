@@ -235,7 +235,7 @@ class TextAnimator:
         line_h = int(fs * 1.35)
         total_h = line_h * len(lines)
         base_y = int(h * 0.76) - total_h // 2
-        fa    = self._font_arg(self.font_path)
+        fa    = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         shadow = self.palette["text_shadow"]
         alpha = self._alpha_expr(start, end, fi, fo)
@@ -264,7 +264,7 @@ class TextAnimator:
         line_h = int(fs * 1.35)
         total_h = line_h * len(lines)
         base_y = int(h * 0.76) - total_h // 2
-        fa    = self._font_arg(self.font_path)
+        fa    = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         shadow = self.palette["text_shadow"]
         alpha = self._alpha_expr(start, end, fi, fo)
@@ -301,7 +301,7 @@ class TextAnimator:
         line_h = int(fs * 1.35)
         total_h = line_h * len(lines)
         base_y = int(h * 0.76) - total_h // 2
-        fa    = self._font_arg(self.font_path)
+        fa    = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         shadow = self.palette["text_shadow"]
         alpha = self._alpha_expr(start, end, fi, fo)
@@ -337,7 +337,7 @@ class TextAnimator:
         line_h = int(fs * 1.35)
         total_h = line_h * len(lines)
         base_y = int(h * 0.76) - total_h // 2
-        fa    = self._font_arg(self.font_path)
+        fa    = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         accent = self.palette["accent"]
         shadow = self.palette["text_shadow"]
@@ -381,7 +381,7 @@ class TextAnimator:
         line_h = int(fs * 1.45)
         total_h = line_h * len(lines)
         base_y = (h - total_h) // 2  # centro vertical exato
-        fa    = self._font_arg(self.font_path)
+        fa    = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         shadow = self.palette["text_shadow"]
         box_bg = self.palette["box_bg"]
@@ -453,7 +453,7 @@ class TextAnimator:
         Exibe o nome da faixa no canto inferior esquerdo por `display_duration` segundos.
         """
         fs = self._small_font(video_h)
-        fa = self._font_arg(self.font_path)
+        fa = _font_arg(self.font_path)
         color = self.palette["text_primary"]
         shadow = self.palette["text_shadow"]
 
