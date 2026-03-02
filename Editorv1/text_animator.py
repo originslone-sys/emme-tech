@@ -418,28 +418,17 @@ class TextAnimator:
                            height_px: int = 3, opacity: float = 0.55) -> str:
         """
         Barra de progresso no rodapé que cresce com o tempo.
-        Usa geq (funciona em qualquer versão FFmpeg com suporte a geq).
+        Usa drawbox com w=W*t/dur — zero vírgulas nas expressões, sem
+        problemas de escaping dentro de filter_complex.
         """
-        # Converte opacidade em valor 0-255 para canal alpha
-        a_val = int(opacity * 255)
         bar_color = self.palette.get("bar", "0xF0B27A@0.60")
-        # Extrai hex RGB da paleta (ignora @alpha se presente)
         hex_col = bar_color.split("@")[0].replace("0x", "").replace("#", "")
-        if len(hex_col) == 6:
-            r = int(hex_col[0:2], 16)
-            g = int(hex_col[2:4], 16)
-            b = int(hex_col[4:6], 16)
-        else:
-            r, g, b = 240, 178, 122  # warm_amber fallback
-
-        # geq desenha pixels brancos na última faixa de height_px pixels
-        # onde x < W * (t/duration)
+        if len(hex_col) != 6:
+            hex_col = "F0B27A"
         dur = max(duration, 1.0)
         return (
-            f"geq="
-            f"r='if(gt(Y\\,H-{height_px+1})*lt(X\\,W*min(t/{dur:.3f}\\,1.0)\\)\\,{r}\\,r(X\\,Y\\)\\)':"
-            f"g='if(gt(Y\\,H-{height_px+1})*lt(X\\,W*min(t/{dur:.3f}\\,1.0)\\)\\,{g}\\,g(X\\,Y\\)\\)':"
-            f"b='if(gt(Y\\,H-{height_px+1})*lt(X\\,W*min(t/{dur:.3f}\\,1.0)\\)\\,{b}\\,b(X\\,Y\\)\\)'"
+            f"drawbox=x=0:y=H-{height_px}:w=W*t/{dur:.3f}:h={height_px}"
+            f":color=0x{hex_col}@{opacity:.2f}:t=fill"
         )
 
     # ------------------------------------------------------------------ #
