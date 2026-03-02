@@ -1,10 +1,10 @@
 <?php
 return [
     'e2' => [
-        'endpoint'   => 'https://s3.us-east-1.idrivee2.com',
+        'endpoint'   => 'https://s3.us-east-1.wasabisys.com',
         'region'     => 'us-east-1',
-        'key'        => 'WjEQ8ZznOejCHXwchxNo',
-        'secret'     => 'jh2pk4hGnNkeygorkaviTdktufmaFQoR5pnyE5yH',
+        'key'        => '9RIG0X20JZH87O7SUE4B',
+        'secret'     => 'rDzC9JuNz3pZ6fHEoYAdcUdtPNE2nbwSZPO5UHfY',
         'bucket'     => 'nuvem',
         'version'    => 'latest',
     ],
