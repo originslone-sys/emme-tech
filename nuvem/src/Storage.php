@@ -232,21 +232,6 @@ class Storage
     }
 
     /**
-     * Baixar conteudo de um arquivo do S3
-     */
-    public function getFileContent(string $path): string
-    {
-        $path = $this->normalizePath($path);
-
-        $result = $this->client->getObject([
-            'Bucket' => $this->bucket,
-            'Key'    => $path,
-        ]);
-
-        return (string) $result['Body'];
-    }
-
-    /**
      * Mover arquivo para outro caminho
      */
     public function move(string $oldPath, string $newPath): bool
