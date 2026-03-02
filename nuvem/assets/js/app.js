@@ -296,14 +296,11 @@
             sheetOverlay.addEventListener('click', hideBottomSheet);
         }
 
-        // Prevent double-tap zoom on mobile
-        let lastTap = 0;
-        document.addEventListener('touchend', (e) => {
-            const now = Date.now();
-            if (now - lastTap < 300) {
+        // Prevent pinch zoom on mobile (but allow double-tap on file items)
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) {
                 e.preventDefault();
             }
-            lastTap = now;
         }, { passive: false });
     }
 
@@ -450,7 +447,12 @@
             </div>
         `;
 
-        // Double click / tap to open
+        // Touch state variables (used by multiple handlers)
+        let lastTapTime = 0;
+        let longPressTimer = null;
+        let touchMoved = false;
+
+        // Double click (desktop) / double tap (mobile) to open
         div.addEventListener('dblclick', (e) => {
             e.preventDefault();
             if (isFolder) {
@@ -460,11 +462,35 @@
             }
         });
 
+        // Manual double-tap detection for mobile
+        div.addEventListener('touchend', (e) => {
+            if (touchMoved) return;
+            if (e.target.closest('.col-actions') || e.target.tagName === 'INPUT') return;
+
+            const now = Date.now();
+            if (now - lastTapTime < 350) {
+                // Double tap detected
+                e.preventDefault();
+                if (isFolder) {
+                    navigateTo(item.path);
+                } else {
+                    downloadFile(item.path);
+                }
+                lastTapTime = 0;
+            } else {
+                lastTapTime = now;
+            }
+        });
+
         // Click
         div.addEventListener('click', (e) => {
             if (e.target.closest('.col-actions') || e.target.tagName === 'INPUT') return;
 
             if (e.ctrlKey || e.metaKey) {
+                // Multi-select on desktop
+                toggleSelection(item.path);
+            } else if (state.isMobile && state.selectedItems.size > 1) {
+                // Mobile: if multiple selected, toggle this one
                 toggleSelection(item.path);
             } else {
                 state.selectedItems.clear();
@@ -477,10 +503,14 @@
         div.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             state.contextTarget = item;
-            if (!state.selectedItems.has(item.path)) {
-                state.selectedItems.clear();
-                state.selectedItems.add(item.path);
-                updateSelectionUI();
+
+            // On mobile: don't clear selection if multiple items are selected
+            if (!(state.isMobile && state.selectedItems.size > 1 && state.selectedItems.has(item.path))) {
+                if (!state.selectedItems.has(item.path)) {
+                    state.selectedItems.clear();
+                    state.selectedItems.add(item.path);
+                    updateSelectionUI();
+                }
             }
 
             if (state.isMobile) {
@@ -490,19 +520,19 @@
             }
         });
 
-        // Long press for mobile (touchstart/touchend)
-        let longPressTimer = null;
-        let touchMoved = false;
-
+        // Long press for mobile
         div.addEventListener('touchstart', (e) => {
             touchMoved = false;
             longPressTimer = setTimeout(() => {
                 if (!touchMoved) {
                     e.preventDefault();
                     state.contextTarget = item;
-                    state.selectedItems.clear();
-                    state.selectedItems.add(item.path);
-                    updateSelectionUI();
+                    // Don't clear selection if multiple items selected
+                    if (!(state.selectedItems.size > 1 && state.selectedItems.has(item.path))) {
+                        state.selectedItems.clear();
+                        state.selectedItems.add(item.path);
+                        updateSelectionUI();
+                    }
                     showMobileItemMenu(item);
                 }
             }, 500);
@@ -582,7 +612,14 @@
 
         const count = state.selectedItems.size;
         const deleteBtn = $('#btn-delete-selected');
+        const downloadBtn = $('#btn-download-selected');
         deleteBtn.style.display = count > 0 ? 'flex' : 'none';
+
+        // Show download button only if at least one file (not folder) is selected
+        const hasFiles = count > 0 && [...state.selectedItems].some(p => {
+            return state.files.some(f => f.path === p);
+        });
+        downloadBtn.style.display = hasFiles ? 'flex' : 'none';
 
         const checkAll = $('#check-all');
         const totalItems = state.folders.length + state.files.length;
@@ -601,6 +638,52 @@
             }
         } catch (err) {
             toast('Erro ao baixar arquivo: ' + err.message, 'error');
+        }
+    }
+
+    async function downloadSelectedFiles() {
+        const paths = Array.from(state.selectedItems);
+        // Filter only files (not folders)
+        const filePaths = paths.filter(p => state.files.some(f => f.path === p));
+
+        if (filePaths.length === 0) {
+            toast('Nenhum arquivo selecionado para baixar', 'info');
+            return;
+        }
+
+        toast(`Baixando ${filePaths.length} arquivo${filePaths.length > 1 ? 's' : ''}...`, 'info');
+
+        let downloaded = 0;
+        let errors = 0;
+
+        for (const path of filePaths) {
+            try {
+                const data = await api.download(path);
+                if (data.url) {
+                    // Create invisible link and click it
+                    const a = document.createElement('a');
+                    a.href = data.url;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    downloaded++;
+                }
+            } catch {
+                errors++;
+            }
+            // Small delay between downloads to not overwhelm browser
+            if (filePaths.length > 1) {
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+
+        if (downloaded > 0) {
+            toast(`${downloaded} arquivo${downloaded > 1 ? 's' : ''} baixado${downloaded > 1 ? 's' : ''}`, 'success');
+        }
+        if (errors > 0) {
+            toast(`${errors} arquivo${errors > 1 ? 's' : ''} com erro no download`, 'error');
         }
     }
 
@@ -1181,6 +1264,7 @@
         $('#btn-upload').addEventListener('click', () => $('#file-input').click());
         $('#btn-select-all').addEventListener('click', selectAll);
         $('#btn-delete-selected').addEventListener('click', showDeleteSelectedConfirm);
+        $('#btn-download-selected').addEventListener('click', downloadSelectedFiles);
 
         // Checkbox principal
         $('#check-all').addEventListener('change', (e) => {

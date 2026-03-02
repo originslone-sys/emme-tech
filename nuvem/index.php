@@ -104,6 +104,9 @@
                     <button class="action-btn danger" id="btn-delete-selected" title="Excluir selecionados" style="display:none">
                         <i class="fas fa-trash"></i> <span>Excluir</span>
                     </button>
+                    <button class="action-btn" id="btn-download-selected" title="Baixar selecionados" style="display:none">
+                        <i class="fas fa-download"></i> <span>Baixar</span>
+                    </button>
                 </div>
 
                 <!-- Conteudo Principal -->
