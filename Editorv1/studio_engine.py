@@ -933,6 +933,15 @@ class StudioEngine:
         res = run_cmd_capture(cmd, log, self.final_timeout_s, self.proc_reg)
         if res.rc != 0 or not video_out.exists():
             print(f"  ✗  Render final falhou rc={res.rc}")
+            _skip_rf = ("frame=", "size=", "speed=", "[info]", "Press [q]")
+            for line in (res.stderr or "").splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if any(stripped.startswith(s) for s in _skip_rf):
+                    continue
+                print(f"     {stripped}")
+            print(f"     CMD: {' '.join(cmd)}")
             return False
 
         print(f"  ✓  Render final: musica={music_file.name} | frases={len(phrases)}")
