@@ -219,9 +219,12 @@ class Storage
     {
         $path = $this->normalizePath($path);
 
+        $filename = basename($path);
+
         $cmd = $this->client->getCommand('GetObject', [
-            'Bucket' => $this->bucket,
-            'Key'    => $path,
+            'Bucket'                     => $this->bucket,
+            'Key'                        => $path,
+            'ResponseContentDisposition' => "attachment; filename=\"{$filename}\"",
         ]);
 
         $request = $this->client->createPresignedRequest($cmd, "+{$expiry} seconds");
