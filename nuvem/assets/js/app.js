@@ -634,7 +634,12 @@
         try {
             const data = await api.download(path);
             if (data.url) {
-                window.open(data.url, '_blank');
+                const a = document.createElement('a');
+                a.href = data.url;
+                a.download = path.split('/').pop();
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
             }
         } catch (err) {
             toast('Erro ao baixar arquivo: ' + err.message, 'error');
@@ -660,11 +665,9 @@
             try {
                 const data = await api.download(path);
                 if (data.url) {
-                    // Create invisible link and click it
                     const a = document.createElement('a');
                     a.href = data.url;
-                    a.target = '_blank';
-                    a.rel = 'noopener';
+                    a.download = path.split('/').pop();
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
