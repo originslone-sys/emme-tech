@@ -648,7 +648,6 @@
 
     async function downloadSelectedFiles() {
         const paths = Array.from(state.selectedItems);
-        // Filter only files (not folders)
         const filePaths = paths.filter(p => state.files.some(f => f.path === p));
 
         if (filePaths.length === 0) {
@@ -656,37 +655,40 @@
             return;
         }
 
-        toast(`Baixando ${filePaths.length} arquivo${filePaths.length > 1 ? 's' : ''}...`, 'info');
-
-        let downloaded = 0;
-        let errors = 0;
-
-        for (const path of filePaths) {
-            try {
-                const data = await api.download(path);
-                if (data.url) {
-                    const a = document.createElement('a');
-                    a.href = data.url;
-                    a.download = path.split('/').pop();
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    downloaded++;
-                }
-            } catch {
-                errors++;
-            }
-            // Small delay between downloads to not overwhelm browser
-            if (filePaths.length > 1) {
-                await new Promise(r => setTimeout(r, 500));
-            }
+        // Arquivo unico: download direto
+        if (filePaths.length === 1) {
+            return downloadFile(filePaths[0]);
         }
 
-        if (downloaded > 0) {
-            toast(`${downloaded} arquivo${downloaded > 1 ? 's' : ''} baixado${downloaded > 1 ? 's' : ''}`, 'success');
-        }
-        if (errors > 0) {
-            toast(`${errors} arquivo${errors > 1 ? 's' : ''} com erro no download`, 'error');
+        // Multiplos arquivos: baixar como ZIP
+        toast(`Preparando ${filePaths.length} arquivos para download...`, 'info');
+
+        try {
+            const response = await fetch('api/download-zip', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: filePaths }),
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Erro ao gerar ZIP');
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'arquivos.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+
+            toast(`${filePaths.length} arquivos baixados como ZIP`, 'success');
+        } catch (err) {
+            toast('Erro ao baixar arquivos: ' + err.message, 'error');
         }
     }
 

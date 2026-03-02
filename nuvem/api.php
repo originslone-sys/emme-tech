@@ -86,6 +86,9 @@ try {
         case 'download':
             handleDownload($storage);
             break;
+        case 'download-zip':
+            handleDownloadZip($storage);
+            break;
         case 'move':
             handleMove($storage);
             break;
@@ -225,6 +228,44 @@ function handleDownload(Storage $storage): void
 
     $url = $storage->getDownloadUrl($path, 3600);
     echo json_encode(['url' => $url]);
+}
+
+function handleDownloadZip(Storage $storage): void
+{
+    $input = json_decode(file_get_contents('php://input'), true);
+    $paths = $input['paths'] ?? [];
+
+    if (empty($paths) || !is_array($paths)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Lista de arquivos e obrigatoria']);
+        return;
+    }
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'nuvem_zip_');
+    $zip = new \ZipArchive();
+
+    if ($zip->open($tmpFile, \ZipArchive::OVERWRITE) !== true) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Erro ao criar arquivo ZIP']);
+        return;
+    }
+
+    foreach ($paths as $path) {
+        $content = $storage->getFileContent($path);
+        $zip->addFromString(basename($path), $content);
+    }
+
+    $zip->close();
+
+    // Limpar headers JSON e enviar ZIP
+    header_remove('Content-Type');
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="arquivos.zip"');
+    header('Content-Length: ' . filesize($tmpFile));
+
+    readfile($tmpFile);
+    unlink($tmpFile);
+    exit;
 }
 
 function handleMove(Storage $storage): void
