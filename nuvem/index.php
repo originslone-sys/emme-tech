@@ -264,10 +264,30 @@
         </div>
     </div>
 
+    <div class="upload-progress-container" id="download-progress" style="display:none">
+        <div class="upload-progress-window">
+            <div class="upload-progress-titlebar">
+                <span><i class="fas fa-download"></i> <span id="download-title">Baixando arquivos</span></span>
+                <div class="upload-titlebar-actions">
+                    <span class="upload-toggle" id="download-toggle" title="Minimizar"><i class="fas fa-chevron-down"></i></span>
+                    <span class="btn-close" id="download-cancel" title="Fechar">&#10005;</span>
+                </div>
+            </div>
+            <div class="upload-summary" id="download-summary">
+                <div class="upload-summary-bar-container">
+                    <div class="upload-summary-bar" id="download-summary-bar"></div>
+                </div>
+                <span class="upload-summary-text" id="download-summary-text">0 de 0 arquivos</span>
+            </div>
+            <div class="upload-file-list" id="download-file-list">
+                <!-- Items inserted by JS -->
+            </div>
+        </div>
+    </div>
+
     <!-- Input de arquivo oculto -->
     <input type="file" id="file-input" style="display:none" multiple>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>

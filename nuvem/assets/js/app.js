@@ -660,38 +660,189 @@
             return downloadFile(filePaths[0]);
         }
 
-        // Multiplos arquivos: ZIP no navegador via JSZip
-        toast(`Preparando ${filePaths.length} arquivos para download...`, 'info');
+        // Multiplos arquivos: fila de download com progresso visual
+        const container = $('#download-progress');
+        const fileList = $('#download-file-list');
 
-        try {
-            const zip = new JSZip();
-            let done = 0;
+        // Resetar fila se nao ha downloads ativos
+        if (!downloadQueue.active && downloadQueue.files.every(f => f.status === 'done' || f.status === 'error')) {
+            downloadQueue.files = [];
+            fileList.innerHTML = '';
+        }
 
-            for (const path of filePaths) {
-                const data = await api.download(path);
-                if (data.url) {
-                    const resp = await fetch(data.url);
-                    const blob = await resp.blob();
-                    zip.file(path.split('/').pop(), blob);
-                    done++;
-                    toast(`Baixando ${done}/${filePaths.length}...`, 'info');
-                }
+        for (let i = 0; i < filePaths.length; i++) {
+            const path = filePaths[i];
+            const fileInfo = state.files.find(f => f.path === path);
+            const id = 'dl-' + Date.now() + '-' + i;
+            const entry = {
+                id,
+                path,
+                name: fileInfo ? fileInfo.name : path.split('/').pop(),
+                size: fileInfo ? fileInfo.size : 0,
+                status: 'waiting',
+                progress: 0,
+            };
+            downloadQueue.files.push(entry);
+            renderDownloadItem(entry);
+        }
+
+        container.style.display = 'block';
+        updateDownloadSummary();
+        processDownloadQueue();
+    }
+
+    // === Download Queue ===
+    const downloadQueue = {
+        files: [],
+        active: false,
+        collapsed: false,
+    };
+
+    function renderDownloadItem(entry) {
+        const fileList = $('#download-file-list');
+        const el = document.createElement('div');
+        el.className = 'upload-file-item';
+        el.id = entry.id;
+        el.innerHTML = `
+            <div class="upload-file-icon status-waiting"><i class="fas fa-clock"></i></div>
+            <div class="upload-file-info">
+                <div class="upload-fname">${escapeHtml(entry.name)}</div>
+                <div class="upload-fbar"><div class="upload-fbar-inner"></div></div>
+            </div>
+            <div class="upload-file-size">${formatSize(entry.size)}</div>
+        `;
+        fileList.appendChild(el);
+    }
+
+    function updateDownloadItemStatus(entry) {
+        const el = $(`#${entry.id}`);
+        if (!el) return;
+
+        const iconEl = el.querySelector('.upload-file-icon');
+        const barInner = el.querySelector('.upload-fbar-inner');
+
+        iconEl.className = 'upload-file-icon';
+        el.className = 'upload-file-item';
+
+        switch (entry.status) {
+            case 'waiting':
+                iconEl.classList.add('status-waiting');
+                iconEl.innerHTML = '<i class="fas fa-clock"></i>';
+                break;
+            case 'downloading':
+                iconEl.classList.add('status-uploading');
+                iconEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                break;
+            case 'done':
+                iconEl.classList.add('status-done');
+                iconEl.innerHTML = '<i class="fas fa-check-circle"></i>';
+                el.classList.add('done');
+                break;
+            case 'error':
+                iconEl.classList.add('status-error');
+                iconEl.innerHTML = '<i class="fas fa-times-circle"></i>';
+                el.classList.add('error');
+                break;
+        }
+
+        if (barInner) {
+            barInner.style.width = entry.progress + '%';
+        }
+    }
+
+    function updateDownloadSummary() {
+        const done = downloadQueue.files.filter(f => f.status === 'done').length;
+        const errors = downloadQueue.files.filter(f => f.status === 'error').length;
+        const total = downloadQueue.files.length;
+        const finished = done + errors;
+
+        const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+        const summaryBar = $('#download-summary-bar');
+        const summaryText = $('#download-summary-text');
+        const titleText = $('#download-title');
+
+        if (summaryBar) summaryBar.style.width = pct + '%';
+
+        let text = `${finished} de ${total} arquivo${total > 1 ? 's' : ''}`;
+        if (errors > 0) text += ` (${errors} erro${errors > 1 ? 's' : ''})`;
+        if (summaryText) summaryText.textContent = text;
+
+        if (titleText) {
+            if (finished === total) {
+                titleText.textContent = errors > 0
+                    ? `Download concluido (${errors} erro${errors > 1 ? 's' : ''})`
+                    : 'Download concluido';
+            } else {
+                titleText.textContent = `Baixando ${total - finished} arquivo${(total - finished) > 1 ? 's' : ''}...`;
+            }
+        }
+    }
+
+    async function processDownloadQueue() {
+        const waiting = downloadQueue.files.filter(f => f.status === 'waiting');
+        if (waiting.length === 0) {
+            downloadQueue.active = false;
+            const done = downloadQueue.files.filter(f => f.status === 'done').length;
+            const errors = downloadQueue.files.filter(f => f.status === 'error').length;
+
+            if (done > 0) {
+                toast(`${done} arquivo${done > 1 ? 's' : ''} baixado${done > 1 ? 's' : ''} com sucesso`, 'success');
+            }
+            if (errors > 0) {
+                toast(`${errors} arquivo${errors > 1 ? 's' : ''} com erro no download`, 'error');
             }
 
-            const zipBlob = await zip.generateAsync({ type: 'blob' });
-            const url = URL.createObjectURL(zipBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'arquivos.zip';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-
-            toast(`${done} arquivos baixados como ZIP`, 'success');
-        } catch (err) {
-            toast('Erro ao baixar arquivos: ' + err.message, 'error');
+            setTimeout(() => {
+                if (!downloadQueue.active) {
+                    $('#download-progress').style.display = 'none';
+                }
+            }, 3000);
+            return;
         }
+
+        downloadQueue.active = true;
+        const entry = waiting[0];
+        entry.status = 'downloading';
+        entry.progress = 0;
+        updateDownloadItemStatus(entry);
+        updateDownloadSummary();
+
+        // Progresso simulado
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(progress + Math.random() * 15, 90);
+            entry.progress = progress;
+            updateDownloadItemStatus(entry);
+        }, 200);
+
+        try {
+            const data = await api.download(entry.path);
+            if (data.url) {
+                const a = document.createElement('a');
+                a.href = data.url;
+                a.download = entry.name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+
+            clearInterval(progressInterval);
+            entry.status = 'done';
+            entry.progress = 100;
+        } catch {
+            clearInterval(progressInterval);
+            entry.status = 'error';
+            entry.progress = 0;
+        }
+
+        updateDownloadItemStatus(entry);
+        updateDownloadSummary();
+
+        // Delay entre downloads para nao sobrecarregar o navegador
+        await new Promise(r => setTimeout(r, 800));
+
+        // Proximo da fila
+        processDownloadQueue();
     }
 
     // === Upload Queue (multi-file parallel) ===
@@ -1481,6 +1632,25 @@
                 uploadQueue.collapsed = !uploadQueue.collapsed;
                 list.classList.toggle('collapsed', uploadQueue.collapsed);
                 toggleBtn.innerHTML = uploadQueue.collapsed
+                    ? '<i class="fas fa-chevron-up"></i>'
+                    : '<i class="fas fa-chevron-down"></i>';
+            });
+        }
+
+        // Download cancel / close
+        $('#download-cancel').addEventListener('click', () => {
+            $('#download-progress').style.display = 'none';
+        });
+
+        // Download toggle (collapse/expand file list)
+        const dlToggleBtn = $('#download-toggle');
+        if (dlToggleBtn) {
+            dlToggleBtn.addEventListener('click', () => {
+                const list = $('#download-file-list');
+                if (!list) return;
+                downloadQueue.collapsed = !downloadQueue.collapsed;
+                list.classList.toggle('collapsed', downloadQueue.collapsed);
+                dlToggleBtn.innerHTML = downloadQueue.collapsed
                     ? '<i class="fas fa-chevron-up"></i>'
                     : '<i class="fas fa-chevron-down"></i>';
             });
