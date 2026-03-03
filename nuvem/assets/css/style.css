@@ -576,6 +576,10 @@ html, body {
     transition: transform var(--transition-slow), width var(--transition-slow);
 }
 
+.sidebar-close-btn {
+    display: none;
+}
+
 .sidebar-section {
     margin-bottom: 8px;
 }
