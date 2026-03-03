@@ -630,16 +630,24 @@
     }
 
     // === Acoes de Arquivo ===
+    async function triggerDownload(url, filename) {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
+    }
+
     async function downloadFile(path) {
         try {
             const data = await api.download(path);
             if (data.url) {
-                const a = document.createElement('a');
-                a.href = data.url;
-                a.download = path.split('/').pop();
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
+                await triggerDownload(data.url, path.split('/').pop());
             }
         } catch (err) {
             toast('Erro ao baixar arquivo: ' + err.message, 'error');
@@ -818,12 +826,7 @@
         try {
             const data = await api.download(entry.path);
             if (data.url) {
-                const a = document.createElement('a');
-                a.href = data.url;
-                a.download = entry.name;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
+                await triggerDownload(data.url, entry.name);
             }
 
             clearInterval(progressInterval);
