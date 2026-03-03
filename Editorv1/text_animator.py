@@ -390,11 +390,11 @@ class TextAnimator:
         bar_h = int(h * 0.13)
 
         filts = [
-            # Barra superior
-            f"drawbox=x=0:y=0:w=W:h={bar_h}:color={box_bg}:t=fill:"
+            # iw/ih obrigatório: enable='between(t,...)' força avaliação por
+            # frame, e nesse contexto drawbox não expõe W/H, apenas iw/ih
+            f"drawbox=x=0:y=0:w=iw:h={bar_h}:color={box_bg}:t=fill:"
             f"enable='between(t,{start:.3f},{end:.3f})'",
-            # Barra inferior
-            f"drawbox=x=0:y=H-{bar_h}:w=W:h={bar_h}:color={box_bg}:t=fill:"
+            f"drawbox=x=0:y=ih-{bar_h}:w=iw:h={bar_h}:color={box_bg}:t=fill:"
             f"enable='between(t,{start:.3f},{end:.3f})'",
         ]
         for idx, line in enumerate(lines):
