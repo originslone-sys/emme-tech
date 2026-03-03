@@ -668,15 +668,13 @@
             return downloadFile(filePaths[0]);
         }
 
-        // Multiplos arquivos: fila de download com progresso visual
+        // Multiplos arquivos: buscar um por um com progresso, gerar ZIP no final
         const container = $('#download-progress');
         const fileList = $('#download-file-list');
 
-        // Resetar fila se nao ha downloads ativos
-        if (!downloadQueue.active && downloadQueue.files.every(f => f.status === 'done' || f.status === 'error')) {
-            downloadQueue.files = [];
-            fileList.innerHTML = '';
-        }
+        downloadQueue.files = [];
+        downloadQueue.blobs = {};
+        fileList.innerHTML = '';
 
         for (let i = 0; i < filePaths.length; i++) {
             const path = filePaths[i];
@@ -702,6 +700,7 @@
     // === Download Queue ===
     const downloadQueue = {
         files: [],
+        blobs: {},
         active: false,
         collapsed: false,
     };
@@ -788,17 +787,47 @@
 
     async function processDownloadQueue() {
         const waiting = downloadQueue.files.filter(f => f.status === 'waiting');
+
         if (waiting.length === 0) {
             downloadQueue.active = false;
+
+            // Gerar ZIP com todos os blobs coletados
             const done = downloadQueue.files.filter(f => f.status === 'done').length;
             const errors = downloadQueue.files.filter(f => f.status === 'error').length;
 
             if (done > 0) {
-                toast(`${done} arquivo${done > 1 ? 's' : ''} baixado${done > 1 ? 's' : ''} com sucesso`, 'success');
+                const titleText = $('#download-title');
+                if (titleText) titleText.textContent = 'Gerando ZIP...';
+
+                const zip = new JSZip();
+                for (const [name, blob] of Object.entries(downloadQueue.blobs)) {
+                    zip.file(name, blob);
+                }
+
+                const zipBlob = await zip.generateAsync({ type: 'blob' });
+                const url = URL.createObjectURL(zipBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'arquivos.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                downloadQueue.blobs = {};
+
+                toast(`${done} arquivo${done > 1 ? 's' : ''} baixado${done > 1 ? 's' : ''} como ZIP`, 'success');
             }
             if (errors > 0) {
                 toast(`${errors} arquivo${errors > 1 ? 's' : ''} com erro no download`, 'error');
             }
+
+            if ($('#download-title')) {
+                $('#download-title').textContent = errors > 0
+                    ? `Download concluido (${errors} erro${errors > 1 ? 's' : ''})`
+                    : 'Download concluido';
+            }
+            updateDownloadSummary();
 
             setTimeout(() => {
                 if (!downloadQueue.active) {
@@ -826,7 +855,9 @@
         try {
             const data = await api.download(entry.path);
             if (data.url) {
-                await triggerDownload(data.url, entry.name);
+                const resp = await fetch(data.url);
+                const blob = await resp.blob();
+                downloadQueue.blobs[entry.name] = blob;
             }
 
             clearInterval(progressInterval);
@@ -840,9 +871,6 @@
 
         updateDownloadItemStatus(entry);
         updateDownloadSummary();
-
-        // Delay entre downloads para nao sobrecarregar o navegador
-        await new Promise(r => setTimeout(r, 800));
 
         // Proximo da fila
         processDownloadQueue();
