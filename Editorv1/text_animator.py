@@ -443,7 +443,7 @@ class TextAnimator:
                             display_duration: float = 7.0,
                             fade_s: float = 1.0) -> str:
         """
-        Exibe o nome da faixa no canto inferior esquerdo por `display_duration` segundos.
+        Exibe o nome da faixa no canto superior esquerdo por `display_duration` segundos.
         """
         fs = self._small_font(video_h)
         fa = _font_arg(self.font_path)
@@ -464,7 +464,7 @@ class TextAnimator:
             f"drawtext={fa}"
             f"text='♪  {_esc(name)}':"
             f"fontsize={fs}:fontcolor={color}:"
-            f"x=20:y=H-{fs+20}:"
+            f"x=20:y=20:"
             f"shadowx=1:shadowy=1:shadowcolor={shadow}:"
             f"alpha='{alpha}':"
             f"enable='between(t,{start:.1f},{end:.1f})'"

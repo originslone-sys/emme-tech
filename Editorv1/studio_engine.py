@@ -23,7 +23,6 @@ Requisitos: ffmpeg + ffprobe no PATH, Python 3.8+
 """
 
 import argparse
-import concurrent.futures
 import hashlib
 import json
 import os
@@ -331,7 +330,7 @@ class StudioEngine:
         # --no-ai desativa IA completamente (sem frases e sem metadados)
         ai_enabled = not getattr(args, "no_ai", False)
         self.phrases_enabled   = ai_enabled and _ph.get("enabled", True)
-        self.phrases_count     = int(getattr(args, "phrases_count", None) or _ph.get("count_per_video", 6))
+        self.phrases_count     = int(getattr(args, "phrases_count", None) or _ph.get("count_per_video", 1))
         self.phrase_display    = float(_ph.get("display_duration_s", 9.0))
         self.phrase_fade       = float(_ph.get("fade_in_s", 0.9))
         self.phrase_categories = _ph.get("categories", ["reflection", "motivation", "mindfulness", "positivity", "stoicism"])
@@ -340,12 +339,13 @@ class StudioEngine:
         _tx = self.cfg_json.get("text", {})
         self.text_animator = TextAnimator(
             font_path=_tx.get("font_path", ""),
-            font_size=int(_tx.get("font_size_base", 54)),
+            font_size=int(_tx.get("font_size_base", 34)),  # menor = mais discreto
             palette=self.palette,
             max_chars=int(_tx.get("line_max_chars", 42)),
         )
+        # cinematic removido — muito em destaque; estilo discreto usa apenas animações sutis
         self.anim_styles = _tx.get("animation_styles",
-                                   ["fade_center", "slide_left", "slide_bottom", "glow_pulse", "cinematic"])
+                                   ["fade_center", "slide_left", "slide_bottom", "glow_pulse"])
 
         # Visualizer / progress / track
         _vis = self.cfg_json.get("visualizer", {})
@@ -401,15 +401,46 @@ class StudioEngine:
     # ------------------------------------------------------------------ #
 
     def list_videos(self) -> List[Path]:
-        if not self.input_dir.exists():
+        # Route to subfolder: vertical/ para shorts, horizontal/ para outros modos
+        if self.mode == "shorts":
+            src_dir = self.input_dir / "vertical"
+        else:
+            src_dir = self.input_dir / "horizontal"
+
+        # Fallback para raiz se a subpasta não existir
+        if not src_dir.exists():
+            src_dir = self.input_dir
+
+        if not src_dir.exists():
             return []
+
         vids: List[Path] = []
         for ext in VIDEO_EXTS:
-            vids.extend(self.input_dir.glob(f"*{ext}"))
-            vids.extend(self.input_dir.glob(f"*{ext.upper()}"))
+            vids.extend(src_dir.glob(f"*{ext}"))
+            vids.extend(src_dir.glob(f"*{ext.upper()}"))
         vids = sorted({p for p in vids if p.is_file()},
                       key=lambda p: p.stat().st_mtime, reverse=True)
         return vids
+
+    def pick_single_video(self, videos: List[Path], target_total_s: int) -> Optional[Dict]:
+        """Seleciona um único vídeo aleatório e cria um loop de longa duração."""
+        if not videos:
+            return None
+        video = random.choice(videos)
+        inf = self.get_video_info(video)
+        if float(inf["duration"]) <= 0:
+            return None
+        c = dict(inf)
+        c.update({
+            "start": 0.0,
+            "end": float(target_total_s),
+            "seg_len": float(target_total_s),
+            "loop": True,
+        })
+        orig_min = int(float(inf["duration"])) // 60
+        print(f"\n  Vídeo selecionado: {video.name} "
+              f"({orig_min}min original → loop por {target_total_s // 60}min)")
+        return c
 
     def get_video_info(self, path: Path) -> Dict:
         info = {"path": str(path), "name": path.name,
@@ -817,6 +848,32 @@ class StudioEngine:
         return ok
 
     # ------------------------------------------------------------------ #
+    # Playlist de áudio                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _build_audio_playlist(self, tracks: List[Path], min_duration: float) -> Path:
+        """
+        Cria um arquivo de playlist no formato concat demuxer do FFmpeg.
+        As faixas tocam em sequência; se a duração total for insuficiente,
+        a última faixa é repetida automaticamente.
+        """
+        playlist_file = self.logs_dir / "audio_playlist.txt"
+        total = sum(_get_duration(t) for t in tracks)
+        with playlist_file.open("w", encoding="utf-8") as f:
+            for t in tracks:
+                path_str = str(t.resolve()).replace("\\", "/").replace("'", "\\'")
+                f.write(f"file '{path_str}'\n")
+            # Loop na última faixa se duração total for insuficiente
+            if total < min_duration and tracks:
+                last = tracks[-1]
+                last_dur = max(0.1, _get_duration(last))
+                extra = int((min_duration - total) / last_dur) + 2
+                path_str = str(last.resolve()).replace("\\", "/").replace("'", "\\'")
+                for _ in range(extra):
+                    f.write(f"file '{path_str}'\n")
+        return playlist_file
+
+    # ------------------------------------------------------------------ #
     # Renderização final: áudio + texto + waveform + progress bar         #
     # ------------------------------------------------------------------ #
 
@@ -842,14 +899,18 @@ class StudioEngine:
             print("  ✗  Duração inválida para render final.")
             return False
 
-        # Seleciona faixa(s) de música
-        music_file = _pick_random_file(self.audio_music_dir, AUDIO_EXTS)
-        if not music_file:
+        # Seleciona faixas em playlist (toca em ordem; repete última se precisar)
+        tracks = _pick_audio_tracks(self.audio_music_dir, dur)
+        if not tracks:
             print("  ⚠  Nenhuma música encontrada. Gerando sem áudio.")
             shutil.copy2(video_in, video_out)
             return True
 
-        track_name = track_name or music_file.name
+        track_name = track_name or tracks[0].name
+        playlist_file = self._build_audio_playlist(tracks, dur)
+        names = [t.stem.replace("_", " ").replace("-", " ") for t in tracks]
+        print(f"  Playlist: {len(tracks)} faixa(s) → {', '.join(names[:3])}"
+              f"{'...' if len(names) > 3 else ''}")
 
         # Altura do visualizador
         wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
@@ -915,7 +976,7 @@ class StudioEngine:
         cmd = [
             "ffmpeg", "-y", "-hide_banner",
             "-i", str(video_in),
-            "-stream_loop", "-1", "-i", str(music_file),
+            "-f", "concat", "-safe", "0", "-i", str(playlist_file),
             "-filter_complex", fc,
             "-map", v_out,
             "-map", a_out,
@@ -944,7 +1005,7 @@ class StudioEngine:
             print(f"     CMD: {' '.join(cmd)}")
             return False
 
-        print(f"  ✓  Render final: musica={music_file.name} | frases={len(phrases)}")
+        print(f"  ✓  Render final: {len(tracks)} faixa(s) | frases={len(phrases)}")
         return True
 
     # ------------------------------------------------------------------ #
@@ -1012,7 +1073,8 @@ class StudioEngine:
     def run_one(self) -> Optional[Path]:
         videos = self.list_videos()
         if not videos:
-            print("  ✗  Nenhum vídeo em input_videos/.")
+            subfolder = "vertical" if self.mode == "shorts" else "horizontal"
+            print(f"  ✗  Nenhum vídeo em input_videos/{subfolder}/ (ou input_videos/).")
             return None
 
         target_total = random.randint(self.mode_cfg.dur_min, self.mode_cfg.dur_max)
@@ -1032,83 +1094,42 @@ class StudioEngine:
         print(f"\n  Studio Engine — modo={self.mode} | {final_w}x{final_h} @ {ENGINE_FPS}fps")
         print(f"  Duração alvo: {target_total//60}min | efeito: {self.mode_cfg.effect_intensity:.2f}")
 
-        # --- Gerar frases via DeepSeek ---
+        # --- Gerar frase via DeepSeek (1 por vídeo) ---
         phrases: List[str] = []
         if self.phrases_enabled:
-            print("\n  Gerando frases (DeepSeek)...")
+            print("\n  Gerando frase (DeepSeek)...")
             phrases = self.deepseek.generate_phrases(
                 categories=self.phrase_categories,
                 count=self.phrases_count,
             )
-            print(f"  {len(phrases)} frases prontas {'(API)' if self.deepseek.available else '(banco local)'}")
+            print(f"  {len(phrases)} frase(s) pronta(s) {'(API)' if self.deepseek.available else '(banco local)'}")
             for i, p in enumerate(phrases, 1):
                 print(f"    {i}. {p}")
 
-        # --- Selecionar clips ---
-        clips = self.pick_clips(videos, target_total)
-        if not clips:
-            print("  ✗  Não foi possível selecionar clips.")
+        # --- Selecionar único vídeo para loop ---
+        clip = self.pick_single_video(videos, target_total)
+        if not clip:
+            print("  ✗  Não foi possível selecionar vídeo.")
             return None
 
         temp_dir = self.logs_dir / f"temp_{int(time.time())}"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        processed: List[Tuple[int, Path]] = []
-
         try:
-            print(f"\n  Processando {len(clips)} clips...")
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
-                futs = {
-                    ex.submit(self.process_clip, clip, i, temp_dir, final_w, final_h): i
-                    for i, clip in enumerate(clips)
-                }
-                try:
-                    for fut in concurrent.futures.as_completed(futs):
-                        if self.stop_event.is_set():
-                            break
-                        i = futs[fut]
-                        try:
-                            p = fut.result()
-                            if p:
-                                processed.append((i, p))
-                        except Exception as e:
-                            print(f"  ✗  Clip {i}: {e}")
-                except KeyboardInterrupt:
-                    self.stop_event.set()
-                    print("\n  Interrompido (Ctrl+C). Finalizando processos FFmpeg...")
-                    self.proc_reg.kill_all()
-                    try:
-                        ex.shutdown(wait=False, cancel_futures=True)
-                    except Exception:
-                        pass
-                    raise
-
-            processed.sort(key=lambda x: x[0])
-            clip_paths = [p for _, p in processed]
-
-            if len(clip_paths) < 1:
-                print("  ✗  Nenhum clip processado.")
-                return None
-            if len(clip_paths) < 2 and self.mode != "shorts":
-                print("  ✗  Poucos clips para concatenar.")
+            print("\n  Processando vídeo (loop)...")
+            mute_out = self.process_clip(clip, 0, temp_dir, final_w, final_h)
+            if not mute_out:
+                print("  ✗  Falha ao processar vídeo.")
                 return None
 
             ts   = int(time.time())
             seed = hashlib.md5(f"{ts}{random.random()}".encode()).hexdigest()[:8]
-            out_mute  = self.output_dir / f"{self.mode}_mute_{ts}_{seed}.mp4"
             out_final = self.output_dir / f"{self.mode}_{ts}_{seed}.mp4"
 
-            # --- Concat ---
-            print("\n  Concatenando clips...")
-            if not self.concat_video_only(clip_paths, out_mute, final_w, final_h):
-                print("  ✗  Concat falhou.")
-                return None
-
-            # --- Render final (áudio + texto + visualizador) ---
+            # --- Render final (áudio playlist + texto + visualizador) ---
             print("\n  Render final (áudio + animações + waveform)...")
             ok = self.render_final(
-                video_in=out_mute,
+                video_in=mute_out,
                 video_out=out_final,
                 phrases=phrases,
                 track_name="",
@@ -1116,7 +1137,7 @@ class StudioEngine:
                 video_h=final_h,
             )
             try:
-                out_mute.unlink(missing_ok=True)
+                mute_out.unlink(missing_ok=True)
             except Exception:
                 pass
             if not ok:
@@ -1137,18 +1158,6 @@ class StudioEngine:
                     style=self.mode, phrases=phrases, duration_min=dur_min
                 )
                 self._save_metadata(out_final, meta)
-
-            # --- Move fontes para processed ---
-            used_sources = {Path(c["path"]) for c in clips}
-            for src in used_sources:
-                if src.exists():
-                    dest = self.processed_dir / src.name
-                    if dest.exists():
-                        dest = self.processed_dir / f"{src.stem}_{ts}{src.suffix}"
-                    try:
-                        shutil.move(str(src), str(dest))
-                    except Exception:
-                        pass
 
             size_mb = out_final.stat().st_size / (1024 * 1024)
             print(f"\n  Concluido: {out_final.name} ({size_mb:.1f} MB)")
@@ -1247,7 +1256,7 @@ Exemplos:
     p.add_argument("--no-ai",          action="store_true",
                    help="Desativar IA completamente (sem frases animadas, sem metadados YouTube). "
                         "A chave API é configurada em config.json.")
-    p.add_argument("--phrases-count",  type=int, default=6, help="Número de frases por vídeo")
+    p.add_argument("--phrases-count",  type=int, default=1, help="Número de frases por vídeo (padrão: 1)")
     p.add_argument("--no-visualizer",  action="store_true", help="Desativar waveform visualizer")
 
     # Saída
