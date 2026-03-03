@@ -288,6 +288,7 @@
     <!-- Input de arquivo oculto -->
     <input type="file" id="file-input" style="display:none" multiple>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>
