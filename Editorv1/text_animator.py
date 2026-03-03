@@ -418,8 +418,12 @@ class TextAnimator:
                            height_px: int = 3, opacity: float = 0.55) -> str:
         """
         Barra de progresso no rodapé que cresce com o tempo.
-        Usa drawbox com w=W*t/dur — zero vírgulas nas expressões, sem
-        problemas de escaping dentro de filter_complex.
+        Usa drawbox com w=iw*t/dur — sem vírgulas nas expressões.
+
+        IMPORTANTE: expressões dinâmicas (com 't' timestamp) em drawbox só
+        reconhecem iw/ih, não W/H. W/H funcionam apenas na avaliação estática
+        (init), que é o caso do cinematic drawbox. Para a progress bar, que
+        precisa de avaliação por frame, é obrigatório usar iw/ih.
         """
         bar_color = self.palette.get("bar", "0xF0B27A@0.60")
         hex_col = bar_color.split("@")[0].replace("0x", "").replace("#", "")
@@ -427,7 +431,7 @@ class TextAnimator:
             hex_col = "F0B27A"
         dur = max(duration, 1.0)
         return (
-            f"drawbox=x=0:y=H-{height_px}:w=W*t/{dur:.3f}:h={height_px}"
+            f"drawbox=x=0:y=ih-{height_px}:w=iw*t/{dur:.3f}:h={height_px}"
             f":color=0x{hex_col}@{opacity:.2f}:t=fill"
         )
 
