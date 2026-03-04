@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from deepseek_client import DeepSeekClient
-from text_animator import TextAnimator
 from visual_styles import get_palette, get_style
 
 
@@ -316,41 +315,19 @@ class StudioEngine:
         # IA / texto — chave sempre lida do config.json (ou variável de ambiente)
         _ds = self.cfg_json.get("deepseek", {})
         api_key = _ds.get("api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
-        # Chave placeholder não conta como válida
         if api_key in ("", "YOUR_DEEPSEEK_KEY_HERE"):
             api_key = ""
-        self.deepseek = DeepSeekClient(
+        self.deepseek    = DeepSeekClient(
             api_key=api_key,
             model=_ds.get("model", "deepseek-chat"),
             base_url=_ds.get("base_url", "https://api.deepseek.com/v1"),
             timeout_s=int(_ds.get("timeout_s", 30)),
         )
+        self._ai_enabled = not getattr(args, "no_ai", False)
 
-        _ph = self.cfg_json.get("phrases", {})
-        # --no-ai desativa IA completamente (sem frases e sem metadados)
-        ai_enabled = not getattr(args, "no_ai", False)
-        self.phrases_enabled   = ai_enabled and _ph.get("enabled", True)
-        self.phrases_count     = int(getattr(args, "phrases_count", None) or _ph.get("count_per_video", 1))
-        self.phrase_display    = float(_ph.get("display_duration_s", 9.0))
-        self.phrase_fade       = float(_ph.get("fade_in_s", 0.9))
-        self.phrase_categories = _ph.get("categories", ["reflection", "motivation", "mindfulness", "positivity", "stoicism"])
-        self._ai_enabled       = ai_enabled
-
-        _tx = self.cfg_json.get("text", {})
-        self.text_animator = TextAnimator(
-            font_path=_tx.get("font_path", ""),
-            font_size=int(_tx.get("font_size_base", 34)),  # menor = mais discreto
-            palette=self.palette,
-            max_chars=int(_tx.get("line_max_chars", 42)),
-        )
-        # cinematic removido — muito em destaque; estilo discreto usa apenas animações sutis
-        self.anim_styles = _tx.get("animation_styles",
-                                   ["fade_center", "slide_left", "slide_bottom", "glow_pulse"])
-
-        # Visualizer / progress / track
+        # Visualizer
         _vis = self.cfg_json.get("visualizer", {})
         self.visualizer_enabled = _vis.get("enabled", True)
-        # vis_height_pct: usa o valor do estilo visual (por modo) ou do config, fallback 0.04
         self.vis_height_pct = float(
             self.visual.get("waves_height_pct", _vis.get("height_pct", 0.04))
         )
@@ -358,13 +335,10 @@ class StudioEngine:
         self.vis_scale  = self.visual.get("waves_scale",  _vis.get("scale", "lin"))
         self.vis_colors = self.visual.get("waves_colors", _vis.get("colors", "0xF5CBA7|0xF0B27A"))
 
+        # Progress bar
         _pb = self.cfg_json.get("progress_bar", {})
         self.progress_enabled = _pb.get("enabled", True)
         self.progress_height  = int(_pb.get("height_px", 3))
-
-        _td = self.cfg_json.get("track_display", {})
-        self.track_display_enabled  = _td.get("enabled", True)
-        self.track_display_duration = float(_td.get("duration_s", 7.0))
 
         # Thumbs
         self.make_thumbs = bool(args.thumbnails)
@@ -618,21 +592,48 @@ class StudioEngine:
         return filters
 
     # ------------------------------------------------------------------ #
-    # Filtros de qualidade adicionais (denoise, stabilize, upscale)       #
+    # Remasterização: denoise, escala e nitidez                          #
     # ------------------------------------------------------------------ #
 
-    def _quality_filters(self, w: int, h: int, tw: int, th: int) -> List[str]:
+    def _remaster_filters(self, src_w: int, src_h: int, tw: int, th: int) -> List[str]:
+        """
+        Pipeline de remasterização aplicado a cada clip:
+          1. Estabilização (opcional)
+          2. Redução de ruído — sempre ativa (suave ou forte via --denoise)
+          3. Escala para resolução alvo com lanczos (se necessário)
+          4. Nitidez pós-escala (unsharp) — sempre ativa
+          5. Melhoria de cor adicional (opcional via --enhance-color)
+        """
         filters: List[str] = []
+
+        # 1. Estabilização
         if self.enable_stabilize:
             filters.append("deshake=rx=48:ry=48")
+
+        # 2. Redução de ruído: leve sempre, forte com --denoise
         if self.enable_denoise:
-            filters.append("hqdn3d=3:2:4:3")
+            filters.append("hqdn3d=4:3:6:4")
+        else:
+            filters.append("hqdn3d=1.5:1.0:3:2")
+
+        # 3. Escala para resolução alvo
+        needs_scale = tw > 0 and th > 0 and (tw, th) != (src_w, src_h)
+        if needs_scale:
+            filters.append(
+                f"scale={tw}:{th}:force_original_aspect_ratio=increase:flags=lanczos,"
+                f"crop={tw}:{th}"
+            )
+
+        # 4. Nitidez — compensação de blur de compressão/escala
+        sharpen = self.visual.get("sharpen", 0.5)
+        luma_a  = max(0.1, min(1.5, sharpen))
+        chroma_a = luma_a * 0.35
+        filters.append(f"unsharp=lx=5:ly=5:la={luma_a:.2f}:cx=3:cy=3:ca={chroma_a:.2f}")
+
+        # 5. Boost de cor extra (opcional)
         if self.enable_color:
-            filters.append("eq=brightness=0.01:contrast=1.03:saturation=1.05")
-        if (tw, th) != (w, h) and (tw > 0 and th > 0):
-            algo = {"low": "bilinear", "medium": "spline"}.get(self.upscale_quality, "lanczos")
-            filters.append(f"scale={tw}:{th}:flags={algo}")
-            filters.append("unsharp=3:3:0.6:3:3:0.15")
+            filters.append("eq=brightness=0.01:contrast=1.04:saturation=1.08")
+
         return filters
 
     # ------------------------------------------------------------------ #
@@ -682,8 +683,8 @@ class StudioEngine:
             speed = random.uniform(0.996, 1.004)
             filters.append(f"setpts=PTS/{speed:.4f}")
 
-        # --- Filtros de qualidade ---
-        filters.extend(self._quality_filters(
+        # --- Remasterização: denoise, escala, nitidez ---
+        filters.extend(self._remaster_filters(
             clip.get("width", final_w), clip.get("height", final_h), final_w, final_h
         ))
 
@@ -885,18 +886,15 @@ class StudioEngine:
         self,
         video_in: Path,
         video_out: Path,
-        phrases: List[str],
-        track_name: str,
         video_w: int,
         video_h: int,
     ) -> bool:
         """
         Combina em uma única passagem FFmpeg:
-          - Mix de áudio (música, fade in/out, loop se necessário)
-          - Animações de texto (frases DeepSeek)
-          - Visualizador de waveform (beat-reactive)
-          - Barra de progresso
-          - Track name display
+          - Playlist de áudio (fade in/out, normalização)
+          - Visualizador de waveform (linhas coloridas transparentes)
+          - Barra de progresso no rodapé
+        Sem texto — foco na qualidade visual remasterizada.
         """
         dur = _get_duration(video_in)
         if dur <= 0.5:
@@ -910,35 +908,25 @@ class StudioEngine:
             shutil.copy2(video_in, video_out)
             return True
 
-        track_name = track_name or tracks[0].name
         playlist_file = self._build_audio_playlist(tracks, dur)
         names = [t.stem.replace("_", " ").replace("-", " ") for t in tracks]
         print(f"  Playlist: {len(tracks)} faixa(s) → {', '.join(names[:3])}"
               f"{'...' if len(names) > 3 else ''}")
 
-        # Altura do visualizador (pequena = mais minimalista)
+        # Altura do visualizador
         wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
 
-        # Filtros de texto
-        text_filters = self.text_animator.build_full_text_chain(
-            phrases=phrases,
-            duration=dur,
-            video_w=video_w,
-            video_h=video_h,
-            track_name=track_name if self.track_display_enabled else "",
-            display_duration=self.phrase_display,
-            fade_in=self.phrase_fade,
-            fade_out=self.phrase_fade,
-            styles=self.anim_styles,
-            progress_bar=self.progress_enabled,
-            progress_height=self.progress_height,
+        # Barra de progresso: drawbox dinâmico no rodapé
+        h_pb = self.progress_height
+        bar_color = "0xF0B27A"
+        progress_bar_f = (
+            f"drawbox=x=0:y=ih-{h_pb}:w=iw*t/{dur:.3f}:h={h_pb}"
+            f":color={bar_color}@0.55:t=fill"
         )
 
-        # Constrói filter_complex
+        # Áudio: trim + fade + volume + resample + limiter
         fade_out_start = max(0.0, dur - self.fade_out)
         vol = self.vol_music
-
-        # Processamento de áudio: trim + fade + volume + resample + limiter
         audio_chain = (
             f"[1:a]atrim=0:{dur:.3f},asetpts=N/SR/TB,"
             f"volume={vol:.3f},"
@@ -949,23 +937,19 @@ class StudioEngine:
             f"alimiter=limit=0.95"
         )
 
-        # Cadeia de vídeo: text overlays
-        if text_filters:
-            video_chain = "[0:v]" + ",".join(text_filters)
-        else:
-            video_chain = "[0:v]null"
+        # Cadeia de vídeo: apenas barra de progresso (sem texto)
+        video_chain = f"[0:v]{progress_bar_f}" if self.progress_enabled else "[0:v]null"
 
         if self.visualizer_enabled:
-            # showwaves: linhas coloridas sem fundo opaco.
-            # colorkey remove o fundo preto → linhas ondulantes sobre o vídeo.
+            # showwaves: colorkey remove o fundo preto → linhas sobre o vídeo
             fc_parts = [
                 audio_chain + ",asplit=2[aout][awaves]",
                 f"[awaves]showwaves=s={video_w}x{wh}:mode={self.vis_mode}"
                 f":rate={ENGINE_FPS}:colors={self.vis_colors}:scale={self.vis_scale},"
                 "format=argb,"
                 "colorkey=0x000000:similarity=0.15:blend=0.1[waves]",
-                video_chain + "[vtxt]",
-                f"[vtxt][waves]overlay=x=0:y=H-{wh}:format=auto:shortest=1[vfinal]",
+                video_chain + "[vbar]",
+                f"[vbar][waves]overlay=x=0:y=H-{wh}:format=auto:shortest=1[vfinal]",
             ]
             v_out = "[vfinal]"
             a_out = "[aout]"
@@ -1012,15 +996,14 @@ class StudioEngine:
             print(f"     CMD: {' '.join(cmd)}")
             return False
 
-        print(f"  ✓  Render final: {len(tracks)} faixa(s) | frases={len(phrases)}")
+        print(f"  ✓  Render final: {len(tracks)} faixa(s)")
         return True
 
     # ------------------------------------------------------------------ #
     # Thumbnail                                                           #
     # ------------------------------------------------------------------ #
 
-    def generate_thumbnail(self, video_path: Path, thumb_out: Path,
-                           best_phrase: str = "") -> bool:
+    def generate_thumbnail(self, video_path: Path, thumb_out: Path) -> bool:
         dur = _get_duration(video_path)
         if dur <= 1.0:
             return False
@@ -1101,18 +1084,6 @@ class StudioEngine:
         print(f"\n  Studio Engine — modo={self.mode} | {final_w}x{final_h} @ {ENGINE_FPS}fps")
         print(f"  Duração alvo: {target_total//60}min | efeito: {self.mode_cfg.effect_intensity:.2f}")
 
-        # --- Gerar frase via DeepSeek (1 por vídeo) ---
-        phrases: List[str] = []
-        if self.phrases_enabled:
-            print("\n  Gerando frase (DeepSeek)...")
-            phrases = self.deepseek.generate_phrases(
-                categories=self.phrase_categories,
-                count=self.phrases_count,
-            )
-            print(f"  {len(phrases)} frase(s) pronta(s) {'(API)' if self.deepseek.available else '(banco local)'}")
-            for i, p in enumerate(phrases, 1):
-                print(f"    {i}. {p}")
-
         # --- Selecionar único vídeo para loop ---
         clip = self.pick_single_video(videos, target_total)
         if not clip:
@@ -1138,8 +1109,6 @@ class StudioEngine:
             ok = self.render_final(
                 video_in=mute_out,
                 video_out=out_final,
-                phrases=phrases,
-                track_name="",
                 video_w=final_w,
                 video_h=final_h,
             )
@@ -1153,7 +1122,7 @@ class StudioEngine:
             # --- Thumbnail ---
             if self.make_thumbs:
                 thumb = self.thumbs_dir / f"{out_final.stem}.jpg"
-                if self.generate_thumbnail(out_final, thumb, phrases[0] if phrases else ""):
+                if self.generate_thumbnail(out_final, thumb):
                     print(f"  ✓  Thumbnail: {thumb.name}")
                 else:
                     print("  ⚠  Não foi possível gerar thumbnail.")
@@ -1162,7 +1131,7 @@ class StudioEngine:
             if self._ai_enabled:
                 dur_min = int(_get_duration(out_final) // 60)
                 meta = self.deepseek.generate_youtube_metadata(
-                    style=self.mode, phrases=phrases, duration_min=dur_min
+                    style=self.mode, phrases=[], duration_min=dur_min
                 )
                 self._save_metadata(out_final, meta)
 
@@ -1259,12 +1228,11 @@ Exemplos:
     p.add_argument("--fade-in",     type=float, default=None)
     p.add_argument("--fade-out",    type=float, default=None)
 
-    # IA / frases
-    p.add_argument("--no-ai",          action="store_true",
-                   help="Desativar IA completamente (sem frases animadas, sem metadados YouTube). "
+    # IA / metadados
+    p.add_argument("--no-ai",         action="store_true",
+                   help="Desativar geração de metadados YouTube pela IA. "
                         "A chave API é configurada em config.json.")
-    p.add_argument("--phrases-count",  type=int, default=1, help="Número de frases por vídeo (padrão: 1)")
-    p.add_argument("--no-visualizer",  action="store_true", help="Desativar waveform visualizer")
+    p.add_argument("--no-visualizer", action="store_true", help="Desativar waveform visualizer")
 
     # Saída
     p.add_argument("--thumbnails", action="store_true")
