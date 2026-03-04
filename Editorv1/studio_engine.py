@@ -1166,7 +1166,7 @@ class StudioEngine:
                 f"[aw3]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
                 f":colors={c3}:scale=sqrt,format=rgba,{ck_core}[wg_core]",
                 # Dark background strip + layer composition
-                f"[vbase]drawbox=x=0:y=H-{wh}:w=iw:h={wh}"
+                f"[vbase]drawbox=x=0:y=ih-{wh}:w=iw:h={wh}"
                 f":color=0x000000@0.88:t=fill[vdark]",
                 f"[vdark][wg_outer]overlay=x=0:y=H-{wh}:format=auto[v1]",
                 f"[v1][wg_inner]overlay=x=0:y=H-{wh}:format=auto[v2]",
