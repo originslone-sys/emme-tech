@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import random
+import re as _re
 import shutil
 import signal
 import subprocess
@@ -77,6 +78,55 @@ def _get_duration(path: Path) -> float:
         return float(data["format"]["duration"])
     except Exception:
         return 0.0
+
+
+_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/opentype/cantarell/Cantarell-Bold.otf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+
+
+def _find_font(override: str = "") -> str:
+    if override and Path(override).exists():
+        return override
+    for f in _FONT_CANDIDATES:
+        if Path(f).exists():
+            return f
+    return ""
+
+
+def _track_drawtext(track_name: str, dur: float, font_path: str = "") -> str:
+    """Gera filtro drawtext para exibir nome da faixa no canto superior esquerdo."""
+    if not track_name or dur < 4.0:
+        return ""
+    name = Path(track_name).stem[:45].replace("_", " ").replace("-", " ").strip()
+    # Escape para drawtext
+    for ch, esc in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
+                    (",", "\\,"), (";", "\\;"), ("%", "%%")]:
+        name = name.replace(ch, esc)
+    fade_s, start = 1.0, 1.5
+    end = min(9.5, dur - 1.5)
+    alpha = (
+        f"if(lt(t-{start:.1f},{fade_s}),(t-{start:.1f})/{fade_s}"
+        f",if(lt({end:.1f}-t,{fade_s}),({end:.1f}-t)/{fade_s},1))"
+    )
+    fp = ""
+    if font_path and Path(font_path).exists():
+        safe = font_path.replace("\\", "/").replace("'", "\\'").replace(":", "\\:")
+        fp = f"fontfile='{safe}':"
+    return (
+        f"drawtext={fp}"
+        f"text='♪  {name}':"
+        f"fontsize=22:fontcolor=0xFFF8E7:"
+        f"x=20:y=20:"
+        f"shadowx=1:shadowy=1:shadowcolor=0x1A0800@0.85:"
+        f"alpha='{alpha}':"
+        f"enable='between(t,{start:.1f},{end:.1f})'"
+    )
 
 
 def _pick_random_file(folder: Optional[Path], exts: set) -> Optional[Path]:
@@ -216,6 +266,104 @@ def estimate_timeout(clip_dur_s: float, stabilize: bool, denoise: bool,
     return int(min(t, 4 * 3600))
 
 
+_FFMPEG_TIME_RE = _re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
+_FFMPEG_SPEED_RE = _re.compile(r"speed=\s*([\d.]+)x")
+
+
+def run_cmd_progress(
+    cmd: List[str], log_file: Path, timeout_s: int,
+    total_dur: float = 0.0, label: str = "",
+    proc_reg: Optional["ProcRegistry"] = None,
+) -> "CmdResult":
+    """
+    Executa um comando FFmpeg exibindo progresso em tempo real no terminal.
+    Lê o stderr linha a linha em uma thread separada e imprime barra de progresso
+    com percentual, tempo processado/total e ETA.
+    """
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    timed_out = False
+    kw: dict = dict(
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
+    )
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kw["start_new_session"] = True
+
+    p = subprocess.Popen(cmd, **kw)
+    if proc_reg:
+        proc_reg.add(p)
+
+    stderr_lines: List[str] = []
+    last_print_t = [0.0]
+
+    def _read_stderr() -> None:
+        for line in p.stderr:
+            stderr_lines.append(line)
+            if total_dur <= 0:
+                continue
+            m_time = _FFMPEG_TIME_RE.search(line)
+            if not m_time:
+                continue
+            h, mi, s, cs = (int(m_time.group(i)) for i in range(1, 5))
+            cur = h * 3600 + mi * 60 + s + cs / 100.0
+            pct = min(100.0, cur / total_dur * 100.0)
+            elapsed = time.time() - t0
+            eta_s = int((elapsed / max(cur, 0.01)) * max(0.0, total_dur - cur))
+
+            now = time.time()
+            if now - last_print_t[0] < 4.0:
+                continue
+            last_print_t[0] = now
+
+            filled = int(pct / 5)
+            bar = "█" * filled + "░" * (20 - filled)
+            cur_str = f"{int(cur) // 60:02d}:{int(cur) % 60:02d}"
+            tot_str = f"{int(total_dur) // 60:02d}:{int(total_dur) % 60:02d}"
+            eta_str = f"{eta_s // 60:02d}:{eta_s % 60:02d}"
+            pfx = f"    {label} " if label else "    "
+            print(
+                f"{pfx}[{bar}] {pct:5.1f}%  {cur_str}/{tot_str}  ETA {eta_str}   ",
+                end="\r", flush=True,
+            )
+
+    t_stderr = threading.Thread(target=_read_stderr, daemon=True)
+    t_stderr.start()
+
+    try:
+        try:
+            out = p.stdout.read()
+            p.wait(timeout=timeout_s)
+            rc = int(p.returncode or 0)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            kill_process_tree(p)
+            out = ""
+            rc = 124
+    finally:
+        t_stderr.join(timeout=5)
+        if proc_reg:
+            proc_reg.discard(p)
+
+    if total_dur > 0:
+        print()  # nova linha após a barra de progresso
+
+    elapsed = time.time() - t0
+    err = "".join(stderr_lines)
+    try:
+        with log_file.open("w", encoding="utf-8", errors="replace") as lf:
+            lf.write("CMD:\n" + " ".join(cmd) + "\n\n")
+            lf.write(f"TIMEOUT_S={timeout_s}\nELAPSED_S={elapsed:.2f}\n")
+            lf.write(f"RC={rc}\nTIMED_OUT={timed_out}\n")
+            lf.write("\n--- STDERR ---\n" + err)
+            lf.write("\n--- STDOUT ---\n" + (out or ""))
+    except Exception:
+        pass
+    return CmdResult(rc=rc, elapsed=elapsed, stdout=out or "", stderr=err, timed_out=timed_out)
+
+
 # ---------------------------------------------------------------------------
 # Config de modo
 # ---------------------------------------------------------------------------
@@ -331,14 +479,20 @@ class StudioEngine:
         self.vis_height_pct = float(
             self.visual.get("waves_height_pct", _vis.get("height_pct", 0.04))
         )
-        self.vis_mode   = self.visual.get("waves_mode",   _vis.get("mode",  "cline"))
-        self.vis_scale  = self.visual.get("waves_scale",  _vis.get("scale", "lin"))
-        self.vis_colors = self.visual.get("waves_colors", _vis.get("colors", "0xF5CBA7|0xF0B27A"))
+        self.vis_mode   = self.visual.get("waves_mode",  _vis.get("mode",  "cline"))
+        self.vis_scale  = self.visual.get("waves_scale", _vis.get("scale", "lin"))
+        # 4 cores para o waveform multicamada
+        _default_multi = ["0xF5CBA7", "0xFFD700", "0xE07060", "0xFF9A8A"]
+        self.vis_colors_multi: List[str] = self.visual.get("waves_colors_multi", _default_multi)
 
         # Progress bar
         _pb = self.cfg_json.get("progress_bar", {})
         self.progress_enabled = _pb.get("enabled", True)
         self.progress_height  = int(_pb.get("height_px", 3))
+
+        # Fonte para drawtext (nome da faixa)
+        _tx = self.cfg_json.get("text", {})
+        self.font_path = _find_font(_tx.get("font_path", ""))
 
         # Thumbs
         self.make_thumbs = bool(args.thumbnails)
@@ -744,7 +898,9 @@ class StudioEngine:
         cmd += self._clip_encoder_args(crf)
         cmd += [str(out)]
 
-        res = run_cmd_capture(cmd, log, timeout_s=timeout_s, proc_reg=self.proc_reg)
+        res = run_cmd_progress(cmd, log, timeout_s=timeout_s,
+                               total_dur=seg_len, label=f"clip {idx}",
+                               proc_reg=self.proc_reg)
 
         # Clean up temporary concat list
         if concat_file and concat_file.exists():
@@ -891,12 +1047,13 @@ class StudioEngine:
     ) -> bool:
         """
         Combina em uma única passagem FFmpeg:
-          - Playlist de áudio (fade in/out, normalização)
-          - Visualizador de waveform (linhas coloridas transparentes)
+          - Playlist de áudio sequencial (sem atrim — duração controlada por -t)
+          - Nome da faixa no canto superior (drawtext, 8s)
+          - Waveform multicamada colorida (4 showwaves sobrepostos)
           - Barra de progresso no rodapé
-        Sem texto — foco na qualidade visual remasterizada.
         """
         dur = _get_duration(video_in)
+        print(f"  Duração do clipe mudo: {dur:.1f}s ({int(dur) // 60}min {int(dur) % 60}s)")
         if dur <= 0.5:
             print("  ✗  Duração inválida para render final.")
             return False
@@ -916,19 +1073,11 @@ class StudioEngine:
         # Altura do visualizador
         wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
 
-        # Barra de progresso: drawbox dinâmico no rodapé
-        h_pb = self.progress_height
-        bar_color = "0xF0B27A"
-        progress_bar_f = (
-            f"drawbox=x=0:y=ih-{h_pb}:w=iw*t/{dur:.3f}:h={h_pb}"
-            f":color={bar_color}@0.55:t=fill"
-        )
-
-        # Áudio: trim + fade + volume + resample + limiter
+        # Áudio: sem atrim — a duração é controlada por -t {dur} no output
         fade_out_start = max(0.0, dur - self.fade_out)
         vol = self.vol_music
-        audio_chain = (
-            f"[1:a]atrim=0:{dur:.3f},asetpts=N/SR/TB,"
+        audio_chain_base = (
+            f"[1:a]asetpts=N/SR/TB,"
             f"volume={vol:.3f},"
             f"afade=t=in:st=0:d={self.fade_in:.2f},"
             f"afade=t=out:st={fade_out_start:.3f}:d={self.fade_out:.2f},"
@@ -937,29 +1086,45 @@ class StudioEngine:
             f"alimiter=limit=0.95"
         )
 
-        # Cadeia de vídeo: apenas barra de progresso (sem texto)
-        video_chain = f"[0:v]{progress_bar_f}" if self.progress_enabled else "[0:v]null"
+        # Base de vídeo: nome da faixa + barra de progresso
+        track_name = tracks[0].name
+        track_f = _track_drawtext(track_name, dur, self.font_path)
+        h_pb = self.progress_height
+        bar_f = (
+            f"drawbox=x=0:y=ih-{h_pb}:w=iw*t/{dur:.3f}:h={h_pb}"
+            f":color=0xF0B27A@0.55:t=fill"
+        )
+        base_filters = [f for f in [track_f, bar_f if self.progress_enabled else ""] if f]
+        if not base_filters:
+            base_filters = ["copy"]
+        vbase_filter = f"[0:v]{','.join(base_filters)}[vbase]"
+
+        # Constantes de waveform
+        wave_ck = "format=argb,colorkey=0x000000:similarity=0.15:blend=0.08"
+        c1, c2, c3, c4 = self.vis_colors_multi
+        fps = ENGINE_FPS
 
         if self.visualizer_enabled:
-            # showwaves: colorkey remove o fundo preto → linhas sobre o vídeo
+            # 4 camadas de waveform: cores, modos e escalas diferentes → efeito multicor
             fc_parts = [
-                audio_chain + ",asplit=2[aout][awaves]",
-                f"[awaves]showwaves=s={video_w}x{wh}:mode={self.vis_mode}"
-                f":rate={ENGINE_FPS}:colors={self.vis_colors}:scale={self.vis_scale},"
-                "format=argb,"
-                "colorkey=0x000000:similarity=0.15:blend=0.1[waves]",
-                video_chain + "[vbar]",
-                f"[vbar][waves]overlay=x=0:y=H-{wh}:format=auto:shortest=1[vfinal]",
+                audio_chain_base + ",asplit=5[aout][aw1][aw2][aw3][aw4]",
+                vbase_filter,
+                f"[aw1]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c1}:scale=lin,{wave_ck}[wv1]",
+                f"[aw2]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c2}:scale=sqrt,{wave_ck}[wv2]",
+                f"[aw3]showwaves=s={video_w}x{wh}:mode=p2p:rate={fps}:colors={c3}:scale=lin,{wave_ck}[wv3]",
+                f"[aw4]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c4}:scale=log,{wave_ck}[wv4]",
+                f"[vbase][wv1]overlay=x=0:y=H-{wh}:format=auto[v1]",
+                f"[v1][wv2]overlay=x=0:y=H-{wh}:format=auto[v2]",
+                f"[v2][wv3]overlay=x=0:y=H-{wh}:format=auto[v3]",
+                f"[v3][wv4]overlay=x=0:y=H-{wh}:format=auto[vfinal]",
             ]
-            v_out = "[vfinal]"
-            a_out = "[aout]"
+            v_out, a_out = "[vfinal]", "[aout]"
         else:
             fc_parts = [
-                audio_chain + "[aout]",
-                video_chain + "[vfinal]",
+                audio_chain_base + "[aout]",
+                vbase_filter,
             ]
-            v_out = "[vfinal]"
-            a_out = "[aout]"
+            v_out, a_out = "[vbase]", "[aout]"
 
         fc = ";".join(fc_parts)
         log = self.logs_dir / f"render_final_{video_out.stem}.log"
@@ -971,18 +1136,21 @@ class StudioEngine:
             "-filter_complex", fc,
             "-map", v_out,
             "-map", a_out,
+            "-t", f"{dur:.3f}",          # duração explícita — sem -shortest
             "-c:v", "libx264",
             "-preset", self.final_preset,
             "-crf", str(self.final_crf),
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
             "-movflags", "+faststart",
             str(video_out),
         ]
 
-        res = run_cmd_capture(cmd, log, self.final_timeout_s, self.proc_reg)
+        print(f"  Renderizando {int(dur) // 60}min {int(dur) % 60}s de vídeo final...")
+        res = run_cmd_progress(cmd, log, self.final_timeout_s,
+                               total_dur=dur, label="render",
+                               proc_reg=self.proc_reg)
         if res.rc != 0 or not video_out.exists():
             print(f"  ✗  Render final falhou rc={res.rc}")
             _skip_rf = ("frame=", "size=", "speed=", "[info]", "Press [q]")
@@ -996,7 +1164,9 @@ class StudioEngine:
             print(f"     CMD: {' '.join(cmd)}")
             return False
 
-        print(f"  ✓  Render final: {len(tracks)} faixa(s)")
+        out_dur = _get_duration(video_out)
+        print(f"  ✓  Render final: {len(tracks)} faixa(s) | "
+              f"duração final: {int(out_dur) // 60}min {int(out_dur) % 60}s")
         return True
 
     # ------------------------------------------------------------------ #
