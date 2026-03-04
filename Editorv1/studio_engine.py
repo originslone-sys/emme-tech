@@ -1298,7 +1298,12 @@ class StudioEngine:
         else:
             base = self.get_video_info(videos[0])
             final_w, final_h = int(base["width"]), int(base["height"])
-            if self.enable_upscale and self.upscale_quality != "none" and final_w < 1920:
+            # Para modos YouTube (não-shorts): garante mínimo 1920×1080.
+            # O _lofi_camera_filter já faz scale+crop para o target, então
+            # upscalar aqui custa apenas o encode — qualidade sempre Full HD.
+            if self.mode != "shorts" and final_w < 1920:
+                final_w, final_h = 1920, 1080
+            elif self.enable_upscale and self.upscale_quality != "none" and final_w < 1920:
                 final_w, final_h = 1920, 1080
 
         final_w = _safe_int_even(final_w, 2)
