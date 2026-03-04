@@ -1056,7 +1056,7 @@ class StudioEngine:
     ) -> bool:
         """
         Combina em uma única passagem FFmpeg:
-          - Áudio via aconcat (inputs individuais — sem gap entre faixas)
+          - Áudio via concat (inputs individuais — sem gap entre faixas)
           - Nome de CADA faixa no canto superior com offset de tempo correto
           - Waveform neon de 3 camadas: outer glow + inner glow + core
           - Barra de progresso no rodapé
@@ -1114,24 +1114,33 @@ class StudioEngine:
             base_filters = ["copy"]
         vbase_filter = f"[0:v]{','.join(base_filters)}[vbase]"
 
-        # 5. Cadeia de áudio com aconcat (gapless, sem chiado entre faixas)
+        # 5. Cadeia de áudio com concat (gapless, sem chiado entre faixas)
+        # concat filter (not aconcat) is available in all FFmpeg versions.
+        # Each input is normalised to the target sample-rate/format BEFORE
+        # concatenation, so tracks with different rates/channels work fine.
         fade_out_start = max(0.0, dur - self.fade_out)
         vol = self.vol_music
+        fc_parts: List[str] = []
+
+        # Per-input normalisation → [anorm0], [anorm1], …
+        for i in range(n_audio):
+            fc_parts.append(
+                f"[{i + 1}:a]aresample={self.audio_sr},"
+                f"aformat=sample_fmts=fltp:channel_layouts=stereo[anorm{i}]"
+            )
         if n_audio == 1:
-            audio_in_label = "[1:a]"
-            aconcat_str = ""
+            audio_in_label = "[anorm0]"
         else:
-            concat_labels = "".join(f"[{i + 1}:a]" for i in range(n_audio))
+            cat_in = "".join(f"[anorm{i}]" for i in range(n_audio))
             audio_in_label = "[acat]"
-            aconcat_str = f"{concat_labels}aconcat=n={n_audio}:v=0:a=1[acat]"
+            fc_parts.append(f"{cat_in}concat=n={n_audio}:v=0:a=1[acat]")
+
         audio_chain_base = (
             f"{audio_in_label}"
             f"asetpts=N/SR/TB,"
-            f"aresample={self.audio_sr}:async=1,"
             f"volume={vol:.3f},"
             f"afade=t=in:st=0:d={self.fade_in:.2f},"
             f"afade=t=out:st={fade_out_start:.3f}:d={self.fade_out:.2f},"
-            f"aformat=channel_layouts=stereo,"
             f"alimiter=limit=0.95"
         )
 
@@ -1142,10 +1151,6 @@ class StudioEngine:
         ck_loose = "colorkey=0x000000:similarity=0.22:blend=0.18"   # outer glow: keep haze
         ck_mid   = "colorkey=0x000000:similarity=0.14:blend=0.10"   # inner: tighter
         ck_core  = "colorkey=0x000000:similarity=0.08:blend=0.04"   # core: sharp
-
-        fc_parts: List[str] = []
-        if aconcat_str:
-            fc_parts.append(aconcat_str)
 
         if self.visualizer_enabled:
             fc_parts.append(audio_chain_base + ",asplit=4[aout][aw1][aw2][aw3]")
