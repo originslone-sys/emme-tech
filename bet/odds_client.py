@@ -22,24 +22,54 @@ def get_odds(league_code, markets="totals,btts"):
 
     markets: 'totals' para Over/Under, 'btts' para Both Teams To Score
     Regions: 'eu' para odds decimais
+
+    Busca cada mercado separadamente para evitar erro 422 caso
+    algum mercado não esteja disponível no plano atual da API.
     """
     sport_key = ODDS_SPORT_KEYS.get(league_code)
     if not sport_key:
         return []
 
-    try:
-        data = _get(
-            f"/sports/{sport_key}/odds",
-            params={
-                "regions": "eu",
-                "markets": markets,
-                "oddsFormat": "decimal",
-            },
-        )
-        return data
-    except requests.exceptions.HTTPError as e:
-        print(f"  [!] Erro ao buscar odds {league_code}: {e}")
-        return []
+    market_list = [m.strip() for m in markets.split(",")]
+    merged = {}  # event_id -> event data
+
+    for mkt in market_list:
+        try:
+            data = _get(
+                f"/sports/{sport_key}/odds",
+                params={
+                    "regions": "eu",
+                    "markets": mkt,
+                    "oddsFormat": "decimal",
+                },
+            )
+            for event in data:
+                eid = event.get("id")
+                if eid not in merged:
+                    merged[eid] = event
+                else:
+                    # Mescla bookmakers/markets do novo request
+                    _merge_bookmakers(merged[eid], event)
+        except requests.exceptions.HTTPError as e:
+            print(f"  [!] Mercado '{mkt}' indisponivel para {league_code}: {e}")
+        except Exception as e:
+            print(f"  [!] Erro ao buscar odds {league_code}/{mkt}: {e}")
+
+    return list(merged.values())
+
+
+def _merge_bookmakers(base_event, new_event):
+    """Mescla bookmakers/markets de new_event no base_event."""
+    existing = {bk["key"]: bk for bk in base_event.get("bookmakers", [])}
+    for bk in new_event.get("bookmakers", []):
+        if bk["key"] in existing:
+            # Adiciona mercados novos ao bookmaker existente
+            existing_mkt_keys = {m["key"] for m in existing[bk["key"]].get("markets", [])}
+            for mkt in bk.get("markets", []):
+                if mkt["key"] not in existing_mkt_keys:
+                    existing[bk["key"]]["markets"].append(mkt)
+        else:
+            base_event.setdefault("bookmakers", []).append(bk)
 
 
 def extract_odds_for_match(odds_data, home_team, away_team):
