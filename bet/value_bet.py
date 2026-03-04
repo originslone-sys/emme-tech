@@ -85,7 +85,7 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
             stake = kelly_stake(over_25_prob, odds_info["over_25"], bankroll=bankroll)
             confidence = _calc_confidence(edge, ai_analysis, "over_25")
             recommendations.append({
-                "market": "Over 2.5 Gols",
+                "market": "Acima 2.5 Gols",
                 "probability": round(over_25_prob, 4),
                 "fair_odd": fair_odd(over_25_prob),
                 "market_odd": odds_info["over_25"],
@@ -105,7 +105,7 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
             stake = kelly_stake(under_prob, odds_info["under_25"], bankroll=bankroll)
             confidence = _calc_confidence(edge, ai_analysis, "under_25")
             recommendations.append({
-                "market": "Under 2.5 Gols",
+                "market": "Abaixo 2.5 Gols",
                 "probability": round(under_prob, 4),
                 "fair_odd": fair_odd(under_prob),
                 "market_odd": odds_info["under_25"],
@@ -144,7 +144,7 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
             stake = kelly_stake(btts_no_prob, odds_info["btts_no"], bankroll=bankroll)
             confidence = _calc_confidence(edge, ai_analysis, "btts")
             recommendations.append({
-                "market": "BTTS Não",
+                "market": "BTTS Nao",
                 "probability": round(btts_no_prob, 4),
                 "fair_odd": fair_odd(btts_no_prob),
                 "market_odd": odds_info["btts_no"],
