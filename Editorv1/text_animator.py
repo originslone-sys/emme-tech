@@ -131,6 +131,18 @@ class TextAnimator:
     def _small_font(self, video_h: int) -> int:
         return max(18, int(self.base_font_size * 0.55 * video_h / 1080))
 
+    def _auto_max_chars(self, video_w: int, video_h: int) -> int:
+        """Calcula max_chars proporcional à largura da tela e tamanho de fonte.
+
+        Evita overflow de texto em formato vertical (9:16) onde a largura
+        é bem menor que em horizontal (16:9).
+        """
+        fs = self._font_size(video_h)
+        # Largura estimada por caractere ≈ 0.58× o font_size (fontes sans-serif)
+        char_w = max(1, fs * 0.58)
+        # Subtrai 80px de margens laterais
+        return max(12, int((video_w - 80) / char_w))
+
     # ------------------------------------------------------------------ #
     # Filtros de frase (um por frase)                                     #
     # ------------------------------------------------------------------ #
@@ -157,6 +169,10 @@ class TextAnimator:
             "fade_center", "slide_left", "slide_bottom", "glow_pulse", "cinematic"
         ]
 
+        # Ajusta max_chars dinamicamente para o tamanho real da tela (evita overflow no 9:16)
+        saved_max_chars = self.max_chars
+        self.max_chars = self._auto_max_chars(video_w, video_h)
+
         # Distribui frases uniformemente, com margem de 15s no início/fim
         margin = min(15.0, duration * 0.05)
         usable = max(0.0, duration - 2 * margin)
@@ -181,6 +197,7 @@ class TextAnimator:
             )
             filters.extend(fs)
 
+        self.max_chars = saved_max_chars
         return filters
 
     def _build_phrase(

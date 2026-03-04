@@ -350,9 +350,13 @@ class StudioEngine:
         # Visualizer / progress / track
         _vis = self.cfg_json.get("visualizer", {})
         self.visualizer_enabled = _vis.get("enabled", True)
-        self.vis_height_pct     = float(_vis.get("height_pct", 0.07))
-        self.vis_mode           = self.visual.get("waves_mode", _vis.get("mode", "cline"))
-        self.vis_scale          = self.visual.get("waves_scale", _vis.get("scale", "sqrt"))
+        # vis_height_pct: usa o valor do estilo visual (por modo) ou do config, fallback 0.04
+        self.vis_height_pct = float(
+            self.visual.get("waves_height_pct", _vis.get("height_pct", 0.04))
+        )
+        self.vis_mode   = self.visual.get("waves_mode",   _vis.get("mode",  "cline"))
+        self.vis_scale  = self.visual.get("waves_scale",  _vis.get("scale", "lin"))
+        self.vis_colors = self.visual.get("waves_colors", _vis.get("colors", "0xF5CBA7|0xF0B27A"))
 
         _pb = self.cfg_json.get("progress_bar", {})
         self.progress_enabled = _pb.get("enabled", True)
@@ -583,7 +587,7 @@ class StudioEngine:
             cx, cy = f"{dx}*{mi}", f"{dy}*{mi}"
 
         filt = (
-            f"scale={sw}:{sh}:flags=lanczos,"
+            f"scale={sw}:{sh}:force_original_aspect_ratio=increase:flags=lanczos,"
             f"crop={ow}:{oh}:{cx}:{cy}"
         )
         return filt, f"cam:{direction}"
@@ -912,9 +916,8 @@ class StudioEngine:
         print(f"  Playlist: {len(tracks)} faixa(s) → {', '.join(names[:3])}"
               f"{'...' if len(names) > 3 else ''}")
 
-        # Altura do visualizador
+        # Altura do visualizador (pequena = mais minimalista)
         wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
-        wave_color = self.palette.get("waves", "0xF5CBA7@0.45")
 
         # Filtros de texto
         text_filters = self.text_animator.build_full_text_chain(
@@ -953,12 +956,16 @@ class StudioEngine:
             video_chain = "[0:v]null"
 
         if self.visualizer_enabled:
+            # showwaves: linhas coloridas sem fundo opaco.
+            # colorkey remove o fundo preto → linhas ondulantes sobre o vídeo.
             fc_parts = [
                 audio_chain + ",asplit=2[aout][awaves]",
                 f"[awaves]showwaves=s={video_w}x{wh}:mode={self.vis_mode}"
-                f":rate={ENGINE_FPS}:colors={wave_color}:scale={self.vis_scale}[waves]",
+                f":rate={ENGINE_FPS}:colors={self.vis_colors}:scale={self.vis_scale},"
+                "format=argb,"
+                "colorkey=0x000000:similarity=0.15:blend=0.1[waves]",
                 video_chain + "[vtxt]",
-                f"[vtxt][waves]overlay=x=0:y=H-{wh}:shortest=1[vfinal]",
+                f"[vtxt][waves]overlay=x=0:y=H-{wh}:format=auto:shortest=1[vfinal]",
             ]
             v_out = "[vfinal]"
             a_out = "[aout]"

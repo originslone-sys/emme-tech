@@ -73,9 +73,13 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "overscan": 1.04,
         # Paleta de cores
         "palette": "warm_amber",
-        # Waveform visualizer
+        # Waveform visualizer — modo e escala
         "waves_mode": "cline",
-        "waves_scale": "sqrt",
+        "waves_scale": "lin",
+        # Altura da faixa de waveform como fração da altura do vídeo
+        "waves_height_pct": 0.04,
+        # Cores das linhas ondulantes (canal L | canal R) — formato FFmpeg
+        "waves_colors": "0xF5CBA7|0xF0B27A",
         # Duração mínima de clip para este modo (s)
         "clip_min_s": 300,
     },
@@ -88,6 +92,8 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "palette": "cool_blue",
         "waves_mode": "cline",
         "waves_scale": "lin",
+        "waves_height_pct": 0.04,
+        "waves_colors": "0xAED6F1|0x85C1E9",
         "clip_min_s": 300,
     },
     "study": {
@@ -97,8 +103,10 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "color_eq": "eq=brightness=0.00:contrast=1.02:saturation=0.92:gamma=1.00",
         "overscan": 1.02,
         "palette": "warm_amber",
-        "waves_mode": "p2p",
-        "waves_scale": "sqrt",
+        "waves_mode": "cline",
+        "waves_scale": "lin",
+        "waves_height_pct": 0.03,
+        "waves_colors": "0xF5CBA7|0xD5A880",
         "clip_min_s": 600,
     },
     "shorts": {
@@ -109,7 +117,9 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "overscan": 1.05,
         "palette": "neon_purple",
         "waves_mode": "cline",
-        "waves_scale": "log",
+        "waves_scale": "lin",
+        "waves_height_pct": 0.035,
+        "waves_colors": "0xFF6EC7|0x7B68EE",
         "clip_min_s": 20,
     },
 }
