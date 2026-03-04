@@ -1094,7 +1094,7 @@ class StudioEngine:
         # 2. Altura e posição do visualizador ribbon
         # Mínimo de 100px para o efeito de leque ser visível
         wh    = _safe_int_even(max(int(video_h * self.vis_height_pct), 100), 2)
-        y_vis = (video_h - wh) // 2   # centrado verticalmente (como na referência)
+        y_vis = video_h - wh           # fixado na base do frame
 
         # 3. Per-track drawtext com offset temporal acumulado
         t_acc = 0.0
