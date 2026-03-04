@@ -8,9 +8,11 @@ HEADERS = {"X-Auth-Token": FOOTBALL_DATA_API_KEY}
 
 
 def _get(endpoint, params=None):
-    """Request genérico com tratamento de erro."""
+    """Request genérico com tratamento de erro e debug."""
     url = f"{BASE_URL}{endpoint}"
     resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
+    if not resp.ok:
+        print(f"    [DEBUG] {resp.status_code} - {resp.text[:200]}")
     resp.raise_for_status()
     return resp.json()
 
@@ -22,20 +24,30 @@ def get_upcoming_matches(league_code, days_ahead=3):
     date_from = datetime.utcnow().strftime("%Y-%m-%d")
     date_to = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
+    # Busca sem filtro de status (free tier não suporta combinação)
+    # Filtra localmente por jogos ainda não realizados
     data = _get(
         f"/competitions/{league_code}/matches",
-        params={"dateFrom": date_from, "dateTo": date_to, "status": "SCHEDULED"},
+        params={"dateFrom": date_from, "dateTo": date_to},
     )
-    return data.get("matches", [])
+    matches = data.get("matches", [])
+    # Filtrar apenas jogos agendados/não finalizados
+    return [m for m in matches if m.get("status") in ("SCHEDULED", "TIMED")]
 
 
 def get_season_matches(league_code, status="FINISHED"):
     """Busca todos os jogos finalizados da temporada atual."""
-    data = _get(
-        f"/competitions/{league_code}/matches",
-        params={"status": status},
-    )
-    return data.get("matches", [])
+    # Tenta com status, se falhar busca tudo e filtra local
+    try:
+        data = _get(
+            f"/competitions/{league_code}/matches",
+            params={"status": status},
+        )
+        return data.get("matches", [])
+    except requests.exceptions.HTTPError:
+        data = _get(f"/competitions/{league_code}/matches")
+        matches = data.get("matches", [])
+        return [m for m in matches if m.get("status") == status]
 
 
 def get_team_matches(team_id, limit=15):
