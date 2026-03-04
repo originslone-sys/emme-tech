@@ -99,15 +99,15 @@ def print_match_report(match, prediction, ai_result, recommendations, odds_info)
 
     # Tabela de probabilidades — destacar mercados com value
     value_markets = {rec['market'] for rec in recommendations} if recommendations else set()
-    market_map = {"Over 2.5 Gols": "Over 2.5", "Under 2.5 Gols": "Under 2.5",
+    market_map = {"Acima 2.5 Gols": "Acima 2.5", "Abaixo 2.5 Gols": "Abaixo 2.5",
                   "BTTS Sim": "BTTS Sim", "BTTS Nao": "BTTS Nao"}
     value_labels = set()
     for vm in value_markets:
         value_labels.add(market_map.get(vm, vm))
 
     rows = [
-        ("Over 2.5", prediction['over_25'], odds_info.get('over_25') if odds_info else None),
-        ("Under 2.5", prediction['under_25'], odds_info.get('under_25') if odds_info else None),
+        ("Acima 2.5", prediction['over_25'], odds_info.get('over_25') if odds_info else None),
+        ("Abaixo 2.5", prediction['under_25'], odds_info.get('under_25') if odds_info else None),
         ("BTTS Sim", prediction['btts_yes'], odds_info.get('btts_yes') if odds_info else None),
         ("BTTS Nao", prediction['btts_no'], odds_info.get('btts_no') if odds_info else None),
     ]
@@ -241,9 +241,11 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
         # Relatório
         print_match_report(match, prediction, ai_result, recommendations, odds_info)
 
+        match_date = match.get("utcDate", "")[:16].replace("T", " ")
         for rec in recommendations:
             rec["match"] = f"{home} vs {away}"
             rec["league"] = league_name
+            rec["date"] = match_date
         all_recommendations.extend(recommendations)
 
     return all_recommendations
@@ -274,7 +276,7 @@ def print_summary(all_recs, bankroll):
 
         print()
         print(f"  {BOLD_GREEN}[{i}] {rec['match']}{RESET}")
-        print(f"      {DIM}{rec['league']}{RESET}")
+        print(f"      {DIM}{rec['league']} — {rec.get('date', 'N/A')} UTC{RESET}")
         print(f"      Mercado:   {BOLD_GREEN}{rec['market']}{RESET}")
         print(f"      Prob:      {rec['probability']:.1%}  |  Odd Justa: {rec['fair_odd']}")
         print(f"      Odd:       {BOLD}{rec['market_odd']}{RESET}")
