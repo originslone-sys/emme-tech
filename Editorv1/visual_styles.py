@@ -63,32 +63,32 @@ COLOR_PALETTES: Dict[str, Dict[str, str]] = {
 VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
     "lofi": {
         # Grão de filme (noise strength 0-25)
-        "grain_strength": 7,
+        "grain_strength": 5,
         # Vinheta FFmpeg (ângulo PI/x: menor = mais vinheta)
         "vignette": True,
         "vignette_angle": "PI/4",
         # Correção de cor (FFmpeg eq filter)
-        "color_eq": "eq=brightness=-0.03:contrast=1.06:saturation=0.82:gamma=1.08",
-        # Zoom ultra-lento via crop (escala de overscan: ex. 1.04 = 4% maior)
+        "color_eq": "eq=brightness=-0.02:contrast=1.08:saturation=0.85:gamma=1.06",
+        # Zoom ultra-lento via crop
         "overscan": 1.04,
+        # Nitidez do unsharp (0.0–1.5; aplicada sempre)
+        "sharpen": 0.55,
         # Paleta de cores
         "palette": "warm_amber",
-        # Waveform visualizer — modo e escala
+        # Waveform
         "waves_mode": "cline",
         "waves_scale": "lin",
-        # Altura da faixa de waveform como fração da altura do vídeo
         "waves_height_pct": 0.04,
-        # Cores das linhas ondulantes (canal L | canal R) — formato FFmpeg
         "waves_colors": "0xF5CBA7|0xF0B27A",
-        # Duração mínima de clip para este modo (s)
         "clip_min_s": 300,
     },
     "relaxing": {
-        "grain_strength": 3,
+        "grain_strength": 2,
         "vignette": True,
         "vignette_angle": "PI/5",
-        "color_eq": "eq=brightness=0.01:contrast=1.03:saturation=1.05:gamma=0.97",
+        "color_eq": "eq=brightness=0.02:contrast=1.05:saturation=1.08:gamma=0.97",
         "overscan": 1.03,
+        "sharpen": 0.45,
         "palette": "cool_blue",
         "waves_mode": "cline",
         "waves_scale": "lin",
@@ -97,11 +97,12 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "clip_min_s": 300,
     },
     "study": {
-        "grain_strength": 1,
+        "grain_strength": 0,
         "vignette": True,
         "vignette_angle": "PI/6",
-        "color_eq": "eq=brightness=0.00:contrast=1.02:saturation=0.92:gamma=1.00",
+        "color_eq": "eq=brightness=0.01:contrast=1.04:saturation=0.95:gamma=1.00",
         "overscan": 1.02,
+        "sharpen": 0.40,
         "palette": "warm_amber",
         "waves_mode": "cline",
         "waves_scale": "lin",
@@ -110,11 +111,12 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "clip_min_s": 600,
     },
     "shorts": {
-        "grain_strength": 6,
+        "grain_strength": 4,
         "vignette": True,
         "vignette_angle": "PI/4",
-        "color_eq": "eq=brightness=-0.02:contrast=1.08:saturation=0.87:gamma=1.06",
+        "color_eq": "eq=brightness=-0.01:contrast=1.10:saturation=0.90:gamma=1.05",
         "overscan": 1.05,
+        "sharpen": 0.70,
         "palette": "neon_purple",
         "waves_mode": "cline",
         "waves_scale": "lin",
