@@ -1091,8 +1091,10 @@ class StudioEngine:
         print(f"  Playlist: {n_audio} input(s) | {len(tracks)} faixa(s) → "
               f"{', '.join(names[:4])}{'...' if len(names) > 4 else ''}")
 
-        # 2. Altura do visualizador
-        wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
+        # 2. Altura e posição do visualizador ribbon
+        # Mínimo de 100px para o efeito de leque ser visível
+        wh    = _safe_int_even(max(int(video_h * self.vis_height_pct), 100), 2)
+        y_vis = (video_h - wh) // 2   # centrado verticalmente (como na referência)
 
         # 3. Per-track drawtext com offset temporal acumulado
         t_acc = 0.0
@@ -1144,34 +1146,71 @@ class StudioEngine:
             f"alimiter=limit=0.95"
         )
 
-        # 6. Visualizador neon: 3 camadas (outer glow → inner glow → core)
-        c1, c2, c3, _ = self.vis_colors_multi   # outer, inner, core, unused
-        fps = ENGINE_FPS
-        # colorkey removes the black bg from each showwaves layer
-        ck_loose = "colorkey=0x000000:similarity=0.22:blend=0.18"   # outer glow: keep haze
-        ck_mid   = "colorkey=0x000000:similarity=0.14:blend=0.10"   # inner: tighter
-        ck_core  = "colorkey=0x000000:similarity=0.08:blend=0.04"   # core: sharp
+        # 6. Rainbow ribbon visualizer
+        # N thin showwaves=cline layers at decreasing volumes → fan/ribbon effect.
+        # Layers screen-blend, then geq applies a smooth horizontal rainbow
+        # gradient (yellow→red→magenta→purple→blue→cyan) matching the reference.
+        fps  = ENGINE_FPS
+        N_VIS   = 5
+        _vols   = [1.0, 0.72, 0.46, 0.22, 0.07]   # outer → inner line amplitude
+
+        # geq horizontal rainbow: yellow(x=0) → orange → red → magenta →
+        #                         purple → blue → cyan (x=W)
+        _t = "X/W"
+        _gr = (f"p(X,Y)*if(lt({_t},0.5),1,"
+               f"if(lt({_t},0.75),max(0,1-4*({_t}-0.5)),0))")
+        _gg = (f"p(X,Y)*if(lt({_t},0.25),max(0,1-4*{_t}),"
+               f"if(lt({_t},0.75),0,min(1,4*({_t}-0.75))))")
+        _gb = (f"p(X,Y)*if(lt({_t},0.25),0,"
+               f"if(lt({_t},0.5),min(1,4*({_t}-0.25)),1))")
 
         if self.visualizer_enabled:
-            fc_parts.append(audio_chain_base + ",asplit=4[aout][aw1][aw2][aw3]")
+            # Audio: 1 output + N_VIS ribbon copies
+            _split_lbl = "[aout]" + "".join(f"[av{i}]" for i in range(N_VIS))
+            fc_parts.append(audio_chain_base + f",asplit={N_VIS + 1}{_split_lbl}")
             fc_parts.append(vbase_filter)
+
+            # N showwaves layers at different volumes (white on black)
+            for i, v in enumerate(_vols):
+                _vol_f = f"volume={v:.2f}," if v < 1.0 else ""
+                fc_parts.append(
+                    f"[av{i}]{_vol_f}showwaves=s={video_w}x{wh}:mode=cline"
+                    f":rate={fps}:colors=0xFFFFFF:scale=lin[w{i}]"
+                )
+
+            # Screen-blend all layers to accumulate brightness (fan effect)
+            _cur = "[w0]"
+            for i in range(1, N_VIS):
+                _nxt = "[wblended]" if i == N_VIS - 1 else f"[wb{i}]"
+                fc_parts.append(f"{_cur}[w{i}]blend=all_mode=screen{_nxt}")
+                _cur = _nxt
+
+            # Soft bloom pass
             fc_parts.extend([
-                # Outer glow: wide blur → bloom halo
-                f"[aw1]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
-                f":colors={c1}:scale=sqrt,format=rgba,gblur=sigma=7,{ck_loose}[wg_outer]",
-                # Inner glow: medium blur → neon tube body
-                f"[aw2]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
-                f":colors={c2}:scale=sqrt,format=rgba,gblur=sigma=3,{ck_mid}[wg_inner]",
-                # Core: no blur → sharp bright line
-                f"[aw3]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
-                f":colors={c3}:scale=sqrt,format=rgba,{ck_core}[wg_core]",
-                # Dark background strip + layer composition
-                f"[vbase]drawbox=x=0:y=ih-{wh}:w=iw:h={wh}"
-                f":color=0x000000@0.88:t=fill[vdark]",
-                f"[vdark][wg_outer]overlay=x=0:y=H-{wh}:format=auto[v1]",
-                f"[v1][wg_inner]overlay=x=0:y=H-{wh}:format=auto[v2]",
-                f"[v2][wg_core]overlay=x=0:y=H-{wh}:format=auto[vfinal]",
+                "[wblended]split=2[wbs1][wbs2]",
+                "[wbs2]gblur=sigma=3[wblur]",
+                "[wbs1][wblur]blend=all_mode=screen[wglow]",
             ])
+
+            # Horizontal rainbow gradient via geq
+            fc_parts.append(
+                f"[wglow]format=rgb24,"
+                f"geq=r='{_gr}':g='{_gg}':b='{_gb}'[wcolored]"
+            )
+
+            # Remove black background
+            fc_parts.append(
+                "[wcolored]colorkey=0x000000:similarity=0.10:blend=0.06[wvis]"
+            )
+
+            # Dark backdrop centred in frame + ribbon overlay
+            fc_parts.append(
+                f"[vbase]drawbox=x=0:y={y_vis}:w=iw:h={wh}"
+                f":color=0x040410@0.92:t=fill[vdark]"
+            )
+            fc_parts.append(
+                f"[vdark][wvis]overlay=x=0:y={y_vis}:format=auto[vfinal]"
+            )
             v_out, a_out = "[vfinal]", "[aout]"
         else:
             fc_parts.append(audio_chain_base + "[aout]")
