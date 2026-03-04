@@ -99,20 +99,29 @@ def _find_font(override: str = "") -> str:
     return ""
 
 
-def _track_drawtext(track_name: str, dur: float, font_path: str = "") -> str:
-    """Gera filtro drawtext para exibir nome da faixa no canto superior esquerdo."""
-    if not track_name or dur < 4.0:
+def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
+                    time_offset: float = 0.0) -> str:
+    """Gera filtro drawtext para exibir nome da faixa no canto superior esquerdo.
+
+    time_offset: tempo absoluto (segundos) em que essa faixa começa no vídeo.
+    track_dur:   duração dessa faixa específica (não do vídeo total).
+    """
+    if not track_name or track_dur < 4.0:
         return ""
     name = Path(track_name).stem[:45].replace("_", " ").replace("-", " ").strip()
-    # Escape para drawtext
     for ch, esc in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
                     (",", "\\,"), (";", "\\;"), ("%", "%%")]:
         name = name.replace(ch, esc)
-    fade_s, start = 1.0, 1.5
-    end = min(9.5, dur - 1.5)
+    fade_s = 1.0
+    t_start = time_offset + 1.5
+    t_end   = time_offset + min(9.5, max(3.0, track_dur - 1.5))
+    if t_end <= t_start + 0.1:
+        return ""
     alpha = (
-        f"if(lt(t-{start:.1f},{fade_s}),(t-{start:.1f})/{fade_s}"
-        f",if(lt({end:.1f}-t,{fade_s}),({end:.1f}-t)/{fade_s},1))"
+        f"if(lt(t,{t_start:.2f}+{fade_s:.1f}),"
+        f"max(0,(t-{t_start:.2f})/{fade_s:.1f}),"
+        f"if(gt(t,{t_end:.2f}-{fade_s:.1f}),"
+        f"max(0,({t_end:.2f}-t)/{fade_s:.1f}),1))"
     )
     fp = ""
     if font_path and Path(font_path).exists():
@@ -125,7 +134,7 @@ def _track_drawtext(track_name: str, dur: float, font_path: str = "") -> str:
         f"x=20:y=20:"
         f"shadowx=1:shadowy=1:shadowcolor=0x1A0800@0.85:"
         f"alpha='{alpha}':"
-        f"enable='between(t,{start:.1f},{end:.1f})'"
+        f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
     )
 
 
@@ -838,9 +847,9 @@ class StudioEngine:
             filters.append(f"setpts=PTS/{speed:.4f}")
 
         # --- Remasterização: denoise, escala, nitidez ---
-        filters.extend(self._remaster_filters(
-            clip.get("width", final_w), clip.get("height", final_h), final_w, final_h
-        ))
+        # _lofi_camera_filter already scaled/cropped to final_w x final_h,
+        # so pass target dims as src to skip the redundant scale step.
+        filters.extend(self._remaster_filters(final_w, final_h, final_w, final_h))
 
         # --- Estilo visual lo-fi ---
         filters.extend(self._style_filters())
@@ -1047,9 +1056,9 @@ class StudioEngine:
     ) -> bool:
         """
         Combina em uma única passagem FFmpeg:
-          - Playlist de áudio sequencial (sem atrim — duração controlada por -t)
-          - Nome da faixa no canto superior (drawtext, 8s)
-          - Waveform multicamada colorida (4 showwaves sobrepostos)
+          - Áudio via aconcat (inputs individuais — sem gap entre faixas)
+          - Nome de CADA faixa no canto superior com offset de tempo correto
+          - Waveform neon de 3 camadas: outer glow + inner glow + core
           - Barra de progresso no rodapé
         """
         dur = _get_duration(video_in)
@@ -1058,85 +1067,124 @@ class StudioEngine:
             print("  ✗  Duração inválida para render final.")
             return False
 
-        # Seleciona faixas em playlist (toca em ordem; repete última se precisar)
+        # 1. Seleciona faixas base
         tracks = _pick_audio_tracks(self.audio_music_dir, dur)
         if not tracks:
             print("  ⚠  Nenhuma música encontrada. Gerando sem áudio.")
             shutil.copy2(video_in, video_out)
             return True
 
-        playlist_file = self._build_audio_playlist(tracks, dur)
-        names = [t.stem.replace("_", " ").replace("-", " ") for t in tracks]
-        print(f"  Playlist: {len(tracks)} faixa(s) → {', '.join(names[:3])}"
-              f"{'...' if len(names) > 3 else ''}")
+        # Calcula duração de cada faixa e cria lista completa com loop
+        track_durs = [_get_duration(t) for t in tracks]
+        total_audio = sum(track_durs)
+        # Extend com cópias da última faixa até cobrir o vídeo
+        all_audio: List[Path] = list(tracks)
+        all_durs: List[float] = list(track_durs)
+        while total_audio < dur and tracks:
+            last_t, last_d = tracks[-1], track_durs[-1]
+            all_audio.append(last_t)
+            all_durs.append(last_d)
+            total_audio += last_d
+        n_audio = len(all_audio)
 
-        # Altura do visualizador
+        names = [t.stem.replace("_", " ").replace("-", " ") for t in tracks]
+        print(f"  Playlist: {n_audio} input(s) | {len(tracks)} faixa(s) → "
+              f"{', '.join(names[:4])}{'...' if len(names) > 4 else ''}")
+
+        # 2. Altura do visualizador
         wh = _safe_int_even(int(video_h * self.vis_height_pct), 2)
 
-        # Áudio: sem atrim — a duração é controlada por -t {dur} no output
-        fade_out_start = max(0.0, dur - self.fade_out)
-        vol = self.vol_music
-        audio_chain_base = (
-            f"[1:a]asetpts=N/SR/TB,"
-            f"volume={vol:.3f},"
-            f"afade=t=in:st=0:d={self.fade_in:.2f},"
-            f"afade=t=out:st={fade_out_start:.3f}:d={self.fade_out:.2f},"
-            f"aresample={self.audio_sr},"
-            f"aformat=channel_layouts=stereo,"
-            f"alimiter=limit=0.95"
-        )
+        # 3. Per-track drawtext com offset temporal acumulado
+        t_acc = 0.0
+        drawtext_parts: List[str] = []
+        for trk, td in zip(tracks, track_durs):
+            dt_f = _track_drawtext(trk.name, td, self.font_path, time_offset=t_acc)
+            if dt_f:
+                drawtext_parts.append(dt_f)
+            t_acc += td
 
-        # Base de vídeo: nome da faixa + barra de progresso
-        track_name = tracks[0].name
-        track_f = _track_drawtext(track_name, dur, self.font_path)
+        # 4. Barra de progresso
         h_pb = self.progress_height
         bar_f = (
             f"drawbox=x=0:y=ih-{h_pb}:w=iw*t/{dur:.3f}:h={h_pb}"
             f":color=0xF0B27A@0.55:t=fill"
         )
-        base_filters = [f for f in [track_f, bar_f if self.progress_enabled else ""] if f]
+        base_filters = drawtext_parts + ([bar_f] if self.progress_enabled else [])
         if not base_filters:
             base_filters = ["copy"]
         vbase_filter = f"[0:v]{','.join(base_filters)}[vbase]"
 
-        # Constantes de waveform
-        wave_ck = "format=argb,colorkey=0x000000:similarity=0.15:blend=0.08"
-        c1, c2, c3, c4 = self.vis_colors_multi
+        # 5. Cadeia de áudio com aconcat (gapless, sem chiado entre faixas)
+        fade_out_start = max(0.0, dur - self.fade_out)
+        vol = self.vol_music
+        if n_audio == 1:
+            audio_in_label = "[1:a]"
+            aconcat_str = ""
+        else:
+            concat_labels = "".join(f"[{i + 1}:a]" for i in range(n_audio))
+            audio_in_label = "[acat]"
+            aconcat_str = f"{concat_labels}aconcat=n={n_audio}:v=0:a=1[acat]"
+        audio_chain_base = (
+            f"{audio_in_label}"
+            f"asetpts=N/SR/TB,"
+            f"aresample={self.audio_sr}:async=1,"
+            f"volume={vol:.3f},"
+            f"afade=t=in:st=0:d={self.fade_in:.2f},"
+            f"afade=t=out:st={fade_out_start:.3f}:d={self.fade_out:.2f},"
+            f"aformat=channel_layouts=stereo,"
+            f"alimiter=limit=0.95"
+        )
+
+        # 6. Visualizador neon: 3 camadas (outer glow → inner glow → core)
+        c1, c2, c3, _ = self.vis_colors_multi   # outer, inner, core, unused
         fps = ENGINE_FPS
+        # colorkey removes the black bg from each showwaves layer
+        ck_loose = "colorkey=0x000000:similarity=0.22:blend=0.18"   # outer glow: keep haze
+        ck_mid   = "colorkey=0x000000:similarity=0.14:blend=0.10"   # inner: tighter
+        ck_core  = "colorkey=0x000000:similarity=0.08:blend=0.04"   # core: sharp
+
+        fc_parts: List[str] = []
+        if aconcat_str:
+            fc_parts.append(aconcat_str)
 
         if self.visualizer_enabled:
-            # 4 camadas de waveform: cores, modos e escalas diferentes → efeito multicor
-            fc_parts = [
-                audio_chain_base + ",asplit=5[aout][aw1][aw2][aw3][aw4]",
-                vbase_filter,
-                f"[aw1]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c1}:scale=lin,{wave_ck}[wv1]",
-                f"[aw2]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c2}:scale=sqrt,{wave_ck}[wv2]",
-                f"[aw3]showwaves=s={video_w}x{wh}:mode=p2p:rate={fps}:colors={c3}:scale=lin,{wave_ck}[wv3]",
-                f"[aw4]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}:colors={c4}:scale=log,{wave_ck}[wv4]",
-                f"[vbase][wv1]overlay=x=0:y=H-{wh}:format=auto[v1]",
-                f"[v1][wv2]overlay=x=0:y=H-{wh}:format=auto[v2]",
-                f"[v2][wv3]overlay=x=0:y=H-{wh}:format=auto[v3]",
-                f"[v3][wv4]overlay=x=0:y=H-{wh}:format=auto[vfinal]",
-            ]
+            fc_parts.append(audio_chain_base + ",asplit=4[aout][aw1][aw2][aw3]")
+            fc_parts.append(vbase_filter)
+            fc_parts.extend([
+                # Outer glow: wide blur → bloom halo
+                f"[aw1]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
+                f":colors={c1}:scale=sqrt,format=rgba,gblur=sigma=7,{ck_loose}[wg_outer]",
+                # Inner glow: medium blur → neon tube body
+                f"[aw2]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
+                f":colors={c2}:scale=sqrt,format=rgba,gblur=sigma=3,{ck_mid}[wg_inner]",
+                # Core: no blur → sharp bright line
+                f"[aw3]showwaves=s={video_w}x{wh}:mode=cline:rate={fps}"
+                f":colors={c3}:scale=sqrt,format=rgba,{ck_core}[wg_core]",
+                # Dark background strip + layer composition
+                f"[vbase]drawbox=x=0:y=H-{wh}:w=iw:h={wh}"
+                f":color=0x000000@0.88:t=fill[vdark]",
+                f"[vdark][wg_outer]overlay=x=0:y=H-{wh}:format=auto[v1]",
+                f"[v1][wg_inner]overlay=x=0:y=H-{wh}:format=auto[v2]",
+                f"[v2][wg_core]overlay=x=0:y=H-{wh}:format=auto[vfinal]",
+            ])
             v_out, a_out = "[vfinal]", "[aout]"
         else:
-            fc_parts = [
-                audio_chain_base + "[aout]",
-                vbase_filter,
-            ]
+            fc_parts.append(audio_chain_base + "[aout]")
+            fc_parts.append(vbase_filter)
             v_out, a_out = "[vbase]", "[aout]"
 
-        fc = ";".join(fc_parts)
+        fc = ";".join(p for p in fc_parts if p)
         log = self.logs_dir / f"render_final_{video_out.stem}.log"
 
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner",
-            "-i", str(video_in),
-            "-f", "concat", "-safe", "0", "-i", str(playlist_file),
+        # 7. Monta o comando com inputs individuais de áudio
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video_in)]
+        for af in all_audio:
+            cmd.extend(["-i", str(af)])
+        cmd.extend([
             "-filter_complex", fc,
             "-map", v_out,
             "-map", a_out,
-            "-t", f"{dur:.3f}",          # duração explícita — sem -shortest
+            "-t", f"{dur:.3f}",
             "-c:v", "libx264",
             "-preset", self.final_preset,
             "-crf", str(self.final_crf),
@@ -1145,7 +1193,7 @@ class StudioEngine:
             "-b:a", "192k",
             "-movflags", "+faststart",
             str(video_out),
-        ]
+        ])
 
         print(f"  Renderizando {int(dur) // 60}min {int(dur) % 60}s de vídeo final...")
         res = run_cmd_progress(cmd, log, self.final_timeout_s,
@@ -1165,7 +1213,7 @@ class StudioEngine:
             return False
 
         out_dur = _get_duration(video_out)
-        print(f"  ✓  Render final: {len(tracks)} faixa(s) | "
+        print(f"  ✓  Render final: {n_audio} input(s) | {len(tracks)} faixa(s) | "
               f"duração final: {int(out_dur) // 60}min {int(out_dur) % 60}s")
         return True
 

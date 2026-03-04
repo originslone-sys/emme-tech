@@ -78,10 +78,11 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         # Waveform
         "waves_mode": "cline",
         "waves_scale": "lin",
-        "waves_height_pct": 0.04,
-        "waves_colors": "0xF5CBA7|0xF0B27A",
-        # 4 cores para waveform multicamada (âmbar, ouro, terracota, salmão)
-        "waves_colors_multi": ["0xF5CBA7", "0xFFD700", "0xE07060", "0xFFAA80"],
+        "waves_height_pct": 0.06,
+        "waves_colors": "0xFF6600|0xFFAA00",
+        # neon glow layers: [outer_bloom, inner_glow, core_line, unused]
+        # outer=orange neon, inner=amber neon, core=white
+        "waves_colors_multi": ["0xFF6600", "0xFFAA00", "0xFFFFFF", "0xFF3300"],
         "clip_min_s": 300,
     },
     "relaxing": {
@@ -94,10 +95,10 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "palette": "cool_blue",
         "waves_mode": "cline",
         "waves_scale": "lin",
-        "waves_height_pct": 0.04,
-        "waves_colors": "0xAED6F1|0x85C1E9",
-        # 4 cores (azul céu, aqua, ciano, índigo)
-        "waves_colors_multi": ["0xAED6F1", "0x40E0D0", "0x00BFFF", "0x6495ED"],
+        "waves_height_pct": 0.06,
+        "waves_colors": "0x00CCFF|0x00FFCC",
+        # neon glow layers: outer=sky-blue, inner=aqua, core=white
+        "waves_colors_multi": ["0x00CCFF", "0x00FFCC", "0xFFFFFF", "0x0088FF"],
         "clip_min_s": 300,
     },
     "study": {
@@ -110,10 +111,10 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "palette": "warm_amber",
         "waves_mode": "cline",
         "waves_scale": "lin",
-        "waves_height_pct": 0.03,
-        "waves_colors": "0xF5CBA7|0xD5A880",
-        # 4 cores suaves (âmbar claro, creme, dourado, bege)
-        "waves_colors_multi": ["0xF5CBA7", "0xFFE4B5", "0xD4AC0D", "0xF0D9A0"],
+        "waves_height_pct": 0.05,
+        "waves_colors": "0xFFAA44|0xFFDD88",
+        # neon glow layers: outer=warm amber, inner=gold, core=white
+        "waves_colors_multi": ["0xFFAA44", "0xFFDD88", "0xFFFFFF", "0xFF7700"],
         "clip_min_s": 600,
     },
     "shorts": {
@@ -126,10 +127,10 @@ VISUAL_STYLES: Dict[str, Dict[str, Any]] = {
         "palette": "neon_purple",
         "waves_mode": "cline",
         "waves_scale": "lin",
-        "waves_height_pct": 0.035,
-        "waves_colors": "0xFF6EC7|0x7B68EE",
-        # 4 cores neon (pink, roxo, ciano, magenta)
-        "waves_colors_multi": ["0xFF6EC7", "0x7B68EE", "0x00FFFF", "0xFF44AA"],
+        "waves_height_pct": 0.07,
+        "waves_colors": "0xFF00AA|0xAA00FF",
+        # neon glow layers: outer=hot-pink, inner=electric-purple, core=white
+        "waves_colors_multi": ["0xFF00AA", "0xAA00FF", "0xFFFFFF", "0x00FFCC"],
         "clip_min_s": 20,
     },
 }
