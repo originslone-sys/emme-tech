@@ -26,6 +26,18 @@ from stats_engine import calc_team_stats, calc_league_averages, predict_match, c
 from ai_analyzer import analyze_match
 from value_bet import evaluate_bets, fair_odd
 
+# Cores ANSI para terminal
+GREEN = "\033[92m"
+BOLD_GREEN = "\033[1;92m"
+YELLOW = "\033[93m"
+BOLD_YELLOW = "\033[1;93m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+BG_GREEN = "\033[42;97m"
+BG_YELLOW = "\033[43;30m"
+
 
 def print_header():
     print()
@@ -37,6 +49,30 @@ def print_header():
     print()
 
 
+def _edge_color(edge):
+    """Retorna cor baseada no edge."""
+    if edge >= 0.15:
+        return BOLD_GREEN
+    elif edge >= 0.10:
+        return GREEN
+    elif edge >= 0.05:
+        return YELLOW
+    return DIM
+
+
+def _confidence_bar(confidence):
+    """Retorna barra visual de confiança."""
+    filled = confidence
+    empty = 5 - confidence
+    if confidence >= 4:
+        color = BOLD_GREEN
+    elif confidence >= 3:
+        color = GREEN
+    else:
+        color = YELLOW
+    return f"{color}{'█' * filled}{'░' * empty}{RESET}"
+
+
 def print_match_report(match, prediction, ai_result, recommendations, odds_info):
     """Imprime relatório detalhado de um jogo."""
     home = match["homeTeam"]["name"]
@@ -44,28 +80,52 @@ def print_match_report(match, prediction, ai_result, recommendations, odds_info)
     league = match.get("_league_name", "")
     date = match.get("utcDate", "")[:16].replace("T", " ")
 
+    has_value = bool(recommendations)
+    border_color = BOLD_GREEN if has_value else DIM
+
     print()
-    print("+" + "-" * 63 + "+")
-    print(f"|  {home} vs {away}")
-    print(f"|  {league} — {date} UTC")
-    print("+" + "-" * 63 + "+")
+    print(f"{border_color}+{'-' * 63}+{RESET}")
+    if has_value:
+        print(f"{border_color}|  {BG_GREEN} APOSTAR {RESET}  {BOLD}{home} vs {away}{RESET}")
+    else:
+        print(f"{border_color}|{RESET}  {home} vs {away}")
+    print(f"{border_color}|{RESET}  {league} — {date} UTC")
+    print(f"{border_color}+{'-' * 63}+{RESET}")
 
     # Previsão estatística
     print(f"|  Gols esperados: {home[:15]} {prediction['lambda_home']:.2f} | {away[:15]} {prediction['lambda_away']:.2f}")
     print(f"|  Placar mais provavel: {prediction['most_likely_score']} ({prediction['most_likely_score_prob']:.1%})")
     print("|")
 
-    # Tabela de probabilidades
-    prob_table = [
-        ["Over 2.5", f"{prediction['over_25']:.1%}", fair_odd(prediction['over_25']),
-         odds_info.get('over_25', '-') if odds_info else '-'],
-        ["Under 2.5", f"{prediction['under_25']:.1%}", fair_odd(prediction['under_25']),
-         odds_info.get('under_25', '-') if odds_info else '-'],
-        ["BTTS Sim", f"{prediction['btts_yes']:.1%}", fair_odd(prediction['btts_yes']),
-         odds_info.get('btts_yes', '-') if odds_info else '-'],
-        ["BTTS Nao", f"{prediction['btts_no']:.1%}", fair_odd(prediction['btts_no']),
-         odds_info.get('btts_no', '-') if odds_info else '-'],
+    # Tabela de probabilidades — destacar mercados com value
+    value_markets = {rec['market'] for rec in recommendations} if recommendations else set()
+    market_map = {"Over 2.5 Gols": "Over 2.5", "Under 2.5 Gols": "Under 2.5",
+                  "BTTS Sim": "BTTS Sim", "BTTS Nao": "BTTS Nao"}
+    value_labels = set()
+    for vm in value_markets:
+        value_labels.add(market_map.get(vm, vm))
+
+    rows = [
+        ("Over 2.5", prediction['over_25'], odds_info.get('over_25') if odds_info else None),
+        ("Under 2.5", prediction['under_25'], odds_info.get('under_25') if odds_info else None),
+        ("BTTS Sim", prediction['btts_yes'], odds_info.get('btts_yes') if odds_info else None),
+        ("BTTS Nao", prediction['btts_no'], odds_info.get('btts_no') if odds_info else None),
     ]
+
+    prob_table = []
+    for label, prob, mkt_odd in rows:
+        is_value = label in value_labels
+        color = GREEN if is_value else ""
+        reset = RESET if is_value else ""
+        marker = f"{BOLD_GREEN} <<< VALUE{RESET}" if is_value else ""
+        odd_display = mkt_odd if mkt_odd else "-"
+        prob_table.append([
+            f"{color}{label}{reset}",
+            f"{color}{prob:.1%}{reset}",
+            f"{color}{fair_odd(prob)}{reset}",
+            f"{color}{odd_display}{reset}{marker}",
+        ])
+
     print(tabulate(prob_table,
                    headers=["Mercado", "Prob.", "Odd Justa", "Odd Mercado"],
                    tablefmt="simple", stralign="center"))
@@ -88,18 +148,20 @@ def print_match_report(match, prediction, ai_result, recommendations, odds_info)
     # Recomendações de aposta
     if recommendations:
         print()
-        print("|  >>> RECOMENDACOES <<<")
+        print(f"|  {BOLD_GREEN}>>> APOSTAR <<<{RESET}")
         for rec in recommendations:
-            stars = "*" * rec['confidence']
+            edge_c = _edge_color(rec['edge'])
+            conf_bar = _confidence_bar(rec['confidence'])
             print(f"|")
-            print(f"|  [{stars:5s}] {rec['market']}")
-            print(f"|    Prob: {rec['probability']:.1%} | Odd mercado: {rec['market_odd']}")
-            print(f"|    Edge: {rec['edge_pct']} | Stake: R${rec['stake']:.2f} ({rec['stake_pct']}%)")
+            print(f"|  {GREEN}>> {BOLD_GREEN}{rec['market']}{RESET}")
+            print(f"|     Prob: {rec['probability']:.1%} | Odd mercado: {BOLD}{rec['market_odd']}{RESET}")
+            print(f"|     Edge: {edge_c}{rec['edge_pct']}{RESET} | Confianca: {conf_bar}")
+            print(f"|     {BOLD_GREEN}Stake: R${rec['stake']:.2f} ({rec['stake_pct']}% da banca){RESET}")
     else:
         print("|")
-        print("|  Sem value bets identificadas para este jogo.")
+        print(f"|  {DIM}Sem value bets identificadas para este jogo.{RESET}")
 
-    print("+" + "-" * 63 + "+")
+    print(f"{border_color}+{'-' * 63}+{RESET}")
 
 
 def analyze_league(league_code, days_ahead, use_ai, bankroll):
@@ -190,49 +252,49 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
 def print_summary(all_recs, bankroll):
     """Imprime resumo final com todas as recomendações."""
     print("\n")
-    print("=" * 65)
-    print("       RESUMO — MELHORES VALUE BETS DO DIA")
-    print("=" * 65)
+    print(f"{BOLD_GREEN}{'=' * 65}{RESET}")
+    print(f"{BOLD_GREEN}  {'$' * 3}  RESUMO — APOSTAS RECOMENDADAS  {'$' * 3}{RESET}")
+    print(f"{BOLD_GREEN}{'=' * 65}{RESET}")
 
     if not all_recs:
-        print("  Nenhuma value bet encontrada hoje.")
-        print("  Isso e normal — paciencia e disciplina sao parte da estrategia.")
-        print("=" * 65)
+        print()
+        print(f"  {DIM}Nenhuma value bet encontrada hoje.{RESET}")
+        print(f"  {DIM}Isso e normal — paciencia e disciplina sao parte da estrategia.{RESET}")
+        print(f"{DIM}{'=' * 65}{RESET}")
         return
 
     # Ordenar por edge
     all_recs.sort(key=lambda x: x["edge"], reverse=True)
 
-    table_data = []
+    # Imprimir cada aposta de forma clara
     total_stake = 0
     for i, rec in enumerate(all_recs, 1):
-        stars = "*" * rec["confidence"]
-        table_data.append([
-            i,
-            rec["match"][:30],
-            rec["league"][:10],
-            rec["market"],
-            f"{rec['probability']:.0%}",
-            rec["market_odd"],
-            rec["edge_pct"],
-            f"R${rec['stake']:.0f}",
-            stars,
-        ])
+        edge_c = _edge_color(rec["edge"])
+        conf_bar = _confidence_bar(rec["confidence"])
+
+        print()
+        print(f"  {BOLD_GREEN}[{i}] {rec['match']}{RESET}")
+        print(f"      {DIM}{rec['league']}{RESET}")
+        print(f"      Mercado:   {BOLD_GREEN}{rec['market']}{RESET}")
+        print(f"      Prob:      {rec['probability']:.1%}  |  Odd Justa: {rec['fair_odd']}")
+        print(f"      Odd:       {BOLD}{rec['market_odd']}{RESET}")
+        print(f"      Edge:      {edge_c}{rec['edge_pct']}{RESET}")
+        print(f"      Confianca: {conf_bar}")
+        print(f"      {BG_GREEN} STAKE: R${rec['stake']:.2f} ({rec['stake_pct']}% da banca) {RESET}")
         total_stake += rec["stake"]
 
-    print(tabulate(
-        table_data,
-        headers=["#", "Jogo", "Liga", "Mercado", "Prob", "Odd", "Edge", "Stake", "Conf."],
-        tablefmt="simple",
-    ))
-
-    print(f"\n  Total de apostas: {len(all_recs)}")
-    print(f"  Stake total: R${total_stake:.2f} ({total_stake/bankroll*100:.1f}% da banca)")
-    print(f"  Banca: R${bankroll:.2f}")
-    print("=" * 65)
-    print("  AVISO: Apostas envolvem risco. Use com responsabilidade.")
-    print("  Este e um sistema de APOIO a decisao, nao garantia de lucro.")
-    print("=" * 65)
+    # Rodapé resumo
+    print()
+    print(f"{BOLD_GREEN}{'-' * 65}{RESET}")
+    print(f"  {BOLD}Total de apostas:  {BOLD_GREEN}{len(all_recs)}{RESET}")
+    print(f"  {BOLD}Stake total:       {BOLD_GREEN}R${total_stake:.2f}{RESET} ({total_stake/bankroll*100:.1f}% da banca)")
+    print(f"  {BOLD}Banca disponivel:  {RESET}R${bankroll:.2f}")
+    print(f"  {BOLD}Banca restante:    {RESET}R${bankroll - total_stake:.2f}")
+    print(f"{BOLD_GREEN}{'-' * 65}{RESET}")
+    print()
+    print(f"  {YELLOW}AVISO: Apostas envolvem risco. Use com responsabilidade.{RESET}")
+    print(f"  {DIM}Este e um sistema de APOIO a decisao, nao garantia de lucro.{RESET}")
+    print(f"{BOLD_GREEN}{'=' * 65}{RESET}")
     print()
 
 
