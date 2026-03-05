@@ -443,14 +443,14 @@ class StudioEngine:
         self.final_crf    = int(args.final_crf)
         self.final_preset = args.final_preset
         self.concat_copy  = bool(args.concat_copy)
+        self.nvenc_preset = args.nvenc_preset
+        self.nvenc_cq     = int(args.nvenc_cq)
+        self.nvenc_tune   = args.nvenc_tune
         self.encoder      = args.encoder
         if self.encoder == "nvenc" and not self._detect_nvenc():
             print("  [info] h264_nvenc indisponível — usando libx264.")
             self.encoder = "x264"
         self._cuda_ok = self._detect_cuda() if self.encoder == "nvenc" else False
-        self.nvenc_preset = args.nvenc_preset
-        self.nvenc_cq     = int(args.nvenc_cq)
-        self.nvenc_tune   = args.nvenc_tune
 
         # Resolução
         self.enable_upscale  = bool(args.enable_upscale)
@@ -810,13 +810,17 @@ class StudioEngine:
     # ------------------------------------------------------------------ #
 
     def _detect_nvenc(self) -> bool:
-        """Verifica se h264_nvenc está funcional encodando um frame sintético."""
+        """Verifica se h264_nvenc está funcional com os mesmos flags do encode real."""
         try:
             import subprocess
             r = subprocess.run(
                 ["ffmpeg", "-hide_banner",
-                 "-f", "lavfi", "-i", "color=c=black:s=32x32:d=0.1:r=1",
-                 "-c:v", "h264_nvenc", "-f", "null", "-"],
+                 "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1:r=1",
+                 "-c:v", "h264_nvenc",
+                 "-preset", self.nvenc_preset,
+                 "-tune", self.nvenc_tune,
+                 "-gpu", "0",
+                 "-f", "null", "-"],
                 capture_output=True, timeout=15,
             )
             return r.returncode == 0
