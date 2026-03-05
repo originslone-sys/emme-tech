@@ -1252,13 +1252,9 @@ class StudioEngine:
                 "[wcolored]colorkey=0x000000:similarity=0.10:blend=0.06[wvis]"
             )
 
-            # Dark backdrop centred in frame + ribbon overlay
+            # Overlay waveform directly on video (sem faixa preta)
             fc_parts.append(
-                f"[vbase]drawbox=x=0:y={y_vis}:w=iw:h={wh}"
-                f":color=0x040410@0.92:t=fill[vdark]"
-            )
-            fc_parts.append(
-                f"[vdark][wvis]overlay=x=0:y={y_vis}:format=auto[vfinal]"
+                f"[vbase][wvis]overlay=x=0:y={y_vis}:format=auto[vfinal]"
             )
             v_out, a_out = "[vfinal]", "[aout]"
         else:
@@ -1328,7 +1324,8 @@ class StudioEngine:
     # Thumbnail                                                           #
     # ------------------------------------------------------------------ #
 
-    def generate_thumbnail(self, video_path: Path, thumb_out: Path) -> bool:
+    def generate_thumbnail(self, video_path: Path, thumb_out: Path,
+                           title: str = "") -> bool:
         dur = _get_duration(video_path)
         if dur <= 1.0:
             return False
@@ -1352,6 +1349,41 @@ class StudioEngine:
             return False
 
         best = max(candidates, key=lambda p: p.stat().st_size)
+
+        # Queima o título na thumbnail via drawtext
+        if title:
+            titled = self.thumbs_dir / f"{thumb_out.stem}_titled.jpg"
+            log_t  = self.logs_dir / f"thumb_title_{thumb_out.stem}.log"
+            safe_title = (title.replace("\\", "\\\\")
+                               .replace("'", "\\'")
+                               .replace(":", "\\:")
+                               .replace(",", "\\,")
+                               .replace(";", "\\;")
+                               .replace("%", "%%"))
+            fp_arg = ""
+            if self.font_path and Path(self.font_path).exists():
+                safe_fp = self.font_path.replace("\\", "/").replace("'", "\\'").replace(":", "\\:")
+                fp_arg = f"fontfile='{safe_fp}':"
+            # Fundo semi-transparente + texto branco centralizado na parte inferior
+            vf = (
+                f"drawbox=x=0:y=ih-120:w=iw:h=120:color=0x000000@0.55:t=fill,"
+                f"drawtext={fp_arg}"
+                f"text='{safe_title}':"
+                f"fontsize=52:fontcolor=white:"
+                f"x=(w-text_w)/2:y=h-80:"
+                f"shadowx=2:shadowy=2:shadowcolor=black@0.8:"
+                f"fix_bounds=1"
+            )
+            cmd_t = [
+                "ffmpeg", "-y", "-hide_banner",
+                "-i", str(best),
+                "-vf", vf,
+                "-q:v", "2", str(titled),
+            ]
+            res_t = run_cmd_capture(cmd_t, log_t, 60, self.proc_reg)
+            if res_t.rc == 0 and titled.exists() and titled.stat().st_size > 5_000:
+                best = titled
+
         try:
             if thumb_out.exists():
                 thumb_out.unlink(missing_ok=True)
@@ -1451,21 +1483,23 @@ class StudioEngine:
             if not ok:
                 return None
 
-            # --- Thumbnail ---
-            if self.make_thumbs:
-                thumb = self.thumbs_dir / f"{out_final.stem}.jpg"
-                if self.generate_thumbnail(out_final, thumb):
-                    print(f"  ✓  Thumbnail: {thumb.name}")
-                else:
-                    print("  ⚠  Não foi possível gerar thumbnail.")
-
-            # --- Metadados YouTube ---
+            # --- Metadados YouTube (gerado antes da thumbnail para usar o título) ---
+            thumb_title = ""
             if self._ai_enabled:
                 dur_min = int(_get_duration(out_final) // 60)
                 meta = self.deepseek.generate_youtube_metadata(
                     style=self.mode, phrases=[], duration_min=dur_min
                 )
                 self._save_metadata(out_final, meta)
+                thumb_title = meta.get("title", "")
+
+            # --- Thumbnail ---
+            if self.make_thumbs:
+                thumb = self.thumbs_dir / f"{out_final.stem}.jpg"
+                if self.generate_thumbnail(out_final, thumb, title=thumb_title):
+                    print(f"  ✓  Thumbnail: {thumb.name}")
+                else:
+                    print("  ⚠  Não foi possível gerar thumbnail.")
 
             size_mb = out_final.stat().st_size / (1024 * 1024)
             print(f"\n  Concluido: {out_final.name} ({size_mb:.1f} MB)")
