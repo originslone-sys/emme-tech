@@ -444,6 +444,7 @@ class StudioEngine:
         self.final_preset = args.final_preset
         self.concat_copy  = bool(args.concat_copy)
         self.encoder      = args.encoder
+        self._cuda_ok     = self._detect_cuda() if self.encoder == "nvenc" else False
         self.nvenc_preset = args.nvenc_preset
         self.nvenc_cq     = int(args.nvenc_cq)
         self.nvenc_tune   = args.nvenc_tune
@@ -805,10 +806,26 @@ class StudioEngine:
     # Encoder args                                                        #
     # ------------------------------------------------------------------ #
 
+    def _detect_cuda(self) -> bool:
+        """Verifica se CUDA/NVDEC está disponível rodando um probe rápido."""
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-hwaccel", "cuda",
+                 "-f", "lavfi", "-i", "nullsrc=s=2x2:d=0.01",
+                 "-f", "null", "-"],
+                capture_output=True, timeout=8,
+            )
+            ok = r.returncode == 0
+            if not ok:
+                print("  [info] CUDA/NVDEC indisponível — usando decodificação por CPU.")
+            return ok
+        except Exception:
+            return False
+
     def _hwaccel_args(self) -> List[str]:
-        """Retorna flags de hardware decoding via NVDEC (apenas no modo nvenc).
-        Sem hwaccel_output_format para manter compatibilidade com filtros de CPU."""
-        if self.encoder == "nvenc":
+        """Retorna flags de hardware decoding via NVDEC apenas se CUDA disponível."""
+        if self.encoder == "nvenc" and self._cuda_ok:
             return ["-hwaccel", "cuda"]
         return []
 
@@ -903,10 +920,10 @@ class StudioEngine:
             # -stream_loop -1 loops the input natively; avoids creating a
             # concat file whose path may contain characters (@, spaces, etc.)
             # that trip up FFmpeg's URL parser on Windows.
+            # CPU decoding is used here — NVDEC does not support stream_loop.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
                 *self._global_thread_args(),
-                *self._hwaccel_args(),
                 "-stream_loop", "-1",
                 "-fflags", "+genpts",
                 "-i", str(src),
