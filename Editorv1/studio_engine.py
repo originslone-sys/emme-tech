@@ -1365,13 +1365,15 @@ class StudioEngine:
     # ------------------------------------------------------------------ #
 
     def _save_metadata(self, video_path: Path, metadata: Dict) -> None:
-        meta_file = video_path.with_suffix(".meta.json")
-        try:
-            with meta_file.open("w", encoding="utf-8") as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
-            print(f"  ✓  Metadata: {meta_file.name}")
-        except Exception as e:
-            print(f"  ⚠  Falha ao salvar metadata: {e}")
+        sep = "─" * 60
+        tags_str = ", ".join(metadata.get("tags", []))
+        print(f"\n{sep}")
+        print("  METADADOS YOUTUBE — pronto para copiar e colar")
+        print(sep)
+        print(f"\n  TITULO:\n{metadata.get('title', '')}\n")
+        print(f"  DESCRICAO:\n{metadata.get('description', '')}\n")
+        print(f"  TAGS:\n{tags_str}\n")
+        print(sep)
 
     # ------------------------------------------------------------------ #
     # Pipeline principal: um vídeo                                        #
