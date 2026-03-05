@@ -446,11 +446,7 @@ class StudioEngine:
         self.nvenc_preset = args.nvenc_preset
         self.nvenc_cq     = int(args.nvenc_cq)
         self.nvenc_tune   = args.nvenc_tune
-        self.encoder      = args.encoder
-        if self.encoder == "nvenc" and not self._detect_nvenc():
-            print("  [info] h264_nvenc indisponível — usando libx264.")
-            self.encoder = "x264"
-        self._cuda_ok = self._detect_cuda() if self.encoder == "nvenc" else False
+        self.encoder      = self._auto_detect_encoder(args.encoder)
 
         # Resolução
         self.enable_upscale  = bool(args.enable_upscale)
@@ -809,45 +805,32 @@ class StudioEngine:
     # Encoder args                                                        #
     # ------------------------------------------------------------------ #
 
-    def _detect_nvenc(self) -> bool:
-        """Verifica se h264_nvenc está funcional com os mesmos flags do encode real."""
+    def _auto_detect_encoder(self, preferred: str) -> str:
+        """Testa se GPU (nvenc) funciona; se não, usa CPU (x264). Automático."""
+        if preferred != "nvenc":
+            print("  [encoder] libx264 (CPU)")
+            return "x264"
+        import subprocess
+        # Testa encode real: mesmos flags que o pipeline usa
         try:
-            import subprocess
             r = subprocess.run(
-                ["ffmpeg", "-hide_banner",
+                ["ffmpeg", "-hide_banner", "-y",
                  "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1:r=1",
-                 "-c:v", "h264_nvenc",
-                 "-preset", self.nvenc_preset,
-                 "-tune", self.nvenc_tune,
-                 "-gpu", "0",
+                 "-c:v", "h264_nvenc", "-preset", self.nvenc_preset,
+                 "-tune", self.nvenc_tune, "-gpu", "0",
                  "-f", "null", "-"],
                 capture_output=True, timeout=15,
             )
-            return r.returncode == 0
+            if r.returncode == 0:
+                print("  [encoder] h264_nvenc (GPU)")
+                return "nvenc"
         except Exception:
-            return False
-
-    def _detect_cuda(self) -> bool:
-        """Verifica se CUDA/NVDEC está disponível rodando um probe rápido."""
-        try:
-            import subprocess
-            r = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-hwaccel", "cuda",
-                 "-f", "lavfi", "-i", "nullsrc=s=2x2:d=0.01",
-                 "-f", "null", "-"],
-                capture_output=True, timeout=8,
-            )
-            ok = r.returncode == 0
-            if not ok:
-                print("  [info] CUDA/NVDEC indisponível — usando decodificação por CPU.")
-            return ok
-        except Exception:
-            return False
+            pass
+        print("  [encoder] GPU indisponível — usando libx264 (CPU)")
+        return "x264"
 
     def _hwaccel_args(self) -> List[str]:
-        """Retorna flags de hardware decoding via NVDEC apenas se CUDA disponível."""
-        if self.encoder == "nvenc" and self._cuda_ok:
-            return ["-hwaccel", "cuda"]
+        """Decodificação sempre por CPU — evita dependência de CUDA/NVDEC."""
         return []
 
     def _global_thread_args(self) -> List[str]:
