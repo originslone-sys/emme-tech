@@ -33,6 +33,7 @@ import signal
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -49,6 +50,7 @@ from visual_styles import get_palette, get_style
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv", ".mpeg", ".mpg"}
 AUDIO_EXTS = {".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac", ".wma"}
 ENGINE_FPS = 30
+CPU_THREADS = os.cpu_count() or 16  # usa todos os vCPUs disponíveis
 
 
 # ---------------------------------------------------------------------------
@@ -803,6 +805,21 @@ class StudioEngine:
     # Encoder args                                                        #
     # ------------------------------------------------------------------ #
 
+    def _hwaccel_args(self) -> List[str]:
+        """Retorna flags de hardware decoding via NVDEC (apenas no modo nvenc).
+        Sem hwaccel_output_format para manter compatibilidade com filtros de CPU."""
+        if self.encoder == "nvenc":
+            return ["-hwaccel", "cuda"]
+        return []
+
+    def _global_thread_args(self) -> List[str]:
+        """Flags de threading para maximizar uso de CPU nos filtros."""
+        return [
+            "-threads", str(CPU_THREADS),
+            "-filter_threads", str(CPU_THREADS),
+            "-filter_complex_threads", str(CPU_THREADS),
+        ]
+
     def _clip_encoder_args(self, crf: int) -> List[str]:
         if self.encoder == "nvenc":
             return [
@@ -813,8 +830,15 @@ class StudioEngine:
                 "-cq:v", str(self.nvenc_cq),
                 "-b:v", "0",
                 "-pix_fmt", "yuv420p",
+                "-gpu", "0",
             ]
-        return ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p"]
+        return [
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p",
+            "-threads", str(CPU_THREADS),
+        ]
 
     # ------------------------------------------------------------------ #
     # Processamento de clip individual                                    #
@@ -889,6 +913,7 @@ class StudioEngine:
                     cf.write(line)
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
+                *self._global_thread_args(),
                 "-f", "concat", "-safe", "0",
                 "-i", str(concat_file),
                 "-t", str(seg_len),
@@ -898,6 +923,8 @@ class StudioEngine:
         else:
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
+                *self._global_thread_args(),
+                *self._hwaccel_args(),
                 "-fflags", "+genpts",
                 "-ss", str(start), "-i", str(src),
                 "-t", str(seg_len),
@@ -1003,6 +1030,8 @@ class StudioEngine:
             ]
         cmd = [
             "ffmpeg", "-y", "-hide_banner",
+            *self._global_thread_args(),
+            *self._hwaccel_args(),
             "-fflags", "+genpts",
             "-f", "concat", "-safe", "0", "-i", str(lst),
             "-an", "-vf", vf,
@@ -1233,7 +1262,7 @@ class StudioEngine:
         log = self.logs_dir / f"render_final_{video_out.stem}.log"
 
         # 7. Monta o comando com inputs individuais de áudio
-        cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video_in)]
+        cmd = ["ffmpeg", "-y", "-hide_banner", *self._global_thread_args(), "-i", str(video_in)]
         for af in all_audio:
             cmd.extend(["-i", str(af)])
         if self.encoder == "nvenc":
@@ -1243,6 +1272,7 @@ class StudioEngine:
                 "-tune", self.nvenc_tune,
                 "-pix_fmt", "yuv420p",
                 "-cq:v", str(self.nvenc_cq),
+                "-gpu", "0",
             ]
         else:
             _final_enc = [
@@ -1250,6 +1280,7 @@ class StudioEngine:
                 "-preset", self.final_preset,
                 "-crf", str(self.final_crf),
                 "-pix_fmt", "yuv420p",
+                "-threads", str(CPU_THREADS),
             ]
         cmd.extend([
             "-filter_complex", fc,
@@ -1434,19 +1465,49 @@ class StudioEngine:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def run_batch(self, n: int) -> List[Path]:
-        outs: List[Path] = []
-        for i in range(n):
-            print(f"\n{'='*68}\n  JOB {i+1}/{n} — {self.mode.upper()}\n{'='*68}")
+        if self.max_workers <= 1 or n == 1:
+            outs: List[Path] = []
+            for i in range(n):
+                print(f"\n{'='*68}\n  JOB {i+1}/{n} — {self.mode.upper()}\n{'='*68}")
+                try:
+                    out = self.run_one()
+                except KeyboardInterrupt:
+                    print("  Batch interrompido.")
+                    break
+                if out:
+                    outs.append(out)
+            return outs
+
+        # Modo paralelo: executa múltiplos vídeos ao mesmo tempo
+        print(f"\n  Batch paralelo: {n} vídeo(s) em {self.max_workers} worker(s) simultâneos")
+        outs_lock = threading.Lock()
+        completed_outs: List[Path] = []
+        job_counter = threading.local()
+
+        def _run_job(job_idx: int) -> Optional[Path]:
+            print(f"\n{'='*68}\n  JOB {job_idx+1}/{n} — {self.mode.upper()} (worker)\n{'='*68}")
+            return self.run_one()
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = {pool.submit(_run_job, i): i for i in range(n)}
             try:
-                out = self.run_one()
+                for fut in as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        out = fut.result()
+                        if out:
+                            with outs_lock:
+                                completed_outs.append(out)
+                            print(f"  ✓  JOB {idx+1}/{n} concluído: {out.name}")
+                        else:
+                            print(f"  ⚠  JOB {idx+1}/{n} não gerou saída.")
+                    except Exception as exc:
+                        print(f"  ✗  JOB {idx+1}/{n} falhou: {exc}")
             except KeyboardInterrupt:
                 print("  Batch interrompido.")
-                break
-            if out:
-                outs.append(out)
-            if i < n - 1:
-                time.sleep(random.uniform(2, 5))
-        return outs
+                pool.shutdown(wait=False, cancel_futures=True)
+
+        return completed_outs
 
 
 # ---------------------------------------------------------------------------
@@ -1486,7 +1547,7 @@ Exemplos:
     p.add_argument("--failed-dir",    default="failed")
 
     # Processamento
-    p.add_argument("--workers",            type=int,   default=1)
+    p.add_argument("--workers",            type=int,   default=max(1, (os.cpu_count() or 4) // 4))
     p.add_argument("--num-videos",         type=int,   default=1)
     p.add_argument("--clip-timeout",       type=int,   default=900)
     p.add_argument("--clip-timeout-mult",  type=float, default=1.0)
@@ -1497,8 +1558,9 @@ Exemplos:
     p.add_argument("--final-crf",    type=int, default=20)
     p.add_argument("--final-preset", default="medium")
     p.add_argument("--concat-copy",  action="store_true")
-    p.add_argument("--encoder",      choices=["x264", "nvenc"], default="x264")
-    p.add_argument("--nvenc-preset", default="p5")
+    p.add_argument("--encoder",      choices=["x264", "nvenc"], default="nvenc")
+    p.add_argument("--nvenc-preset", default="p4",
+                   help="p1=fastest, p4=balanced, p7=best quality (default: p4)")
     p.add_argument("--nvenc-cq",     type=int, default=19)
     p.add_argument("--nvenc-tune",   default="hq")
 
