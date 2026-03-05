@@ -899,23 +899,17 @@ class StudioEngine:
 
         needs_loop = clip.get("loop", False) or seg_len > float(clip.get("duration", seg_len)) * 0.99
 
-        concat_file: Optional[Path] = None
         if needs_loop:
-            # Use concat demuxer to repeat the clip — more reliable than -stream_loop
-            src_dur = max(0.1, float(clip.get("duration", 1.0)))
-            repeats = int(seg_len / src_dur) + 2
-            concat_file = out.parent / f"loop_{idx:03d}.txt"
-            with concat_file.open("w", encoding="utf-8") as cf:
-                # FFmpeg concat demuxer: use forward slashes (works on Windows too)
-                path_str = str(src.resolve()).replace("\\", "/").replace("'", "\\'")
-                line = f"file '{path_str}'\n"
-                for _ in range(repeats):
-                    cf.write(line)
+            # -stream_loop -1 loops the input natively; avoids creating a
+            # concat file whose path may contain characters (@, spaces, etc.)
+            # that trip up FFmpeg's URL parser on Windows.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
                 *self._global_thread_args(),
-                "-f", "concat", "-safe", "0",
-                "-i", str(concat_file),
+                *self._hwaccel_args(),
+                "-stream_loop", "-1",
+                "-fflags", "+genpts",
+                "-i", str(src),
                 "-t", str(seg_len),
                 "-vf", vf, "-an",
                 "-movflags", "+faststart",
@@ -937,13 +931,6 @@ class StudioEngine:
         res = run_cmd_progress(cmd, log, timeout_s=timeout_s,
                                total_dur=seg_len, label=f"clip {idx}",
                                proc_reg=self.proc_reg)
-
-        # Clean up temporary concat list
-        if concat_file and concat_file.exists():
-            try:
-                concat_file.unlink()
-            except Exception:
-                pass
 
         if res.rc != 0 or not out.exists() or out.stat().st_size < 1024:
             tag = "TIMEOUT" if res.timed_out else f"rc={res.rc}"
