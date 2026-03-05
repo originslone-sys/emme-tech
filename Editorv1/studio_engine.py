@@ -988,13 +988,25 @@ class StudioEngine:
         lst = self._write_concat_list(clips, out)
         log = self.logs_dir / f"concat_reencode_{out.stem}.log"
         vf  = f"scale={w}:{h}:flags=lanczos,fps={ENGINE_FPS},setsar=1,format=yuv420p"
+        if self.encoder == "nvenc":
+            enc_args = [
+                "-c:v", "h264_nvenc",
+                "-preset", self.nvenc_preset,
+                "-tune", self.nvenc_tune,
+                "-pix_fmt", "yuv420p",
+                "-cq:v", str(self.nvenc_cq),
+            ]
+        else:
+            enc_args = [
+                "-c:v", "libx264", "-preset", self.final_preset,
+                "-crf", str(self.final_crf), "-pix_fmt", "yuv420p",
+            ]
         cmd = [
             "ffmpeg", "-y", "-hide_banner",
             "-fflags", "+genpts",
             "-f", "concat", "-safe", "0", "-i", str(lst),
             "-an", "-vf", vf,
-            "-c:v", "libx264", "-preset", self.final_preset,
-            "-crf", str(self.final_crf), "-pix_fmt", "yuv420p",
+            *enc_args,
             "-movflags", "+faststart", "-video_track_timescale", "90000",
             str(out)
         ]
@@ -1224,15 +1236,27 @@ class StudioEngine:
         cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video_in)]
         for af in all_audio:
             cmd.extend(["-i", str(af)])
+        if self.encoder == "nvenc":
+            _final_enc = [
+                "-c:v", "h264_nvenc",
+                "-preset", self.nvenc_preset,
+                "-tune", self.nvenc_tune,
+                "-pix_fmt", "yuv420p",
+                "-cq:v", str(self.nvenc_cq),
+            ]
+        else:
+            _final_enc = [
+                "-c:v", "libx264",
+                "-preset", self.final_preset,
+                "-crf", str(self.final_crf),
+                "-pix_fmt", "yuv420p",
+            ]
         cmd.extend([
             "-filter_complex", fc,
             "-map", v_out,
             "-map", a_out,
             "-t", f"{dur:.3f}",
-            "-c:v", "libx264",
-            "-preset", self.final_preset,
-            "-crf", str(self.final_crf),
-            "-pix_fmt", "yuv420p",
+            *_final_enc,
             "-c:a", "aac",
             "-b:a", "192k",
             "-movflags", "+faststart",
