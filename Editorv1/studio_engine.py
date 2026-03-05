@@ -444,7 +444,10 @@ class StudioEngine:
         self.final_preset = args.final_preset
         self.concat_copy  = bool(args.concat_copy)
         self.encoder      = args.encoder
-        self._cuda_ok     = self._detect_cuda() if self.encoder == "nvenc" else False
+        if self.encoder == "nvenc" and not self._detect_nvenc():
+            print("  [info] h264_nvenc indisponível — usando libx264.")
+            self.encoder = "x264"
+        self._cuda_ok = self._detect_cuda() if self.encoder == "nvenc" else False
         self.nvenc_preset = args.nvenc_preset
         self.nvenc_cq     = int(args.nvenc_cq)
         self.nvenc_tune   = args.nvenc_tune
@@ -806,6 +809,20 @@ class StudioEngine:
     # Encoder args                                                        #
     # ------------------------------------------------------------------ #
 
+    def _detect_nvenc(self) -> bool:
+        """Verifica se h264_nvenc está funcional encodando um frame sintético."""
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner",
+                 "-f", "lavfi", "-i", "color=c=black:s=32x32:d=0.1:r=1",
+                 "-c:v", "h264_nvenc", "-f", "null", "-"],
+                capture_output=True, timeout=15,
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
+
     def _detect_cuda(self) -> bool:
         """Verifica se CUDA/NVDEC está disponível rodando um probe rápido."""
         try:
@@ -880,7 +897,7 @@ class StudioEngine:
         # --- Rotação micro (muito sutil no lo-fi) ---
         if random.random() < (0.10 + 0.15 * intensity):
             ang = random.uniform(-0.15, 0.15) * (0.3 + intensity)
-            filters.append(f"rotate={ang}*PI/180:fillcolor=black@0:ow=iw:oh=ih")
+            filters.append(f"rotate={ang}*PI/180:fillcolor=black:ow=iw:oh=ih")
 
         # --- Variação de velocidade (muito sutil) ---
         if random.random() < 0.15:
