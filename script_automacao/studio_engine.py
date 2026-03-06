@@ -23,8 +23,11 @@ import argparse
 import concurrent.futures
 import hashlib
 import json
+import io
 import os
 import random
+import re
+import sys
 import shutil
 import signal
 import subprocess
@@ -227,6 +230,160 @@ def run_cmd_capture(cmd: List[str], log_file: Path, timeout_s: int, proc_reg: Op
         pass
 
     return CmdResult(rc=rc, elapsed=elapsed, stdout=out or "", stderr=err or "", timed_out=timed_out)
+
+
+# ---------------- Progress Bar Helpers ----------------
+
+_RE_TIME = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+_BAR_WIDTH = 30
+
+
+def _parse_ffmpeg_time(line: str) -> Optional[float]:
+    """Extrai 'time=HH:MM:SS.xx' do stderr do FFmpeg e retorna segundos."""
+    m = _RE_TIME.search(line)
+    if m:
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    return None
+
+
+def _format_bar(pct: float, width: int = _BAR_WIDTH) -> str:
+    filled = int(width * pct)
+    bar = "\u2588" * filled + "\u2591" * (width - filled)
+    return bar
+
+
+def _format_time(secs: float) -> str:
+    m, s = divmod(int(secs), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def run_cmd_with_progress(
+    cmd: List[str],
+    log_file: Path,
+    timeout_s: int,
+    total_duration: float,
+    label: str = "",
+    proc_reg: Optional[ProcRegistry] = None,
+) -> CmdResult:
+    """
+    Executa FFmpeg com barra de progresso em tempo real.
+    Lê stderr char a char para capturar as linhas de progresso (terminadas por \\r).
+    """
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    timed_out = False
+    stderr_buf = io.StringIO()
+
+    creationflags = 0
+    start_new_session = False
+    if os.name == "nt":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        start_new_session = True
+
+    p = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,  # bytes mode for real-time reading
+        creationflags=creationflags,
+        start_new_session=start_new_session,
+    )
+
+    if proc_reg:
+        proc_reg.add(p)
+
+    last_pct = -1.0
+
+    def _read_stderr():
+        nonlocal last_pct
+        line_buf = b""
+        try:
+            while True:
+                ch = p.stderr.read(1)
+                if not ch:
+                    break
+                if ch in (b"\r", b"\n"):
+                    if line_buf:
+                        decoded = line_buf.decode("utf-8", errors="replace")
+                        stderr_buf.write(decoded + "\n")
+                        t = _parse_ffmpeg_time(decoded)
+                        if t is not None and total_duration > 0:
+                            pct = min(t / total_duration, 1.0)
+                            if pct - last_pct >= 0.005:  # update every 0.5%
+                                last_pct = pct
+                                elapsed = time.time() - t0
+                                eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
+                                bar = _format_bar(pct)
+                                sys.stderr.write(
+                                    f"\r  {label}|{bar}| {pct*100:5.1f}% "
+                                    f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
+                                    f"| ETA {_format_time(eta)}  "
+                                )
+                                sys.stderr.flush()
+                    line_buf = b""
+                else:
+                    line_buf += ch
+        except Exception:
+            pass
+
+    reader_thread = threading.Thread(target=_read_stderr, daemon=True)
+    reader_thread.start()
+
+    try:
+        try:
+            out_bytes, _ = p.communicate(timeout=timeout_s)
+            rc = int(p.returncode or 0)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                kill_process_tree(p)
+            finally:
+                out_bytes, _ = p.communicate()
+            rc = 124
+    finally:
+        if proc_reg:
+            proc_reg.discard(p)
+
+    reader_thread.join(timeout=3)
+
+    # Clear the progress line
+    if last_pct >= 0:
+        if not timed_out and rc == 0:
+            bar = _format_bar(1.0)
+            elapsed = time.time() - t0
+            sys.stderr.write(
+                f"\r  {label}|{bar}| 100.0% "
+                f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
+                f"| Concluido!    \n"
+            )
+        else:
+            sys.stderr.write("\n")
+        sys.stderr.flush()
+
+    elapsed = time.time() - t0
+    out = out_bytes.decode("utf-8", errors="replace") if out_bytes else ""
+    err = stderr_buf.getvalue()
+
+    try:
+        with log_file.open("w", encoding="utf-8", errors="replace") as lf:
+            lf.write("CMD:\n")
+            lf.write(" ".join(cmd) + "\n\n")
+            lf.write(f"TIMEOUT_S={timeout_s}\n")
+            lf.write(f"ELAPSED_S={elapsed:.2f}\n")
+            lf.write(f"RC={rc}\n")
+            lf.write(f"TIMED_OUT={timed_out}\n")
+            lf.write("\n--- STDERR ---\n")
+            lf.write(err)
+            lf.write("\n--- STDOUT ---\n")
+            lf.write(out)
+    except Exception:
+        pass
+
+    return CmdResult(rc=rc, elapsed=elapsed, stdout=out, stderr=err, timed_out=timed_out)
 
 
 def estimate_timeout_seconds(
@@ -605,7 +762,7 @@ class StudioEngine:
 
     # --------- CLIP PROCESS ----------
 
-    def process_clip(self, clip: Dict, idx: int, temp_dir: Path, final_w: int, final_h: int) -> Optional[Path]:
+    def process_clip(self, clip: Dict, idx: int, temp_dir: Path, final_w: int, final_h: int, total_clips: int = 0) -> Optional[Path]:
         if self.stop_event.is_set():
             return None
 
@@ -683,13 +840,20 @@ class StudioEngine:
         cmd += ["-c:a", "aac", "-b:a", "192k"]
         cmd += [str(out)]
 
-        res = run_cmd_capture(cmd, log, timeout_s=timeout_s, proc_reg=self.proc_reg)
+        clip_label = f"Clip {idx+1}/{total_clips} " if total_clips else f"Clip {idx} "
+        res = run_cmd_with_progress(
+            cmd, log,
+            timeout_s=timeout_s,
+            total_duration=seg_len,
+            label=clip_label,
+            proc_reg=self.proc_reg,
+        )
 
         if res.rc != 0 or not out.exists() or out.stat().st_size < 1024:
             if res.timed_out:
-                print(f"  ⚠️ Timeout clip {idx} rc=124 ({int(res.elapsed)}s/{timeout_s}s): {src.name}")
+                print(f"  ⚠️ Timeout clip {idx+1} rc=124 ({int(res.elapsed)}s/{timeout_s}s): {src.name}")
             else:
-                print(f"  ⚠️ Falha clip {idx} rc={res.rc}: {src.name}")
+                print(f"  ⚠️ Falha clip {idx+1} rc={res.rc}: {src.name}")
             try:
                 if out.exists():
                     out.unlink(missing_ok=True)
@@ -704,7 +868,7 @@ class StudioEngine:
                 pass
             return None
 
-        print(f"  ✅ Clip {idx} OK [{cam_tag}] speed={speed:.4f}")
+        print(f"  ✅ Clip {idx+1}/{total_clips} OK [{cam_tag}] speed={speed:.4f}")
         return out
 
     # --------- CONCAT (FAST COPY + FALLBACK BLINDADO) ----------
@@ -722,7 +886,7 @@ class StudioEngine:
                 f.write(f"file '{self._escape_concat_path(p)}'\n")
         return concat_list
 
-    def _concat_copy(self, clips: List[Path], out_video: Path) -> bool:
+    def _concat_copy(self, clips: List[Path], out_video: Path, total_duration: float = 0) -> bool:
         if not clips:
             return False
 
@@ -738,7 +902,13 @@ class StudioEngine:
             str(out_video),
         ]
 
-        res = run_cmd_capture(cmd, log, timeout_s=self.final_timeout_s, proc_reg=self.proc_reg)
+        res = run_cmd_with_progress(
+            cmd, log,
+            timeout_s=self.final_timeout_s,
+            total_duration=total_duration,
+            label="Concat (copy) ",
+            proc_reg=self.proc_reg,
+        )
 
         try:
             concat_list.unlink(missing_ok=True)
@@ -747,7 +917,7 @@ class StudioEngine:
 
         return res.rc == 0 and out_video.exists() and out_video.stat().st_size > 1024
 
-    def _concat_reencode(self, clips: List[Path], out_video: Path, target_w: int, target_h: int) -> bool:
+    def _concat_reencode(self, clips: List[Path], out_video: Path, target_w: int, target_h: int, total_duration: float = 0) -> bool:
         if not clips:
             return False
 
@@ -775,7 +945,13 @@ class StudioEngine:
             str(out_video),
         ]
 
-        res = run_cmd_capture(cmd, log, timeout_s=self.final_timeout_s, proc_reg=self.proc_reg)
+        res = run_cmd_with_progress(
+            cmd, log,
+            timeout_s=self.final_timeout_s,
+            total_duration=total_duration,
+            label="Concat (reencode) ",
+            proc_reg=self.proc_reg,
+        )
 
         try:
             concat_list.unlink(missing_ok=True)
@@ -784,16 +960,16 @@ class StudioEngine:
 
         return res.rc == 0 and out_video.exists() and out_video.stat().st_size > 1024
 
-    def concat_video_only(self, clips: List[Path], out_video: Path, target_w: int, target_h: int) -> bool:
+    def concat_video_only(self, clips: List[Path], out_video: Path, target_w: int, target_h: int, total_duration: float = 0) -> bool:
         if not clips:
             return False
 
         if self.concat_copy:
-            if self._concat_copy(clips, out_video):
+            if self._concat_copy(clips, out_video, total_duration=total_duration):
                 return True
             print("⚠️ concat copy falhou; fazendo fallback para reencode (mais lento).")
 
-        ok = self._concat_reencode(clips, out_video, target_w, target_h)
+        ok = self._concat_reencode(clips, out_video, target_w, target_h, total_duration=total_duration)
         if not ok:
             print("❌ Concat reencode falhou (veja logs/concat_reencode_*.log).")
         return ok
@@ -899,34 +1075,25 @@ class StudioEngine:
         processed: List[Tuple[int, Path]] = []
 
         try:
-            print("\n🎞️ Processando clipes...")
+            total_clips = len(clips)
+            total_dur = sum(float(c.get("seg_len", 0)) for c in clips)
+            print(f"\n🎞️ Processando {total_clips} clipes ({_format_time(total_dur)} total)...\n")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
-                futs = {
-                    ex.submit(self.process_clip, clip, i, temp_dir, final_w, final_h): i
-                    for i, clip in enumerate(clips)
-                }
-
-                try:
-                    for fut in concurrent.futures.as_completed(futs):
-                        if self.stop_event.is_set():
-                            break
-                        i = futs[fut]
-                        try:
-                            p = fut.result()
-                            if p:
-                                processed.append((i, p))
-                        except Exception as e:
-                            print(f"  ❌ Erro clip {i}: {e}")
-                except KeyboardInterrupt:
-                    self.stop_event.set()
-                    print("\n🛑 Interrompido (Ctrl+C). Finalizando processos FFmpeg...")
-                    self.proc_reg.kill_all()
+            try:
+                for i, clip in enumerate(clips):
+                    if self.stop_event.is_set():
+                        break
                     try:
-                        ex.shutdown(wait=False, cancel_futures=True)
-                    except Exception:
-                        pass
-                    raise
+                        p = self.process_clip(clip, i, temp_dir, final_w, final_h, total_clips=total_clips)
+                        if p:
+                            processed.append((i, p))
+                    except Exception as e:
+                        print(f"  ❌ Erro clip {i+1}: {e}")
+            except KeyboardInterrupt:
+                self.stop_event.set()
+                print("\n🛑 Interrompido (Ctrl+C). Finalizando processos FFmpeg...")
+                self.proc_reg.kill_all()
+                raise
 
             processed.sort(key=lambda x: x[0])
             clip_paths = [p for _, p in processed]
@@ -940,8 +1107,10 @@ class StudioEngine:
 
             out_video_final = self.output_dir / f"{self.mode}_{ts}_{seed}.mp4"
 
-            print("\n🧩 Concatenando vídeo (com áudio original)...")
-            if not self.concat_video_only(clip_paths, out_video_final, final_w, final_h):
+            # Calcula duração total dos clipes processados para barra de progresso do concat
+            concat_dur = sum(_get_duration(p) for p in clip_paths)
+            print(f"\n🧩 Concatenando {len(clip_paths)} clipes ({_format_time(concat_dur)})...")
+            if not self.concat_video_only(clip_paths, out_video_final, final_w, final_h, total_duration=concat_dur):
                 print("❌ Concat falhou.")
                 return None
             print(f"✅ Vídeo final: {out_video_final.name}")
