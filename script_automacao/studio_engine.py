@@ -270,12 +270,13 @@ def run_cmd_with_progress(
 ) -> CmdResult:
     """
     Executa FFmpeg com barra de progresso em tempo real.
-    Lê stderr char a char para capturar as linhas de progresso (terminadas por \\r).
+    Usa threads separadas para stdout e stderr (sem communicate) para evitar deadlock.
     """
     log_file.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     timed_out = False
     stderr_buf = io.StringIO()
+    stdout_chunks: List[bytes] = []
 
     creationflags = 0
     start_new_session = False
@@ -288,7 +289,7 @@ def run_cmd_with_progress(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=False,  # bytes mode for real-time reading
+        text=False,
         creationflags=creationflags,
         start_new_session=start_new_session,
     )
@@ -297,6 +298,16 @@ def run_cmd_with_progress(
         proc_reg.add(p)
 
     last_pct = -1.0
+
+    def _read_stdout():
+        try:
+            while True:
+                chunk = p.stdout.read(4096)
+                if not chunk:
+                    break
+                stdout_chunks.append(chunk)
+        except Exception:
+            pass
 
     def _read_stderr():
         nonlocal last_pct
@@ -313,7 +324,7 @@ def run_cmd_with_progress(
                         t = _parse_ffmpeg_time(decoded)
                         if t is not None and total_duration > 0:
                             pct = min(t / total_duration, 1.0)
-                            if pct - last_pct >= 0.005:  # update every 0.5%
+                            if pct - last_pct >= 0.005:
                                 last_pct = pct
                                 elapsed = time.time() - t0
                                 eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
@@ -330,27 +341,28 @@ def run_cmd_with_progress(
         except Exception:
             pass
 
-    reader_thread = threading.Thread(target=_read_stderr, daemon=True)
-    reader_thread.start()
+    t_out = threading.Thread(target=_read_stdout, daemon=True)
+    t_err = threading.Thread(target=_read_stderr, daemon=True)
+    t_out.start()
+    t_err.start()
 
     try:
         try:
-            out_bytes, _ = p.communicate(timeout=timeout_s)
+            p.wait(timeout=timeout_s)
             rc = int(p.returncode or 0)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                kill_process_tree(p)
-            finally:
-                out_bytes, _ = p.communicate()
+            kill_process_tree(p)
+            p.wait()
             rc = 124
     finally:
         if proc_reg:
             proc_reg.discard(p)
 
-    reader_thread.join(timeout=3)
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
 
-    # Clear the progress line
+    # Finaliza a linha da barra de progresso
     if last_pct >= 0:
         if not timed_out and rc == 0:
             bar = _format_bar(1.0)
@@ -365,7 +377,7 @@ def run_cmd_with_progress(
         sys.stderr.flush()
 
     elapsed = time.time() - t0
-    out = out_bytes.decode("utf-8", errors="replace") if out_bytes else ""
+    out = b"".join(stdout_chunks).decode("utf-8", errors="replace")
     err = stderr_buf.getvalue()
 
     try:
