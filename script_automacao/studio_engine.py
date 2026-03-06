@@ -395,24 +395,32 @@ def estimate_timeout_seconds(
     base_timeout_s: int,
     multiplier: float,
 ) -> int:
-    speed_min = 0.18
+    # Base mais conservador: zoompan sempre ativo consome muito CPU
+    speed_min = 0.10
     if stabilize:
-        speed_min *= 0.75
+        speed_min *= 0.70
     if denoise:
         speed_min *= 0.80
     if upscale:
-        speed_min *= 0.75
+        speed_min *= 0.70
+
+    # Penalidade composta: quando 3+ efeitos pesados estão ativos juntos
+    heavy_count = sum([stabilize, denoise, upscale])
+    if heavy_count >= 3:
+        speed_min *= 0.60  # combinação extrema
+    elif heavy_count >= 2:
+        speed_min *= 0.80
 
     inten = max(0.0, min(1.0, float(intensity)))
     speed_min *= max(0.55, 1.0 - 0.35 * inten)
-    speed_min = max(0.05, speed_min)
+    speed_min = max(0.02, speed_min)
 
     estimated = clip_dur_s / speed_min
-    timeout = estimated * 1.6 + 60.0
+    timeout = estimated * 2.0 + 120.0  # margem maior: 2x + 2min base
     timeout *= max(1.0, float(multiplier))
 
     timeout = max(timeout, float(base_timeout_s))
-    timeout = min(timeout, 4.0 * 60.0 * 60.0)
+    timeout = min(timeout, 6.0 * 60.0 * 60.0)  # teto 6h (era 4h)
     return int(timeout)
 
 
@@ -678,9 +686,11 @@ class StudioEngine:
             yexpr = f"(ih-oh)*{pan_frac}*on/{total_frames}"
             tag = f"cam:pany+{layer}"
 
+        # d=total_frames faz zoompan gerar todos os frames de uma vez (mais eficiente)
+        # Sem pre-scale separado: zoompan já faz o crop+resize internamente
         filt = (
-            f"scale={iw}:{ih}:flags=lanczos,"
-            f"zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}':d=1:s={ow}x{oh}:fps={ENGINE_FPS}"
+            f"scale={iw}:{ih}:flags=bilinear,"
+            f"zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}':d={total_frames}:s={ow}x{oh}:fps={ENGINE_FPS}"
         )
         return filt, tag
 
@@ -693,9 +703,9 @@ class StudioEngine:
             filters.append("deshake=rx=64:ry=64")
 
         if self.enable_denoise:
+            # hqdn3d sozinho já é suficiente e MUITO mais rápido que nlmeans
+            # nlmeans=s=3:p=7:r=15 causava timeout em clips >2min com zoompan+upscale
             filters.append("hqdn3d=3:2:5:3.5")
-            if self._has_filter("nlmeans"):
-                filters.append("nlmeans=s=3:p=7:r=15")
 
         if self.enable_enhance_color:
             filters.append("eq=brightness=0.02:contrast=1.06:saturation=1.12:gamma=1.02")
