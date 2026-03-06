@@ -1330,6 +1330,8 @@ class StudioEngine:
         if dur <= 1.0:
             return False
 
+        THUMB_W, THUMB_H = 1280, 720  # padrão YouTube recomendado
+
         candidates: List[Path] = []
         for i, t in enumerate([dur * 0.25, dur * 0.50, dur * 0.75], 1):
             tmp = self.thumbs_dir / f"{thumb_out.stem}_cand{i}.jpg"
@@ -1338,8 +1340,15 @@ class StudioEngine:
                 "ffmpeg", "-y", "-hide_banner",
                 "-ss", str(t), "-i", str(video_path),
                 "-frames:v", "1",
-                "-vf", "eq=contrast=1.12:saturation=1.08,unsharp=3:3:0.8:3:3:0.2",
-                "-q:v", "2", str(tmp),
+                "-vf", (
+                    f"scale={THUMB_W}:{THUMB_H}:flags=lanczos"
+                    f":force_original_aspect_ratio=increase,"
+                    f"crop={THUMB_W}:{THUMB_H},"
+                    f"eq=contrast=1.20:saturation=1.18:brightness=0.02,"
+                    f"unsharp=5:5:1.2:5:5:0.3"
+                ),
+                "-q:v", "1",  # melhor qualidade JPEG
+                str(tmp),
             ]
             res = run_cmd_capture(cmd, log, 120, self.proc_reg)
             if res.rc == 0 and tmp.exists() and tmp.stat().st_size > 10_000:
@@ -1350,35 +1359,76 @@ class StudioEngine:
 
         best = max(candidates, key=lambda p: p.stat().st_size)
 
-        # Queima o título na thumbnail via drawtext
+        # Queima o título centralizado no meio da thumbnail
         if title:
             titled = self.thumbs_dir / f"{thumb_out.stem}_titled.jpg"
             log_t  = self.logs_dir / f"thumb_title_{thumb_out.stem}.log"
-            safe_title = (title.replace("\\", "\\\\")
-                               .replace("'", "\\'")
-                               .replace(":", "\\:")
-                               .replace(",", "\\,")
-                               .replace(";", "\\;")
-                               .replace("%", "%%"))
+
+            def _esc(s: str) -> str:
+                for ch, rep in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
+                                 (",", "\\,"), (";", "\\;"), ("%", "%%")]:
+                    s = s.replace(ch, rep)
+                return s
+
             fp_arg = ""
             if self.font_path and Path(self.font_path).exists():
-                safe_fp = self.font_path.replace("\\", "/").replace("'", "\\'").replace(":", "\\:")
+                safe_fp = (self.font_path.replace("\\", "/")
+                                         .replace("'", "\\'")
+                                         .replace(":", "\\:"))
                 fp_arg = f"fontfile='{safe_fp}':"
-            # Fundo semi-transparente + texto branco centralizado na parte inferior
-            vf = (
-                f"drawbox=x=0:y=ih-120:w=iw:h=120:color=0x000000@0.55:t=fill,"
-                f"drawtext={fp_arg}"
-                f"text='{safe_title}':"
-                f"fontsize=52:fontcolor=white:"
-                f"x=(w-text_w)/2:y=h-80:"
-                f"shadowx=2:shadowy=2:shadowcolor=black@0.8:"
-                f"fix_bounds=1"
-            )
+
+            # Quebra o título em linhas de ~24 chars (fontsize=68 @ 1280px)
+            words = title.split()
+            lines: List[str] = []
+            cur = ""
+            for w in words:
+                probe = f"{cur} {w}".strip() if cur else w
+                if len(probe) <= 24:
+                    cur = probe
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            lines = lines[:3]  # máximo 3 linhas
+
+            fontsize  = 68
+            line_h    = fontsize + 16   # altura de cada linha com espaçamento
+            n         = len(lines)
+            y_center  = THUMB_H // 2
+            y_start   = y_center - (n * line_h) // 2
+
+            # Fundo escuro semitransparente atrás do bloco de texto
+            box_pad_x = int(THUMB_W * 0.06)
+            box_pad_y = 22
+            box_h     = n * line_h + box_pad_y * 2
+            box_y     = max(0, y_start - box_pad_y)
+
+            vf_parts = [
+                f"drawbox=x={box_pad_x}:y={box_y}"
+                f":w={THUMB_W - box_pad_x * 2}:h={box_h}"
+                f":color=0x000000@0.58:t=fill"
+            ]
+
+            for idx, line in enumerate(lines):
+                y_pos = y_start + idx * line_h
+                vf_parts.append(
+                    f"drawtext={fp_arg}"
+                    f"text='{_esc(line)}':"
+                    f"fontsize={fontsize}:fontcolor=white:"
+                    f"borderw=3:bordercolor=0x000000@0.90:"
+                    f"shadowx=3:shadowy=3:shadowcolor=0x000000@0.70:"
+                    f"x=(w-text_w)/2:y={y_pos}:"
+                    f"fix_bounds=1"
+                )
+
             cmd_t = [
                 "ffmpeg", "-y", "-hide_banner",
                 "-i", str(best),
-                "-vf", vf,
-                "-q:v", "2", str(titled),
+                "-vf", ",".join(vf_parts),
+                "-q:v", "1",
+                str(titled),
             ]
             res_t = run_cmd_capture(cmd_t, log_t, 60, self.proc_reg)
             if res_t.rc == 0 and titled.exists() and titled.stat().st_size > 5_000:
