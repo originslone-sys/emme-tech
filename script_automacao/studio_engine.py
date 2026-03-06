@@ -1,31 +1,18 @@
 #!/usr/bin/env python3
 """
-STUDIO ENGINE — Edição automática (acervo -> novos vídeos) — FIX compatível FFmpeg (30 FPS)
+STUDIO ENGINE — Edição automática (acervo -> novos vídeos) — Foco em QUALIDADE
 
-✅ Correções REAIS aplicadas (baseadas nos seus logs):
-1) Câmera (zoom/pan/multi-crop) usa zoompan (compatível).
-2) Remove crop eval=frame.
-3) Engine fixo em 30fps (sem minterpolate).
-4) deshake sem edges=blank.
-5) FIX do seu erro atual: remove -fps_mode (estava aplicado no lugar errado).
-6) FIX do SAR mismatch: força setsar=1 em todos os clips e no concat fallback.
-7) FIX do concat copy "No such file": lista concat com caminhos absolutos + escape correto.
-
-🚀 Robustez + Performance:
-A) Timeout dinâmico por clip.
-B) Ctrl+C mata árvore do ffmpeg e não trava threads.
-C) Concat:
-   - tenta concat demuxer -c copy
-   - fallback reencode usando concat demuxer (1 input, sem filter_complex de N inputs).
-D) Encoder clips: x264 (default) ou NVENC.
-
-Mantém:
+Funcionalidades:
 - modos teaser | compilado | premium
-- upscale/target-res + sharpen
-- denoise + enhance-color + stabilize
-- micro rotate + grain
-- remove áudio original, mix de 2 pastas (primary alto + bg baixo)
-- thumbnails
+- MANTÉM áudio original do vídeo (sem substituição por música externa)
+- upscale inteligente com target-res + sharpen adaptativo
+- denoise avançado + enhance-color + stabilize
+- micro rotate + grain cinematográfico
+- câmera (zoom/pan) via zoompan
+- thumbnails otimizadas
+- concat demuxer -c copy com fallback reencode
+- encoder clips: x264 (default) ou NVENC
+- timeout dinâmico por clip + Ctrl+C seguro
 
 Requisitos:
 - ffmpeg + ffprobe no PATH
@@ -49,7 +36,6 @@ from typing import Dict, List, Optional, Tuple
 
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv", ".mpeg", ".mpg"}
-AUDIO_EXTS = {".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac", ".wma"}
 
 ENGINE_FPS = 30  # FIX: engine em 30 fps sempre
 
@@ -86,15 +72,6 @@ def _get_duration(path: Path) -> float:
         return float(data["format"]["duration"])
     except Exception:
         return 0.0
-
-
-def _pick_random_file(folder: Optional[Path], exts: set) -> Optional[Path]:
-    if not folder or not folder.exists():
-        return None
-    files = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in exts]
-    if not files:
-        return None
-    return random.choice(files)
 
 
 # ---------------- Robust Subprocess + Kill Tree ----------------
@@ -309,15 +286,6 @@ class StudioEngine:
         self.enable_stabilize = bool(args.stabilize)
         self.enable_enhance_color = bool(args.enhance_color)
 
-        self.audio_primary_dir = Path(args.audio_primary) if args.audio_primary else None
-        self.audio_bg_dir = Path(args.audio_bg) if args.audio_bg else None
-        self.vol_primary = float(args.vol_primary)
-        self.vol_bg = float(args.vol_bg)
-        self.fade_in = float(args.fade_in)
-        self.fade_out = float(args.fade_out)
-        self.audio_sr = int(args.audio_sr)
-        self.audio_layout = args.audio_layout
-
         self.make_thumbs = bool(args.thumbnails)
 
         self._filters_cache = None
@@ -504,12 +472,15 @@ class StudioEngine:
             filters.append("deshake=rx=64:ry=64")
 
         if self.enable_denoise:
-            filters.append("hqdn3d=4:3:6:4.5")
+            filters.append("hqdn3d=3:2:5:3.5")
+            if self._has_filter("nlmeans"):
+                filters.append("nlmeans=s=3:p=7:r=15")
 
         if self.enable_enhance_color:
-            filters.append("eq=brightness=0.02:contrast=1.05:saturation=1.10:gamma=1.0")
+            filters.append("eq=brightness=0.02:contrast=1.06:saturation=1.12:gamma=1.02")
             if self._has_filter("vibrance"):
-                filters.append("vibrance=1.15")
+                filters.append("vibrance=1.18")
+            filters.append("colorbalance=rs=0.02:gs=0.01:bs=-0.01:rm=0.01:gm=0.005:bm=-0.005")
 
         w = int(info.get("width") or 1920)
         h = int(info.get("height") or 1080)
@@ -520,6 +491,8 @@ class StudioEngine:
             if self.enable_upscale and self.upscale_quality != "none":
                 if w < 1920:
                     tw, th = 1920, 1080
+                elif w < 2560:
+                    tw, th = 2560, 1440
                 else:
                     tw, th = w, h
             else:
@@ -529,13 +502,18 @@ class StudioEngine:
         th = _safe_int_even(th, 2)
 
         if (tw, th) != (w, h):
-            algo = "lanczos"
+            algo = "lanczos+accurate_rnd"
             if self.upscale_quality == "low":
                 algo = "bilinear"
             elif self.upscale_quality == "medium":
                 algo = "spline"
             filters.append(f"scale={tw}:{th}:flags={algo}")
-            filters.append("unsharp=3:3:0.8:3:3:0.2")
+
+        # sharpen adaptativo: mais forte em upscale, suave em resolução nativa
+        if (tw, th) != (w, h):
+            filters.append("unsharp=5:5:1.0:5:5:0.3")
+        else:
+            filters.append("unsharp=3:3:0.6:3:3:0.15")
 
         return filters
 
@@ -584,9 +562,11 @@ class StudioEngine:
             filters.append(f"noise=alls={random.uniform(0.0005, 0.0018)}:allf=t+u")
 
         speed = 1.0
+        af_filters: List[str] = []
         if random.random() < (0.25 + 0.15 * intensity):
             speed = random.uniform(0.992, 1.008)
             filters.append(f"setpts=PTS/{speed}")
+            af_filters.append(f"atempo={speed}")
 
         filters.extend(self._quality_filters(clip))
 
@@ -595,17 +575,22 @@ class StudioEngine:
         filters.append("setsar=1")
         filters.append("format=yuv420p")
 
+        # filtros de áudio: normalização + limpeza
+        af_filters.append("aresample=44100")
+        af_filters.append("dynaudnorm=p=0.9:s=5")
+
         vf = ",".join(filters)
+        af = ",".join(af_filters)
 
         out = temp_dir / f"clip_{idx:03d}_{src.stem}.mp4"
         log = self.logs_dir / f"clip_{idx:03d}_{src.stem}.log"
 
         if self.mode == "teaser":
-            q = random.randint(20, 23)
-        elif self.mode == "compilado":
-            q = random.randint(19, 22)
-        else:
             q = random.randint(18, 21)
+        elif self.mode == "compilado":
+            q = random.randint(17, 20)
+        else:
+            q = random.randint(16, 19)
 
         timeout_s = estimate_timeout_seconds(
             clip_dur_s=seg_len,
@@ -624,11 +609,12 @@ class StudioEngine:
             "-i", str(src),
             "-t", str(seg_len),
             "-vf", vf,
-            "-an",
+            "-af", af,
             "-movflags", "+faststart",
             "-video_track_timescale", "90000",
         ]
         cmd += self._clip_encoder_args(q)
+        cmd += ["-c:a", "aac", "-b:a", "192k"]
         cmd += [str(out)]
 
         res = run_cmd_capture(cmd, log, timeout_s=timeout_s, proc_reg=self.proc_reg)
@@ -681,7 +667,6 @@ class StudioEngine:
             "ffmpeg", "-y", "-hide_banner",
             "-f", "concat", "-safe", "0",
             "-i", str(concat_list),
-            "-an",
             "-c", "copy",
             "-movflags", "+faststart",
             str(out_video),
@@ -703,7 +688,6 @@ class StudioEngine:
         concat_list = self._write_concat_list(clips, out_video)
         log = self.logs_dir / f"concat_reencode_{out_video.stem}.log"
 
-        # FIX SAR mismatch aqui também
         vf = f"scale={target_w}:{target_h}:flags=lanczos,fps={ENGINE_FPS},setsar=1,format=yuv420p"
 
         cmd = [
@@ -711,7 +695,6 @@ class StudioEngine:
             "-fflags", "+genpts",
             "-f", "concat", "-safe", "0",
             "-i", str(concat_list),
-            "-an",
             "-vf", vf,
             "-movflags", "+faststart",
             "-video_track_timescale", "90000",
@@ -719,6 +702,8 @@ class StudioEngine:
             "-preset", self.final_preset,
             "-crf", str(self.final_crf),
             "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
             str(out_video),
         ]
 
@@ -744,87 +729,6 @@ class StudioEngine:
         if not ok:
             print("❌ Concat reencode falhou (veja logs/concat_reencode_*.log).")
         return ok
-
-    # --------- AUDIO MIX ----------
-
-    def add_dual_audio_mix(self, video_in: Path, video_out: Path) -> bool:
-        dur = _get_duration(video_in)
-        if dur <= 0.5:
-            print("❌ Duração final inválida para áudio.")
-            return False
-
-        primary = _pick_random_file(self.audio_primary_dir, AUDIO_EXTS)
-        bg = _pick_random_file(self.audio_bg_dir, AUDIO_EXTS)
-
-        if not primary and not bg:
-            print("⚠️ Nenhum áudio encontrado (primary/bg). Gerando sem áudio.")
-            shutil.copy2(video_in, video_out)
-            return True
-
-        cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video_in)]
-        input_idx = 1
-        idx_primary = None
-        idx_bg = None
-
-        if primary:
-            cmd += ["-stream_loop", "-1", "-i", str(primary)]
-            idx_primary = input_idx
-            input_idx += 1
-        if bg:
-            cmd += ["-stream_loop", "-1", "-i", str(bg)]
-            idx_bg = input_idx
-            input_idx += 1
-
-        fc_parts: List[str] = []
-        mix_inputs: List[str] = []
-
-        if idx_primary is not None:
-            fc_parts.append(
-                f"[{idx_primary}:a]atrim=0:{dur},asetpts=N/SR/TB,aresample={self.audio_sr},"
-                f"aformat=channel_layouts={self.audio_layout},"
-                f"afade=t=in:st=0:d={self.fade_in},"
-                f"afade=t=out:st={max(0.0, dur-self.fade_out)}:d={self.fade_out},"
-                f"volume={self.vol_primary}[ap]"
-            )
-            mix_inputs.append("[ap]")
-
-        if idx_bg is not None:
-            fc_parts.append(
-                f"[{idx_bg}:a]atrim=0:{dur},asetpts=N/SR/TB,aresample={self.audio_sr},"
-                f"aformat=channel_layouts={self.audio_layout},"
-                f"afade=t=in:st=0:d={self.fade_in},"
-                f"afade=t=out:st={max(0.0, dur-self.fade_out)}:d={self.fade_out},"
-                f"volume={self.vol_bg}[ab]"
-            )
-            mix_inputs.append("[ab]")
-
-        if not mix_inputs:
-            shutil.copy2(video_in, video_out)
-            return True
-
-        fc_parts.append("".join(mix_inputs) + f"amix=inputs={len(mix_inputs)}:dropout_transition=0,alimiter=limit=0.95[aout]")
-        fc = ";".join(fc_parts)
-
-        log = self.logs_dir / f"audio_mix_{video_out.stem}.log"
-        cmd += [
-            "-filter_complex", fc,
-            "-map", "0:v:0",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-shortest",
-            "-movflags", "+faststart",
-            str(video_out),
-        ]
-
-        res = run_cmd_capture(cmd, log, timeout_s=self.final_timeout_s, proc_reg=self.proc_reg)
-        if res.rc != 0 or not video_out.exists():
-            print(f"❌ Mix de áudio falhou rc={res.rc}")
-            return False
-
-        print(f"🔊 Áudio mixado: primary={primary.name if primary else 'none'} | bg={bg.name if bg else 'none'}")
-        return True
 
     # --------- THUMB ----------
 
@@ -896,6 +800,7 @@ class StudioEngine:
         print(f"📐 Saída: {final_w}x{final_h} @ {ENGINE_FPS}fps")
         print(f"🎛️ Intensidade efeitos: {self.cfg.effect_intensity:.2f}")
         print(f"⚙️ Encoder clips: {self.encoder} | Concat copy: {'ON' if self.concat_copy else 'OFF'}")
+        print(f"🔊 Áudio: original do vídeo (mantido)")
 
         clips = self.pick_clips(videos, target_total)
         if not clips:
@@ -947,23 +852,13 @@ class StudioEngine:
             ts = int(time.time())
             seed = hashlib.md5(f"{ts}{random.random()}".encode()).hexdigest()[:8]
 
-            out_video_mute = self.output_dir / f"{self.mode}_mute_{ts}_{seed}.mp4"
             out_video_final = self.output_dir / f"{self.mode}_{ts}_{seed}.mp4"
 
-            print("\n🧩 Concatenando vídeo (sem áudio)...")
-            if not self.concat_video_only(clip_paths, out_video_mute, final_w, final_h):
+            print("\n🧩 Concatenando vídeo (com áudio original)...")
+            if not self.concat_video_only(clip_paths, out_video_final, final_w, final_h):
                 print("❌ Concat falhou.")
                 return None
-            print(f"✅ Vídeo base: {out_video_mute.name}")
-
-            print("\n🔊 Aplicando mix de áudio externo (2 pastas)...")
-            if not self.add_dual_audio_mix(out_video_mute, out_video_final):
-                return None
-
-            try:
-                out_video_mute.unlink(missing_ok=True)
-            except Exception:
-                pass
+            print(f"✅ Vídeo final: {out_video_final.name}")
 
             if self.make_thumbs:
                 thumb = self.thumbs_dir / f"{out_video_final.stem}.jpg"
@@ -1025,7 +920,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--clip-timeout-mult", type=float, default=1.0, help="Multiplicador extra do timeout dinâmico")
     p.add_argument("--final-timeout", type=int, default=2400)
 
-    p.add_argument("--final-crf", type=int, default=20)
+    p.add_argument("--final-crf", type=int, default=18)
     p.add_argument("--final-preset", default="medium")
 
     p.add_argument("--concat-copy", action="store_true", help="Tenta concat demuxer com -c copy (muito mais rápido)")
@@ -1043,15 +938,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--enhance-color", action="store_true")
     p.add_argument("--denoise", action="store_true")
     p.add_argument("--stabilize", action="store_true")
-
-    p.add_argument("--audio-primary", help="Pasta do áudio principal (volume alto)")
-    p.add_argument("--audio-bg", help="Pasta do áudio de fundo (volume baixo)")
-    p.add_argument("--vol-primary", type=float, default=1.00)
-    p.add_argument("--vol-bg", type=float, default=0.25)
-    p.add_argument("--fade-in", type=float, default=1.5)
-    p.add_argument("--fade-out", type=float, default=2.5)
-    p.add_argument("--audio-sr", type=int, default=44100)
-    p.add_argument("--audio-layout", default="stereo")
 
     p.add_argument("--thumbnails", action="store_true")
 
