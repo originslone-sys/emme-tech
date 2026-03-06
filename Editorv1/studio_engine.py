@@ -111,7 +111,9 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
     if not track_name or track_dur < 4.0:
         return ""
     name = Path(track_name).stem[:45].replace("_", " ").replace("-", " ").strip()
-    for ch, esc in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
+    # Apóstrofe → aspas curvas Unicode (visualmente idêntico, mas não quebra o
+    # parser de filter_complex que usa ' como delimitador de nível 2)
+    for ch, esc in [("\\", "\\\\"), ("'", "\u2019"), (":", "\\:"),
                     (",", "\\,"), (";", "\\;"), ("%", "%%")]:
         name = name.replace(ch, esc)
     fade_s = 1.0
@@ -119,11 +121,14 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
     t_end   = time_offset + min(9.5, max(3.0, track_dur - 1.5))
     if t_end <= t_start + 0.1:
         return ""
+    # Vírgulas nos argumentos de função escapadas com \, — mais robusto que '...'
+    # dentro de filter_complex, onde o estado de aspas pode ser corrompido por
+    # \' em opções anteriores (ex: text com apóstrofe no nome da faixa)
     alpha = (
-        f"if(lt(t,{t_start:.2f}+{fade_s:.1f}),"
-        f"max(0,(t-{t_start:.2f})/{fade_s:.1f}),"
-        f"if(gt(t,{t_end:.2f}-{fade_s:.1f}),"
-        f"max(0,({t_end:.2f}-t)/{fade_s:.1f}),1))"
+        f"if(lt(t\\,{t_start:.2f}+{fade_s:.1f})\\,"
+        f"max(0\\,(t-{t_start:.2f})/{fade_s:.1f})\\,"
+        f"if(gt(t\\,{t_end:.2f}-{fade_s:.1f})\\,"
+        f"max(0\\,({t_end:.2f}-t)/{fade_s:.1f})\\,1))"
     )
     fp = ""
     if font_path and Path(font_path).exists():
@@ -135,8 +140,8 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
         f"fontsize=22:fontcolor=0xFFF8E7:"
         f"x=20:y=20:"
         f"shadowx=1:shadowy=1:shadowcolor=0x1A0800@0.85:"
-        f"alpha='{alpha}':"
-        f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        f"alpha={alpha}:"
+        f"enable=between(t\\,{t_start:.2f}\\,{t_end:.2f})"
     )
 
 
