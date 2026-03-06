@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-STUDIO ENGINE — Edição automática (acervo -> novos vídeos) — Foco em QUALIDADE
+STUDIO ENGINE — Edição automática (acervo -> novos vídeos) — Foco em QUALIDADE + PERFORMANCE
 
 Funcionalidades:
 - modos teaser | compilado | premium
 - MANTÉM áudio original do vídeo (sem substituição por música externa)
+- Auto-detecção GPU: usa NVENC+CPU juntos se disponível, senão só CPU
+- Maximiza uso de hardware: threads=0, workers=cpu_count, preset agressivo
 - upscale inteligente com target-res + sharpen adaptativo
 - denoise avançado + enhance-color + stabilize
 - micro rotate + grain cinematográfico
 - câmera (zoom/pan) via zoompan
-- thumbnails otimizadas
+- 3 thumbnails por vídeo finalizado
 - concat demuxer -c copy com fallback reencode
-- encoder clips: x264 (default) ou NVENC
 - timeout dinâmico por clip + Ctrl+C seguro
 
 Requisitos:
@@ -72,6 +73,37 @@ def _get_duration(path: Path) -> float:
         return float(data["format"]["duration"])
     except Exception:
         return 0.0
+
+
+# ---------------- Hardware Detection ----------------
+
+def _detect_nvenc() -> bool:
+    """Testa se h264_nvenc está disponível (GPU NVIDIA com driver compatível)."""
+    try:
+        p = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1",
+             "-c:v", "h264_nvenc", "-f", "null", "-"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def _get_cpu_count() -> int:
+    """Retorna número de CPUs disponíveis (mínimo 1)."""
+    try:
+        return max(1, os.cpu_count() or 1)
+    except Exception:
+        return 1
+
+
+def _optimal_workers(cpu_count: int, has_gpu: bool) -> int:
+    """Calcula workers ideais: com GPU pode usar mais parallelismo."""
+    if has_gpu:
+        return max(2, min(cpu_count, 8))
+    return max(1, min(cpu_count // 2, 6))
 
 
 # ---------------- Robust Subprocess + Kill Tree ----------------
@@ -264,7 +296,29 @@ class StudioEngine:
             raise ValueError(f"Modo inválido: {self.mode}")
         self.cfg = MODES[self.mode]
 
-        self.max_workers = int(args.workers)
+        self._assert_tools()
+
+        # --- Auto-detecção de hardware ---
+        self.cpu_count = _get_cpu_count()
+        self.has_gpu = _detect_nvenc()
+
+        # Encoder: auto-detecta se não forçado
+        encoder_arg = args.encoder
+        if encoder_arg == "auto":
+            self.encoder = "nvenc" if self.has_gpu else "x264"
+        else:
+            self.encoder = encoder_arg
+
+        # Workers: auto = máximo baseado no hardware
+        workers_arg = int(args.workers)
+        if workers_arg <= 0:
+            self.max_workers = _optimal_workers(self.cpu_count, self.has_gpu)
+        else:
+            self.max_workers = workers_arg
+
+        # Threads ffmpeg: 0 = usa todos os cores
+        self.ffmpeg_threads = int(args.ffmpeg_threads)
+
         self.clip_timeout_s = int(args.clip_timeout)
         self.clip_timeout_mult = float(args.clip_timeout_mult)
         self.final_timeout_s = int(args.final_timeout)
@@ -273,7 +327,6 @@ class StudioEngine:
         self.final_preset = args.final_preset
         self.concat_copy = bool(args.concat_copy)
 
-        self.encoder = args.encoder
         self.nvenc_preset = args.nvenc_preset
         self.nvenc_cq = int(args.nvenc_cq)
         self.nvenc_tune = args.nvenc_tune
@@ -287,20 +340,31 @@ class StudioEngine:
         self.enable_enhance_color = bool(args.enhance_color)
 
         self.make_thumbs = bool(args.thumbnails)
+        self.num_thumbs = max(1, min(10, int(args.num_thumbs)))
 
         self._filters_cache = None
         self.stop_event = threading.Event()
         self.proc_reg = ProcRegistry()
 
-        self._assert_tools()
+        self._print_hardware_info()
 
     def _assert_tools(self) -> None:
-        # Falha clara logo no começo se não tiver ffmpeg/ffprobe
         for tool in ("ffmpeg", "ffprobe"):
             try:
                 subprocess.check_output([tool, "-version"], stderr=subprocess.STDOUT, text=True)
             except Exception as e:
                 raise RuntimeError(f"Ferramenta obrigatória não encontrada/exec: {tool}. Erro: {e}")
+
+    def _print_hardware_info(self) -> None:
+        gpu_status = f"NVENC (encoder={self.encoder})" if self.has_gpu else "Nenhuma (CPU only)"
+        print(f"\n{'='*60}")
+        print(f"  HARDWARE DETECTADO")
+        print(f"  CPU cores: {self.cpu_count}")
+        print(f"  GPU NVIDIA: {gpu_status}")
+        print(f"  Workers paralelos: {self.max_workers}")
+        print(f"  FFmpeg threads: {'auto (todos)' if self.ffmpeg_threads == 0 else self.ffmpeg_threads}")
+        print(f"  Encoder: {self.encoder}")
+        print(f"{'='*60}")
 
     def _ffmpeg_filters(self) -> str:
         if self._filters_cache is not None:
@@ -529,12 +593,14 @@ class StudioEngine:
                 "-cq:v", str(q_crf_or_cq),
                 "-b:v", "0",
                 "-pix_fmt", "yuv420p",
+                "-threads", str(self.ffmpeg_threads),
             ]
         return [
             "-c:v", "libx264",
-            "-preset", "medium",
+            "-preset", "fast",
             "-crf", str(q_crf_or_cq),
             "-pix_fmt", "yuv420p",
+            "-threads", str(self.ffmpeg_threads),
         ]
 
     # --------- CLIP PROCESS ----------
@@ -693,6 +759,7 @@ class StudioEngine:
         cmd = [
             "ffmpeg", "-y", "-hide_banner",
             "-fflags", "+genpts",
+            "-threads", str(self.ffmpeg_threads),
             "-f", "concat", "-safe", "0",
             "-i", str(concat_list),
             "-vf", vf,
@@ -702,6 +769,7 @@ class StudioEngine:
             "-preset", self.final_preset,
             "-crf", str(self.final_crf),
             "-pix_fmt", "yuv420p",
+            "-threads", str(self.ffmpeg_threads),
             "-c:a", "aac",
             "-b:a", "192k",
             str(out_video),
@@ -732,17 +800,22 @@ class StudioEngine:
 
     # --------- THUMB ----------
 
-    def generate_thumbnail(self, video_path: Path, thumb_out: Path) -> bool:
+    def generate_thumbnails(self, video_path: Path, base_stem: str) -> List[Path]:
+        """Gera N thumbnails do vídeo em pontos diferentes, retorna lista de paths salvos."""
         dur = _get_duration(video_path)
         if dur <= 1.0:
-            return False
+            return []
 
-        times = [dur * 0.25, dur * 0.50, dur * 0.75]
+        n = self.num_thumbs
+        # Gera mais candidatas que o necessário para escolher as melhores
+        num_candidates = max(n * 2, 6)
+        positions = [dur * (i + 1) / (num_candidates + 1) for i in range(num_candidates)]
+
         candidates: List[Path] = []
 
-        for i, t in enumerate(times, 1):
-            tmp = self.thumbs_dir / f"{thumb_out.stem}_cand{i}.jpg"
-            log = self.logs_dir / f"thumb_{thumb_out.stem}_cand{i}.log"
+        for i, t in enumerate(positions, 1):
+            tmp = self.thumbs_dir / f"{base_stem}_cand{i}.jpg"
+            log = self.logs_dir / f"thumb_{base_stem}_cand{i}.log"
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
                 "-ss", str(t),
@@ -757,21 +830,33 @@ class StudioEngine:
                 candidates.append(tmp)
 
         if not candidates:
-            return False
+            return []
 
-        best = max(candidates, key=lambda p: p.stat().st_size)
-        try:
-            if thumb_out.exists():
-                thumb_out.unlink(missing_ok=True)
-            shutil.move(str(best), str(thumb_out))
-        except Exception:
-            return False
-        finally:
-            for c in candidates:
-                if c.exists() and c != thumb_out:
+        # Ordena por tamanho (maior = mais detalhes/qualidade) e pega as top N
+        candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+        selected = candidates[:n]
+        to_remove = candidates[n:]
+
+        saved: List[Path] = []
+        for i, cand in enumerate(selected, 1):
+            final_name = self.thumbs_dir / f"{base_stem}_thumb{i}.jpg"
+            try:
+                if final_name.exists():
+                    final_name.unlink(missing_ok=True)
+                shutil.move(str(cand), str(final_name))
+                saved.append(final_name)
+            except Exception:
+                pass
+
+        # Limpa candidatas não selecionadas
+        for c in to_remove:
+            try:
+                if c.exists():
                     c.unlink(missing_ok=True)
+            except Exception:
+                pass
 
-        return True
+        return saved
 
     # --------- RUN ONE / BATCH ----------
 
@@ -799,7 +884,8 @@ class StudioEngine:
         print(f"🎯 Duração alvo: {target_total}s ({target_total/60:.1f}min)")
         print(f"📐 Saída: {final_w}x{final_h} @ {ENGINE_FPS}fps")
         print(f"🎛️ Intensidade efeitos: {self.cfg.effect_intensity:.2f}")
-        print(f"⚙️ Encoder clips: {self.encoder} | Concat copy: {'ON' if self.concat_copy else 'OFF'}")
+        gpu_tag = "GPU+CPU" if self.has_gpu else "CPU only"
+        print(f"⚙️ Encoder: {self.encoder} | {gpu_tag} | Workers: {self.max_workers} | Concat copy: {'ON' if self.concat_copy else 'OFF'}")
         print(f"🔊 Áudio: original do vídeo (mantido)")
 
         clips = self.pick_clips(videos, target_total)
@@ -861,12 +947,13 @@ class StudioEngine:
             print(f"✅ Vídeo final: {out_video_final.name}")
 
             if self.make_thumbs:
-                thumb = self.thumbs_dir / f"{out_video_final.stem}.jpg"
-                ok = self.generate_thumbnail(out_video_final, thumb)
-                if ok:
-                    print(f"🖼️ Thumbnail: {thumb.name}")
+                thumbs = self.generate_thumbnails(out_video_final, out_video_final.stem)
+                if thumbs:
+                    print(f"🖼️ {len(thumbs)} thumbnail(s) gerada(s):")
+                    for th in thumbs:
+                        print(f"   - {th.name}")
                 else:
-                    print("⚠️ Não consegui gerar thumbnail.")
+                    print("⚠️ Não consegui gerar thumbnails.")
 
             used_sources = {Path(c["path"]) for c in clips}
             for src in used_sources:
@@ -913,7 +1000,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--processed-dir", default="processed")
     p.add_argument("--failed-dir", default="failed")
 
-    p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--workers", type=int, default=0,
+                   help="Workers paralelos (0=auto: detecta baseado no hardware)")
+    p.add_argument("--ffmpeg-threads", type=int, default=0,
+                   help="Threads FFmpeg por processo (0=auto: usa todos os cores)")
     p.add_argument("--num-videos", type=int, default=1)
 
     p.add_argument("--clip-timeout", type=int, default=900, help="Timeout mínimo (piso) por clip (s)")
@@ -925,8 +1015,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--concat-copy", action="store_true", help="Tenta concat demuxer com -c copy (muito mais rápido)")
 
-    p.add_argument("--encoder", choices=["x264", "nvenc"], default="x264",
-                   help="Encoder dos clips (x264 ou nvenc).")
+    p.add_argument("--encoder", choices=["auto", "x264", "nvenc"], default="auto",
+                   help="Encoder dos clips (auto=detecta GPU, x264 ou nvenc).")
     p.add_argument("--nvenc-preset", default="p5", help="Preset NVENC (p1..p7)")
     p.add_argument("--nvenc-cq", type=int, default=19, help="CQ NVENC (CRF-like)")
     p.add_argument("--nvenc-tune", default="hq", help="Tune NVENC (ex: hq, ll, ull...)")
@@ -940,6 +1030,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stabilize", action="store_true")
 
     p.add_argument("--thumbnails", action="store_true")
+    p.add_argument("--num-thumbs", type=int, default=3,
+                   help="Número de thumbnails por vídeo (1-10, default=3)")
 
     return p
 
