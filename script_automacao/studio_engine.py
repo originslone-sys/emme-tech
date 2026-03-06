@@ -698,11 +698,11 @@ class StudioEngine:
             yexpr = f"(ih-oh)*{pan_frac}*on/{total_frames}"
             tag = f"cam:pany+{layer}"
 
-        # d=total_frames faz zoompan gerar todos os frames de uma vez (mais eficiente)
-        # Sem pre-scale separado: zoompan já faz o crop+resize internamente
+        # d=1: gera 1 frame de output por frame de input (correto para video)
+        # 'on' é o contador global de frames, incrementa de 0 a total_frames-1
         filt = (
             f"scale={iw}:{ih}:flags=bilinear,"
-            f"zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}':d={total_frames}:s={ow}x{oh}:fps={ENGINE_FPS}"
+            f"zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}':d=1:s={ow}x{oh}:fps={ENGINE_FPS}"
         )
         return filt, tag
 
