@@ -273,19 +273,17 @@ def run_cmd_with_progress(
 ) -> CmdResult:
     """
     Executa FFmpeg com barra de progresso em tempo real.
-    Usa -progress pipe:1 para forçar output machine-readable no stdout
-    (FFmpeg suprime stats quando stderr não é TTY).
+    Usa -progress pipe:1 para forçar output machine-readable no stdout.
+    Lê com readline() para entrega imediata (sem buffer do iterador).
     """
     log_file.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     timed_out = False
     stderr_chunks: List[bytes] = []
 
-    # Injeta -progress pipe:1 no comando para forçar progresso no stdout
+    # Injeta -progress pipe:1 no comando (logo após "ffmpeg")
     prog_cmd = list(cmd)
-    # Insere logo após "ffmpeg"
-    insert_pos = 1
-    prog_cmd[insert_pos:insert_pos] = ["-progress", "pipe:1", "-stats_period", "1"]
+    prog_cmd[1:1] = ["-progress", "pipe:1"]
 
     creationflags = 0
     start_new_session = False
@@ -320,25 +318,29 @@ def run_cmd_with_progress(
             pass
 
     def _read_stdout_progress():
-        """Lê stdout linha a linha, parseia out_time= do -progress pipe:1."""
+        """Lê stdout com readline() (sem buffer), parseia out_time=."""
         nonlocal last_pct
         try:
-            for raw_line in p.stdout:
+            while True:
+                raw_line = p.stdout.readline()
+                if not raw_line:
+                    break
                 decoded = raw_line.decode("utf-8", errors="replace").strip()
                 m = _RE_OUTTIME.search(decoded)
                 if m and total_duration > 0:
                     t = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
                     pct = min(t / total_duration, 1.0)
-                    if pct - last_pct >= 0.005:
+                    # Atualiza a cada 5% para não poluir o terminal
+                    next_threshold = (int(last_pct * 20) + 1) / 20.0 if last_pct >= 0 else 0.0
+                    if pct >= next_threshold or (last_pct < 0 and pct > 0):
                         last_pct = pct
                         elapsed = time.time() - t0
                         eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
                         bar = _format_bar(pct)
                         print(
-                            f"\r  {label}|{bar}| {pct*100:5.1f}% "
+                            f"  {label}|{bar}| {pct*100:5.1f}% "
                             f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
-                            f"| ETA {_format_time(eta)}  ",
-                            end="", flush=True,
+                            f"| ETA {_format_time(eta)}"
                         )
         except Exception:
             pass
@@ -364,21 +366,18 @@ def run_cmd_with_progress(
     t_err.join(timeout=5)
     t_prog.join(timeout=5)
 
-    # Finaliza a linha da barra de progresso
-    if last_pct >= 0:
-        if not timed_out and rc == 0:
-            bar = _format_bar(1.0)
-            elapsed = time.time() - t0
-            print(
-                f"\r  {label}|{bar}| 100.0% "
-                f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
-                f"| Concluido!    "
-            )
-        else:
-            print()
+    # Finaliza a barra de progresso
+    elapsed_final = time.time() - t0
+    if not timed_out and rc == 0:
+        bar = _format_bar(1.0)
+        print(
+            f"  {label}|{bar}| 100.0% "
+            f"| {_format_time(elapsed_final)}/{_format_time(total_duration)} "
+            f"| Concluido!"
+        )
 
     elapsed = time.time() - t0
-    out = ""  # stdout foi consumido pelo parser de progresso
+    out = ""  # stdout consumido pelo parser de progresso
     err = b"".join(stderr_chunks).decode("utf-8", errors="replace")
 
     try:
