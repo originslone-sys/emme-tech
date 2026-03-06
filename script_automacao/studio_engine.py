@@ -407,8 +407,8 @@ def estimate_timeout_seconds(
     base_timeout_s: int,
     multiplier: float,
 ) -> int:
-    # Base mais conservador: zoompan sempre ativo consome muito CPU
-    speed_min = 0.10
+    # crop+scale é rápido; efeitos pesados são stabilize/denoise/upscale
+    speed_min = 0.25
     if stabilize:
         speed_min *= 0.70
     if denoise:
@@ -656,6 +656,9 @@ class StudioEngine:
     # --------- CÂMERA (zoompan) ----------
 
     def _camera_filter(self, base_w: int, base_h: int, clip_dur: float) -> Tuple[str, str]:
+        """Efeito de câmera usando crop+scale (rápido e confiável para vídeo).
+        zoompan é lento/instável com vídeo — crop+scale usa expressões com 'n' (frame number).
+        """
         layer = random.choices(
             population=["wide", "close70", "super50"],
             weights=[0.30, 0.45, 0.25],
@@ -667,9 +670,6 @@ class StudioEngine:
         ow = _safe_int_even(base_w, 2)
         oh = _safe_int_even(base_h, 2)
 
-        iw = _safe_int_even(ow / crop_scale, 2)
-        ih = _safe_int_even(oh / crop_scale, 2)
-
         tech = random.choices(
             population=["zoom", "panx", "pany"],
             weights=[0.45, 0.30, 0.25],
@@ -677,33 +677,66 @@ class StudioEngine:
         )[0]
 
         inten = max(0.0, min(1.0, float(self.cfg.effect_intensity)))
-        zoom_max = 1.0 + (0.015 + 0.030 * inten)
-        pan_frac = 0.25 + 0.45 * inten
-
         total_frames = max(1, int(float(clip_dur) * ENGINE_FPS))
 
+        # Pre-scale: normaliza input para ow x oh antes de crop
+        pre_scale = f"scale={ow}:{oh}:flags=bilinear"
+
+        if layer == "wide":
+            filt = pre_scale
+            tag = "cam:wide"
+            return filt, tag
+
+        # Para close70/super50: crop animado após normalização
+        # crop_w/crop_h = tamanho da janela de crop (menor que ow x oh)
+        crop_w = _safe_int_even(ow * crop_scale, 2)
+        crop_h = _safe_int_even(oh * crop_scale, 2)
+
+        # Margem disponível para pan
+        margin_x = ow - crop_w  # ex: 1920-1344=576 para close70
+        margin_y = oh - crop_h
+
+        pan_frac = 0.25 + 0.45 * inten
+
         if tech == "zoom":
-            zexpr = f"1+({zoom_max}-1)*on/{total_frames}"
-            xexpr = "(iw-ow)/2"
-            yexpr = "(ih-oh)/2"
+            # Zoom progressivo: crop começa grande, diminui ao centro
+            zoom_amount = 0.015 + 0.030 * inten
+            start_w = _safe_int_even(min(crop_w * (1 + zoom_amount), ow), 2)
+            start_h = _safe_int_even(min(crop_h * (1 + zoom_amount), oh), 2)
+            # w/h diminuem de start a crop ao longo do clip
+            w_expr = f"{start_w}-({start_w}-{crop_w})*n/{total_frames}"
+            h_expr = f"{start_h}-({start_h}-{crop_h})*n/{total_frames}"
+            x_expr = "(in_w-ow)/2"
+            y_expr = "(in_h-oh)/2"
+            filt = (
+                f"{pre_scale},"
+                f"crop=w='{w_expr}':h='{h_expr}':x='{x_expr}':y='{y_expr}',"
+                f"scale={ow}:{oh}:flags=bilinear"
+            )
             tag = f"cam:zoom+{layer}"
+
         elif tech == "panx":
-            zexpr = "1"
-            xexpr = f"(iw-ow)*{pan_frac}*on/{total_frames}"
-            yexpr = "(ih-oh)/2"
+            max_slide = int(margin_x * pan_frac)
+            x_expr = f"{max_slide}*n/{total_frames}"
+            y_expr = f"(in_h-{crop_h})/2"
+            filt = (
+                f"{pre_scale},"
+                f"crop={crop_w}:{crop_h}:x='{x_expr}':y='{y_expr}',"
+                f"scale={ow}:{oh}:flags=bilinear"
+            )
             tag = f"cam:panx+{layer}"
-        else:
-            zexpr = "1"
-            xexpr = "(iw-ow)/2"
-            yexpr = f"(ih-oh)*{pan_frac}*on/{total_frames}"
+
+        else:  # pany
+            max_slide = int(margin_y * pan_frac)
+            x_expr = f"(in_w-{crop_w})/2"
+            y_expr = f"{max_slide}*n/{total_frames}"
+            filt = (
+                f"{pre_scale},"
+                f"crop={crop_w}:{crop_h}:x='{x_expr}':y='{y_expr}',"
+                f"scale={ow}:{oh}:flags=bilinear"
+            )
             tag = f"cam:pany+{layer}"
 
-        # d=1: gera 1 frame de output por frame de input (correto para video)
-        # 'on' é o contador global de frames, incrementa de 0 a total_frames-1
-        filt = (
-            f"scale={iw}:{ih}:flags=bilinear,"
-            f"zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}':d=1:s={ow}x{oh}:fps={ENGINE_FPS}"
-        )
         return filt, tag
 
     # --------- QUALIDADE ----------
