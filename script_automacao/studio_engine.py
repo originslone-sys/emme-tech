@@ -260,6 +260,9 @@ def _format_time(secs: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+_RE_OUTTIME = re.compile(r"out_time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+
+
 def run_cmd_with_progress(
     cmd: List[str],
     log_file: Path,
@@ -270,13 +273,19 @@ def run_cmd_with_progress(
 ) -> CmdResult:
     """
     Executa FFmpeg com barra de progresso em tempo real.
-    Usa threads separadas para stdout e stderr (sem communicate) para evitar deadlock.
+    Usa -progress pipe:1 para forçar output machine-readable no stdout
+    (FFmpeg suprime stats quando stderr não é TTY).
     """
     log_file.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     timed_out = False
-    stderr_buf = io.StringIO()
-    stdout_chunks: List[bytes] = []
+    stderr_chunks: List[bytes] = []
+
+    # Injeta -progress pipe:1 no comando para forçar progresso no stdout
+    prog_cmd = list(cmd)
+    # Insere logo após "ffmpeg"
+    insert_pos = 1
+    prog_cmd[insert_pos:insert_pos] = ["-progress", "pipe:1", "-stats_period", "1"]
 
     creationflags = 0
     start_new_session = False
@@ -286,7 +295,7 @@ def run_cmd_with_progress(
         start_new_session = True
 
     p = subprocess.Popen(
-        cmd,
+        prog_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=False,
@@ -299,52 +308,45 @@ def run_cmd_with_progress(
 
     last_pct = -1.0
 
-    def _read_stdout():
+    def _read_stderr():
+        """Captura stderr inteiro para log."""
         try:
             while True:
-                chunk = p.stdout.read(4096)
+                chunk = p.stderr.read(4096)
                 if not chunk:
                     break
-                stdout_chunks.append(chunk)
+                stderr_chunks.append(chunk)
         except Exception:
             pass
 
-    def _read_stderr():
+    def _read_stdout_progress():
+        """Lê stdout linha a linha, parseia out_time= do -progress pipe:1."""
         nonlocal last_pct
-        line_buf = b""
         try:
-            while True:
-                ch = p.stderr.read(1)
-                if not ch:
-                    break
-                if ch in (b"\r", b"\n"):
-                    if line_buf:
-                        decoded = line_buf.decode("utf-8", errors="replace")
-                        stderr_buf.write(decoded + "\n")
-                        t = _parse_ffmpeg_time(decoded)
-                        if t is not None and total_duration > 0:
-                            pct = min(t / total_duration, 1.0)
-                            if pct - last_pct >= 0.005:
-                                last_pct = pct
-                                elapsed = time.time() - t0
-                                eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
-                                bar = _format_bar(pct)
-                                sys.stderr.write(
-                                    f"\r  {label}|{bar}| {pct*100:5.1f}% "
-                                    f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
-                                    f"| ETA {_format_time(eta)}  "
-                                )
-                                sys.stderr.flush()
-                    line_buf = b""
-                else:
-                    line_buf += ch
+            for raw_line in p.stdout:
+                decoded = raw_line.decode("utf-8", errors="replace").strip()
+                m = _RE_OUTTIME.search(decoded)
+                if m and total_duration > 0:
+                    t = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+                    pct = min(t / total_duration, 1.0)
+                    if pct - last_pct >= 0.005:
+                        last_pct = pct
+                        elapsed = time.time() - t0
+                        eta = (elapsed / pct - elapsed) if pct > 0.01 else 0
+                        bar = _format_bar(pct)
+                        print(
+                            f"\r  {label}|{bar}| {pct*100:5.1f}% "
+                            f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
+                            f"| ETA {_format_time(eta)}  ",
+                            end="", flush=True,
+                        )
         except Exception:
             pass
 
-    t_out = threading.Thread(target=_read_stdout, daemon=True)
     t_err = threading.Thread(target=_read_stderr, daemon=True)
-    t_out.start()
+    t_prog = threading.Thread(target=_read_stdout_progress, daemon=True)
     t_err.start()
+    t_prog.start()
 
     try:
         try:
@@ -359,26 +361,25 @@ def run_cmd_with_progress(
         if proc_reg:
             proc_reg.discard(p)
 
-    t_out.join(timeout=5)
     t_err.join(timeout=5)
+    t_prog.join(timeout=5)
 
     # Finaliza a linha da barra de progresso
     if last_pct >= 0:
         if not timed_out and rc == 0:
             bar = _format_bar(1.0)
             elapsed = time.time() - t0
-            sys.stderr.write(
+            print(
                 f"\r  {label}|{bar}| 100.0% "
                 f"| {_format_time(elapsed)}/{_format_time(total_duration)} "
-                f"| Concluido!    \n"
+                f"| Concluido!    "
             )
         else:
-            sys.stderr.write("\n")
-        sys.stderr.flush()
+            print()
 
     elapsed = time.time() - t0
-    out = b"".join(stdout_chunks).decode("utf-8", errors="replace")
-    err = stderr_buf.getvalue()
+    out = ""  # stdout foi consumido pelo parser de progresso
+    err = b"".join(stderr_chunks).decode("utf-8", errors="replace")
 
     try:
         with log_file.open("w", encoding="utf-8", errors="replace") as lf:
