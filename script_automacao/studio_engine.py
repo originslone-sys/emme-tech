@@ -1217,12 +1217,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Studio Engine - geração automática de vídeos (acervo -> novos uploads)")
     p.add_argument("--mode", choices=["teaser", "compilado", "premium"], required=True)
 
+    # Diretório base = onde o script está (ex: D:\...\script_automacao)
+    _SCRIPT_DIR = str(Path(__file__).resolve().parent)
+
     p.add_argument("--input-dir", required=True)
-    p.add_argument("--output-dir", default="output")
-    p.add_argument("--logs-dir", default="logs")
-    p.add_argument("--thumbs-dir", default="thumbnails")
-    p.add_argument("--processed-dir", default="processed")
-    p.add_argument("--failed-dir", default="failed")
+    p.add_argument("--output-dir", default=str(Path(_SCRIPT_DIR, "output")))
+    p.add_argument("--logs-dir", default=str(Path(_SCRIPT_DIR, "logs")))
+    p.add_argument("--thumbs-dir", default=str(Path(_SCRIPT_DIR, "thumbnails")))
+    p.add_argument("--processed-dir", default=str(Path(_SCRIPT_DIR, "processed")))
+    p.add_argument("--failed-dir", default=str(Path(_SCRIPT_DIR, "failed")))
 
     p.add_argument("--workers", type=int, default=0,
                    help="Workers paralelos (0=auto: detecta baseado no hardware)")
