@@ -1,8 +1,8 @@
 """
-DeepSeek API Client — Geração de frases motivacionais/reflexivas para vídeos evergreen.
+DeepSeek API Client — Geração de metadados YouTube para vídeos evergreen.
 
 Usa apenas stdlib (urllib). Não requer pacotes externos.
-Fallback automático para banco local de frases se a API falhar.
+Fallback automático para metadados padrão se a API falhar.
 """
 
 import json
@@ -11,98 +11,33 @@ import urllib.error
 import urllib.request
 from typing import Dict, List, Optional
 
+# Ângulos criativos injetados no prompt para forçar variação de título a cada geração
+_TITLE_ANGLES = [
+    "a specific cozy scenario (late night rain, empty library at 3am, foggy morning coffee)",
+    "an emotional transformation (scattered → laser-focused, anxious → completely calm)",
+    "a vivid aesthetic reference (Studio Ghibli mood, Tokyo midnight, Parisian café corner)",
+    "a bold promise or claim (the only playlist you'll need this week, your unfair focus advantage)",
+    "a time or ritual anchor (Sunday reset session, golden hour deep work, pre-dawn grind)",
+    "a contrast or paradox (loud world / silent mind, beautifully boring, productive solitude)",
+    "a challenge or direct invitation (work to this for 60 min — no breaks, your brain will thank you)",
+    "a sensory detail (the sound of rain on glass, warm lamp light, worn-out headphones on)",
+    "a cultural or community nod (for the night owls, for the overthinkers, for the deep workers)",
+    "an aspirational identity statement (this is what disciplined people listen to)",
+]
 
-# ---------------------------------------------------------------------------
-# Banco de frases fallback (usado se a API falhar ou não estiver configurada)
-# ---------------------------------------------------------------------------
-
-FALLBACK_PHRASES: Dict[str, List[str]] = {
-    "reflection": [
-        "Silence is the music of the soul.",
-        "Who looks outside dreams. Who looks inside awakes.",
-        "Life is an echo — what you send out comes back.",
-        "Know thyself and you shall know the universe.",
-        "Time we lose is time we never lived.",
-        "Every sunrise is an invitation to begin again.",
-        "The depth of a mind is measured by its silence.",
-        "We are made of the same stuff that dreams are made on.",
-        "Still waters run deep.",
-        "To live is the rarest thing. Most people just exist.",
-        "The path is made by walking.",
-        "Nothing is permanent except change.",
-        "The contemplating soul is the transforming soul.",
-        "In small things lies greatness.",
-        "The universe is infinite within us.",
-    ],
-    "motivation": [
-        "One step at a time builds the journey of a thousand miles.",
-        "Persistence is the path to achievement.",
-        "Don't wait for the perfect moment. Make the moment perfect.",
-        "The secret of getting ahead is getting started.",
-        "Your only limitation is the one you accept.",
-        "Great achievements are born from small daily actions.",
-        "Believe you can and you're already halfway there.",
-        "Failure is simply the chance to begin again with more wisdom.",
-        "You are stronger than you think.",
-        "Courage is not the absence of fear — it's acting despite it.",
-        "Do what you can, with what you have, where you are.",
-        "The future belongs to those who believe in their dreams.",
-        "Every day is a new chance to grow.",
-        "Don't give up. Great things take time.",
-        "Today's effort is tomorrow's result.",
-    ],
-    "mindfulness": [
-        "Breathe. This moment is all there is.",
-        "Be present. Life happens now.",
-        "Peace is not the absence of chaos — it's calm within it.",
-        "Each breath is a new beginning.",
-        "Release what you cannot change. Embrace what you can.",
-        "Mindfulness turns the ordinary into the extraordinary.",
-        "Observe your thoughts like clouds passing by.",
-        "The present is the only time where you have power.",
-        "You don't need more time — just more presence.",
-        "When you slow down, life expands.",
-        "Stop. Feel. Be grateful.",
-        "The body knows what the mind has forgotten.",
-        "In every moment there's a choice: react or respond.",
-        "Calmness is a superpower.",
-        "Simplify. Enough is abundant.",
-    ],
-    "positivity": [
-        "Gratitude turns what we have into enough.",
-        "Small joys build a great life.",
-        "You radiate what you cultivate within.",
-        "Kindness is a language everyone understands.",
-        "A smile is the shortest distance between two hearts.",
-        "Tomorrow will be better because you are here today.",
-        "Beauty is waiting to be noticed in every detail.",
-        "The energy you offer is the energy you receive.",
-        "Every day holds twenty-four hours of possibility.",
-        "You are a miracle in motion.",
-        "Life is too short not to be kind.",
-        "Celebrate the journey, not just the destination.",
-        "There is always something to be grateful for.",
-        "You are exactly where you need to be.",
-        "Happiness is a daily practice, not a destination.",
-    ],
-    "stoicism": [
-        "Wish for things to happen as they are, not as you desire.",
-        "The wise man wants for nothing he does not have.",
-        "Tranquility belongs to one who neither desires nor fears.",
-        "It's not what happens to you — it's how you respond.",
-        "Control what is yours: your mind, your values, your actions.",
-        "Virtue is the only true wealth.",
-        "Endure and abstain.",
-        "Life is not long or short — it depends on how we fill it.",
-        "The wise man carries his home within himself.",
-        "Let this not disturb you: everything passes.",
-        "Act well now. The rest is vanity.",
-        "The obstacle is the way.",
-        "Prefer to be wrong with reason than right by chance.",
-        "Death reminds us to live with purpose.",
-        "Only the present is ours. The past and future are not.",
-    ],
-}
+# Hooks de abertura para variar o começo da descrição
+_DESC_HOOKS = [
+    "Close your eyes for one second. Feel that? That's your brain finally exhaling.",
+    "Some playlists are just music. This one is a complete focus environment.",
+    "Your most productive session starts right now.",
+    "3AM. Just you, your work, and zero distractions.",
+    "Tired of playlists that interrupt your flow? This one doesn't.",
+    "Not background noise — a precision-crafted focus tool.",
+    "The world is loud. Your work session doesn't have to be.",
+    "Built for the ones who don't quit until it's done.",
+    "Turn this on. Close every tab. Begin.",
+    "Your brain is craving structure. This is it.",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -181,131 +116,140 @@ class DeepSeekClient:
             return None
 
     # ------------------------------------------------------------------
-    # Geração de frases
-    # ------------------------------------------------------------------
-
-    def generate_phrases(self, categories: List[str] = None, count: int = 6,
-                         language: str = "en-US") -> List[str]:
-        """
-        Generates `count` reflection/motivation phrases via DeepSeek.
-        Falls back to local bank if API is unavailable.
-        """
-        categories = categories or list(FALLBACK_PHRASES.keys())
-
-        if not self.available:
-            return self._fallback_phrases(categories, count)
-
-        cats_str = ", ".join(categories)
-        system = (
-            "You are a writer of inspirational phrases for lo-fi and relaxing "
-            "YouTube channels. Your phrases are deep, poetic, and suitable "
-            "for study and relaxation videos."
-        )
-        user = (
-            f"Generate exactly {count} inspirational phrases in English. "
-            f"Mix these categories: {cats_str}. "
-            "Rules: max 60 characters each, one per line, "
-            "no numbering, no quotes, no emojis. "
-            "Prefer short and impactful phrases."
-        )
-
-        text = self._chat(system, user, max_tokens=count * 80, temperature=0.92)
-        if not text:
-            print("  [DeepSeek] Fallback para frases locais.")
-            return self._fallback_phrases(categories, count)
-
-        phrases = [line.strip() for line in text.splitlines() if line.strip()]
-        phrases = [p for p in phrases if 5 < len(p) <= 80][:count]
-
-        if len(phrases) < count:
-            extra = self._fallback_phrases(categories, count - len(phrases))
-            phrases.extend(extra)
-
-        random.shuffle(phrases)
-        return phrases[:count]
-
-    def _fallback_phrases(self, categories: List[str], count: int) -> List[str]:
-        pool: List[str] = []
-        for cat in categories:
-            pool.extend(FALLBACK_PHRASES.get(cat, []))
-        if not pool:
-            pool = [p for phrases in FALLBACK_PHRASES.values() for p in phrases]
-        random.shuffle(pool)
-        # Cycle if we need more than the pool has
-        result: List[str] = []
-        while len(result) < count:
-            result.extend(pool)
-        return result[:count]
-
-    # ------------------------------------------------------------------
     # Geração de metadados para YouTube
     # ------------------------------------------------------------------
 
     def generate_youtube_metadata(self, style: str, phrases: List[str],
                                   duration_min: int, language: str = "en-US") -> Dict:
-        """
-        Generates title, description and tags for YouTube upload.
-        """
+        """Gera título, descrição e tags para upload no YouTube."""
         default = self._default_metadata(style, duration_min)
 
         if not self.available:
             return default
 
-        sample = phrases[:3] if phrases else ["relaxing music", "lo-fi", "study"]
-        sample_str = " | ".join(sample)
+        angle = random.choice(_TITLE_ANGLES)
+        hook  = random.choice(_DESC_HOOKS)
+        _rem = duration_min % 60
+        dur_h = (f"{duration_min // 60}h {_rem}min" if _rem else f"{duration_min // 60}h") if duration_min >= 60 else f"{duration_min} minutes"
 
         system = (
-            "You are an SEO expert for YouTube channels in the lo-fi, "
-            "relaxing and study music niche. You write attractive titles and "
-            "descriptions that maximize clicks and watch time."
-        )
-        user = (
-            f"Create YouTube metadata in English for this video:\n"
-            f"- Style: {style}\n"
-            f"- Duration: {duration_min} minutes\n"
-            f"- Video phrases: {sample_str}\n\n"
-            "Reply ONLY with valid JSON in this exact format:\n"
-            '{"title": "...", "description": "...", "tags": ["tag1", "tag2", ...]}\n\n'
-            "Rules: title 50-70 chars, description 400-600 chars in English, "
-            "15-20 relevant tags in English."
+            "You are the creative director of one of YouTube's top lo-fi channels "
+            "with 9 million subscribers. You have mastered YouTube SEO, CTR optimization, "
+            "and emotional copywriting. Your titles consistently achieve 9-13% CTR. "
+            "You NEVER write generic titles like 'Relax and Study Music'. "
+            "Every title is specific, visual, emotionally resonant, and scroll-stopping. "
+            "Your descriptions are structured to hold watch time and trigger the recommendation algorithm."
         )
 
-        text = self._chat(system, user, max_tokens=700, temperature=0.75)
+        user = (
+            f"Generate YouTube metadata for a {style} music video ({dur_h} long).\n\n"
+            f"CREATIVE DIRECTION (mandatory — this makes each video unique):\n"
+            f"- Title angle: {angle}\n"
+            f"- Description must open with this hook (adapt slightly if needed): \"{hook}\"\n\n"
+            f"STRICT RULES:\n"
+            f"- Title: 52-68 characters. NO emojis. NO generic phrases. "
+            f"Make it specific, atmospheric, and irresistible to click.\n"
+            f"- Description: 520-680 characters structured as:\n"
+            f"  1. Hook (1-2 punchy lines)\n"
+            f"  2. What they'll experience (2-3 lines, vivid and specific)\n"
+            f"  3. Best use cases + listening tip (2 lines)\n"
+            f"  4. Subscribe CTA (1 line)\n"
+            f"  5. 12-15 hashtags on the last line\n"
+            f"- Tags: 22-27 tags. Mix: 8 high-volume broad tags + 10 long-tail specific tags "
+            f"+ 4 trending/niche tags. No commas inside individual tags.\n"
+            f"- Language: English (EN-US)\n\n"
+            "Reply ONLY with valid JSON:\n"
+            '{"title": "...", "description": "...", "tags": ["tag1", "tag2", ...]}'
+        )
+
+        text = self._chat(system, user, max_tokens=950, temperature=1.0)
         if not text:
             return default
 
         try:
             start = text.find("{")
-            end = text.rfind("}") + 1
-            data = json.loads(text[start:end])
+            end   = text.rfind("}") + 1
+            data  = json.loads(text[start:end])
             return {
-                "title": str(data.get("title", default["title"]))[:100],
+                "title":       str(data.get("title",       default["title"]))[:100],
                 "description": str(data.get("description", default["description"]))[:2000],
-                "tags": [str(t) for t in data.get("tags", default["tags"])][:30],
+                "tags":        [str(t) for t in data.get("tags", default["tags"])][:30],
             }
         except Exception:
             return default
 
     def _default_metadata(self, style: str, duration_min: int) -> Dict:
-        titles = {
-            "lofi": f"Lofi Hip Hop ☕ {duration_min} Minutes — Relax & Study",
-            "relaxing": f"Relaxing Music 🌿 {duration_min} Min — Calm Your Mind",
-            "study": f"Study Music 📚 {duration_min} Minutes — Deep Focus Session",
-            "shorts": "Lofi Moment ✨ Take a Breath",
-        }
-        return {
-            "title": titles.get(style, f"Lo-fi Vibes 🎵 {duration_min} Minutes"),
-            "description": (
-                f"🎵 {duration_min} minutes of {style} music to help you relax, "
-                "study and find your focus.\n\n"
-                "✨ Use headphones for the best experience.\n"
-                "📌 Save this playlist for your next session.\n\n"
-                "#lofi #relaxing #studymusic #chill #focus"
-            ),
-            "tags": [
-                "lofi", "lo-fi", "relaxing music", "study music", "chill",
-                "focus music", "musica relaxante", "musica para estudar",
-                style, "ambient", "instrumental", "concentration", "calm",
-                "sleep music", "meditation",
+        """Fallback com múltiplas variações — nunca retorna o mesmo título duas vezes."""
+        _rem = duration_min % 60
+        dur_h = (f"{duration_min // 60}h {_rem}min" if _rem else f"{duration_min // 60}h") if duration_min >= 60 else f"{duration_min} minutes"
+
+        title_pool = {
+            "lofi": [
+                f"Late Night Lofi — {dur_h} of Uninterrupted Deep Focus",
+                f"Coffee Shop Beats — {dur_h} to Study, Work & Disappear Into",
+                f"Rainy Window Lofi — {dur_h} of Pure Concentration",
+                f"3AM Study Session — Lofi Beats for the Night Owls ({dur_h})",
+                f"Quiet Hours — {dur_h} of Lofi Hip Hop for Deep Work",
             ],
+            "relaxing": [
+                f"Still Water — {dur_h} of Healing Ambient Music",
+                f"Breathe Slowly — {dur_h} of Pure Calm for an Overloaded Mind",
+                f"Soft Light — {dur_h} of Restorative Music for Rest and Peace",
+                f"The Quiet Room — {dur_h} of Ambient Sound for Deep Relaxation",
+                f"Golden Hour Calm — {dur_h} of Peaceful Atmospheric Music",
+            ],
+            "study": [
+                f"Locked In — {dur_h} of Deep Work Music for Maximum Output",
+                f"Zero Distractions — {dur_h} of Pure Focus Frequency",
+                f"The Study Room — {dur_h} of Concentration Music with No Breaks",
+                f"Brain on Fire — {dur_h} of Instrumental Study Music",
+                f"Flow State — {dur_h} of Music Engineered for Deep Thinking",
+            ],
+            "shorts": [
+                "60 Seconds of Calm. Your Brain Needed This.",
+                "Take One Breath. This is Your Reset.",
+                "The Lofi Feeling — in 60 Seconds",
+                "One Minute of Pure Focus. Ready?",
+                "This is What Silence Sounds Like.",
+            ],
+        }
+
+        desc_pool = [
+            (
+                f"Turn this on. Close every tab. Begin.\n\n"
+                f"{dur_h} of {style} music with zero interruptions — built for deep work, "
+                f"creative flow, and the kind of focus that makes hours feel like minutes.\n\n"
+                f"Best with headphones in a quiet room. Bookmark this for your next session.\n\n"
+                f"Subscribe for a new session every week.\n\n"
+                f"#lofi #studymusic #focusmusic #deepwork #chillbeats #instrumental "
+                f"#concentration #ambientmusic #{style} #lofihiphop #noads #workmusic "
+                f"#productivitymusic #relaxingmusic #flowstate"
+            ),
+            (
+                f"Your brain is craving structure. This is it.\n\n"
+                f"{dur_h} of carefully crafted {style} music — no ads breaking your rhythm, "
+                f"no jarring transitions, just one continuous stream of focus-ready sound.\n\n"
+                f"Perfect for: studying, coding, writing, late-night work sessions.\n"
+                f"Pro tip: start a timer. You'll be surprised how much you get done.\n\n"
+                f"New sessions uploaded weekly — subscribe so you never run out.\n\n"
+                f"#lofi #lofihiphop #{style} #studymusic #focusmusic #chillhop "
+                f"#instrumentalmusic #concentration #deepfocus #ambientmusic "
+                f"#backgroundmusic #workmusic #relaxingmusic #nolyrics #studysession"
+            ),
+        ]
+
+        tags = [
+            "lofi", "lo-fi hip hop", "study music", "focus music", "chill beats",
+            "relaxing music", "instrumental music", "no lyrics", "lofi hip hop radio",
+            "beats to study to", "concentration music", "deep focus music",
+            "ambient music", "background music for studying", style, f"{style} music",
+            "lofi beats", "chillhop", "music for coding", "work music",
+            "productivity music", "lofi study session", "focus frequency",
+        ]
+        random.shuffle(tags)
+
+        return {
+            "title":       random.choice(title_pool.get(style, title_pool["lofi"])),
+            "description": random.choice(desc_pool),
+            "tags":        tags[:20],
         }

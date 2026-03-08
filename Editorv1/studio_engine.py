@@ -33,6 +33,7 @@ import signal
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -49,6 +50,7 @@ from visual_styles import get_palette, get_style
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".flv", ".wmv", ".mpeg", ".mpg"}
 AUDIO_EXTS = {".mp3", ".wav", ".aac", ".m4a", ".ogg", ".flac", ".wma"}
 ENGINE_FPS = 30
+CPU_THREADS = os.cpu_count() or 16  # usa todos os vCPUs disponíveis
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +111,9 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
     if not track_name or track_dur < 4.0:
         return ""
     name = Path(track_name).stem[:45].replace("_", " ").replace("-", " ").strip()
-    for ch, esc in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
+    # Apóstrofe → aspas curvas Unicode (visualmente idêntico, mas não quebra o
+    # parser de filter_complex que usa ' como delimitador de nível 2)
+    for ch, esc in [("\\", "\\\\"), ("'", "\u2019"), (":", "\\:"),
                     (",", "\\,"), (";", "\\;"), ("%", "%%")]:
         name = name.replace(ch, esc)
     fade_s = 1.0
@@ -117,11 +121,14 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
     t_end   = time_offset + min(9.5, max(3.0, track_dur - 1.5))
     if t_end <= t_start + 0.1:
         return ""
+    # Vírgulas nos argumentos de função escapadas com \, — mais robusto que '...'
+    # dentro de filter_complex, onde o estado de aspas pode ser corrompido por
+    # \' em opções anteriores (ex: text com apóstrofe no nome da faixa)
     alpha = (
-        f"if(lt(t,{t_start:.2f}+{fade_s:.1f}),"
-        f"max(0,(t-{t_start:.2f})/{fade_s:.1f}),"
-        f"if(gt(t,{t_end:.2f}-{fade_s:.1f}),"
-        f"max(0,({t_end:.2f}-t)/{fade_s:.1f}),1))"
+        f"if(lt(t\\,{t_start:.2f}+{fade_s:.1f})\\,"
+        f"max(0\\,(t-{t_start:.2f})/{fade_s:.1f})\\,"
+        f"if(gt(t\\,{t_end:.2f}-{fade_s:.1f})\\,"
+        f"max(0\\,({t_end:.2f}-t)/{fade_s:.1f})\\,1))"
     )
     fp = ""
     if font_path and Path(font_path).exists():
@@ -133,8 +140,8 @@ def _track_drawtext(track_name: str, track_dur: float, font_path: str = "",
         f"fontsize=22:fontcolor=0xFFF8E7:"
         f"x=20:y=20:"
         f"shadowx=1:shadowy=1:shadowcolor=0x1A0800@0.85:"
-        f"alpha='{alpha}':"
-        f"enable='between(t,{t_start:.2f},{t_end:.2f})'"
+        f"alpha={alpha}:"
+        f"enable=between(t\\,{t_start:.2f}\\,{t_end:.2f})"
     )
 
 
@@ -441,10 +448,10 @@ class StudioEngine:
         self.final_crf    = int(args.final_crf)
         self.final_preset = args.final_preset
         self.concat_copy  = bool(args.concat_copy)
-        self.encoder      = args.encoder
         self.nvenc_preset = args.nvenc_preset
         self.nvenc_cq     = int(args.nvenc_cq)
         self.nvenc_tune   = args.nvenc_tune
+        self.encoder      = self._auto_detect_encoder(args.encoder)
 
         # Resolução
         self.enable_upscale  = bool(args.enable_upscale)
@@ -803,6 +810,42 @@ class StudioEngine:
     # Encoder args                                                        #
     # ------------------------------------------------------------------ #
 
+    def _auto_detect_encoder(self, preferred: str) -> str:
+        """Testa se GPU (nvenc) funciona; se não, usa CPU (x264). Automático."""
+        if preferred != "nvenc":
+            print("  [encoder] libx264 (CPU)")
+            return "x264"
+        import subprocess
+        # Testa encode real: mesmos flags que o pipeline usa
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-y",
+                 "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1:r=1",
+                 "-c:v", "h264_nvenc", "-preset", self.nvenc_preset,
+                 "-tune", self.nvenc_tune, "-gpu", "0",
+                 "-f", "null", "-"],
+                capture_output=True, timeout=15,
+            )
+            if r.returncode == 0:
+                print("  [encoder] h264_nvenc (GPU)")
+                return "nvenc"
+        except Exception:
+            pass
+        print("  [encoder] GPU indisponível — usando libx264 (CPU)")
+        return "x264"
+
+    def _hwaccel_args(self) -> List[str]:
+        """Decodificação sempre por CPU — evita dependência de CUDA/NVDEC."""
+        return []
+
+    def _global_thread_args(self) -> List[str]:
+        """Flags de threading para maximizar uso de CPU nos filtros."""
+        return [
+            "-threads", str(CPU_THREADS),
+            "-filter_threads", str(CPU_THREADS),
+            "-filter_complex_threads", str(CPU_THREADS),
+        ]
+
     def _clip_encoder_args(self, crf: int) -> List[str]:
         if self.encoder == "nvenc":
             return [
@@ -813,8 +856,15 @@ class StudioEngine:
                 "-cq:v", str(self.nvenc_cq),
                 "-b:v", "0",
                 "-pix_fmt", "yuv420p",
+                "-gpu", "0",
             ]
-        return ["-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p"]
+        return [
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p",
+            "-threads", str(CPU_THREADS),
+        ]
 
     # ------------------------------------------------------------------ #
     # Processamento de clip individual                                    #
@@ -839,7 +889,7 @@ class StudioEngine:
         # --- Rotação micro (muito sutil no lo-fi) ---
         if random.random() < (0.10 + 0.15 * intensity):
             ang = random.uniform(-0.15, 0.15) * (0.3 + intensity)
-            filters.append(f"rotate={ang}*PI/180:fillcolor=black@0:ow=iw:oh=ih")
+            filters.append(f"rotate={ang}*PI/180:fillcolor=black:ow=iw:oh=ih")
 
         # --- Variação de velocidade (muito sutil) ---
         if random.random() < 0.15:
@@ -875,22 +925,17 @@ class StudioEngine:
 
         needs_loop = clip.get("loop", False) or seg_len > float(clip.get("duration", seg_len)) * 0.99
 
-        concat_file: Optional[Path] = None
         if needs_loop:
-            # Use concat demuxer to repeat the clip — more reliable than -stream_loop
-            src_dur = max(0.1, float(clip.get("duration", 1.0)))
-            repeats = int(seg_len / src_dur) + 2
-            concat_file = out.parent / f"loop_{idx:03d}.txt"
-            with concat_file.open("w", encoding="utf-8") as cf:
-                # FFmpeg concat demuxer: use forward slashes (works on Windows too)
-                path_str = str(src.resolve()).replace("\\", "/").replace("'", "\\'")
-                line = f"file '{path_str}'\n"
-                for _ in range(repeats):
-                    cf.write(line)
+            # -stream_loop -1 loops the input natively; avoids creating a
+            # concat file whose path may contain characters (@, spaces, etc.)
+            # that trip up FFmpeg's URL parser on Windows.
+            # CPU decoding is used here — NVDEC does not support stream_loop.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
-                "-f", "concat", "-safe", "0",
-                "-i", str(concat_file),
+                *self._global_thread_args(),
+                "-stream_loop", "-1",
+                "-fflags", "+genpts",
+                "-i", str(src),
                 "-t", str(seg_len),
                 "-vf", vf, "-an",
                 "-movflags", "+faststart",
@@ -898,6 +943,8 @@ class StudioEngine:
         else:
             cmd = [
                 "ffmpeg", "-y", "-hide_banner",
+                *self._global_thread_args(),
+                *self._hwaccel_args(),
                 "-fflags", "+genpts",
                 "-ss", str(start), "-i", str(src),
                 "-t", str(seg_len),
@@ -910,13 +957,6 @@ class StudioEngine:
         res = run_cmd_progress(cmd, log, timeout_s=timeout_s,
                                total_dur=seg_len, label=f"clip {idx}",
                                proc_reg=self.proc_reg)
-
-        # Clean up temporary concat list
-        if concat_file and concat_file.exists():
-            try:
-                concat_file.unlink()
-            except Exception:
-                pass
 
         if res.rc != 0 or not out.exists() or out.stat().st_size < 1024:
             tag = "TIMEOUT" if res.timed_out else f"rc={res.rc}"
@@ -988,13 +1028,27 @@ class StudioEngine:
         lst = self._write_concat_list(clips, out)
         log = self.logs_dir / f"concat_reencode_{out.stem}.log"
         vf  = f"scale={w}:{h}:flags=lanczos,fps={ENGINE_FPS},setsar=1,format=yuv420p"
+        if self.encoder == "nvenc":
+            enc_args = [
+                "-c:v", "h264_nvenc",
+                "-preset", self.nvenc_preset,
+                "-tune", self.nvenc_tune,
+                "-pix_fmt", "yuv420p",
+                "-cq:v", str(self.nvenc_cq),
+            ]
+        else:
+            enc_args = [
+                "-c:v", "libx264", "-preset", self.final_preset,
+                "-crf", str(self.final_crf), "-pix_fmt", "yuv420p",
+            ]
         cmd = [
             "ffmpeg", "-y", "-hide_banner",
+            *self._global_thread_args(),
+            *self._hwaccel_args(),
             "-fflags", "+genpts",
             "-f", "concat", "-safe", "0", "-i", str(lst),
             "-an", "-vf", vf,
-            "-c:v", "libx264", "-preset", self.final_preset,
-            "-crf", str(self.final_crf), "-pix_fmt", "yuv420p",
+            *enc_args,
             "-movflags", "+faststart", "-video_track_timescale", "90000",
             str(out)
         ]
@@ -1094,7 +1148,7 @@ class StudioEngine:
         # 2. Altura e posição do visualizador ribbon
         # Mínimo de 100px para o efeito de leque ser visível
         wh    = _safe_int_even(max(int(video_h * self.vis_height_pct), 100), 2)
-        y_vis = (video_h - wh) // 2   # centrado verticalmente (como na referência)
+        y_vis = video_h - wh           # fixado na base do frame
 
         # 3. Per-track drawtext com offset temporal acumulado
         t_acc = 0.0
@@ -1203,13 +1257,9 @@ class StudioEngine:
                 "[wcolored]colorkey=0x000000:similarity=0.10:blend=0.06[wvis]"
             )
 
-            # Dark backdrop centred in frame + ribbon overlay
+            # Overlay waveform directly on video (sem faixa preta)
             fc_parts.append(
-                f"[vbase]drawbox=x=0:y={y_vis}:w=iw:h={wh}"
-                f":color=0x040410@0.92:t=fill[vdark]"
-            )
-            fc_parts.append(
-                f"[vdark][wvis]overlay=x=0:y={y_vis}:format=auto[vfinal]"
+                f"[vbase][wvis]overlay=x=0:y={y_vis}:format=auto[vfinal]"
             )
             v_out, a_out = "[vfinal]", "[aout]"
         else:
@@ -1221,18 +1271,32 @@ class StudioEngine:
         log = self.logs_dir / f"render_final_{video_out.stem}.log"
 
         # 7. Monta o comando com inputs individuais de áudio
-        cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video_in)]
+        cmd = ["ffmpeg", "-y", "-hide_banner", *self._global_thread_args(), "-i", str(video_in)]
         for af in all_audio:
             cmd.extend(["-i", str(af)])
+        if self.encoder == "nvenc":
+            _final_enc = [
+                "-c:v", "h264_nvenc",
+                "-preset", self.nvenc_preset,
+                "-tune", self.nvenc_tune,
+                "-pix_fmt", "yuv420p",
+                "-cq:v", str(self.nvenc_cq),
+                "-gpu", "0",
+            ]
+        else:
+            _final_enc = [
+                "-c:v", "libx264",
+                "-preset", self.final_preset,
+                "-crf", str(self.final_crf),
+                "-pix_fmt", "yuv420p",
+                "-threads", str(CPU_THREADS),
+            ]
         cmd.extend([
             "-filter_complex", fc,
             "-map", v_out,
             "-map", a_out,
             "-t", f"{dur:.3f}",
-            "-c:v", "libx264",
-            "-preset", self.final_preset,
-            "-crf", str(self.final_crf),
-            "-pix_fmt", "yuv420p",
+            *_final_enc,
             "-c:a", "aac",
             "-b:a", "192k",
             "-movflags", "+faststart",
@@ -1265,10 +1329,13 @@ class StudioEngine:
     # Thumbnail                                                           #
     # ------------------------------------------------------------------ #
 
-    def generate_thumbnail(self, video_path: Path, thumb_out: Path) -> bool:
+    def generate_thumbnail(self, video_path: Path, thumb_out: Path,
+                           title: str = "") -> bool:
         dur = _get_duration(video_path)
         if dur <= 1.0:
             return False
+
+        THUMB_W, THUMB_H = 1280, 720  # padrão YouTube recomendado
 
         candidates: List[Path] = []
         for i, t in enumerate([dur * 0.25, dur * 0.50, dur * 0.75], 1):
@@ -1278,8 +1345,15 @@ class StudioEngine:
                 "ffmpeg", "-y", "-hide_banner",
                 "-ss", str(t), "-i", str(video_path),
                 "-frames:v", "1",
-                "-vf", "eq=contrast=1.12:saturation=1.08,unsharp=3:3:0.8:3:3:0.2",
-                "-q:v", "2", str(tmp),
+                "-vf", (
+                    f"scale={THUMB_W}:{THUMB_H}:flags=lanczos"
+                    f":force_original_aspect_ratio=increase,"
+                    f"crop={THUMB_W}:{THUMB_H},"
+                    f"eq=contrast=1.20:saturation=1.18:brightness=0.02,"
+                    f"unsharp=5:5:1.2:5:5:0.3"
+                ),
+                "-q:v", "1",  # melhor qualidade JPEG
+                str(tmp),
             ]
             res = run_cmd_capture(cmd, log, 120, self.proc_reg)
             if res.rc == 0 and tmp.exists() and tmp.stat().st_size > 10_000:
@@ -1289,6 +1363,82 @@ class StudioEngine:
             return False
 
         best = max(candidates, key=lambda p: p.stat().st_size)
+
+        # Queima o título centralizado no meio da thumbnail
+        if title:
+            titled = self.thumbs_dir / f"{thumb_out.stem}_titled.jpg"
+            log_t  = self.logs_dir / f"thumb_title_{thumb_out.stem}.log"
+
+            def _esc(s: str) -> str:
+                for ch, rep in [("\\", "\\\\"), ("'", "\\'"), (":", "\\:"),
+                                 (",", "\\,"), (";", "\\;"), ("%", "%%")]:
+                    s = s.replace(ch, rep)
+                return s
+
+            fp_arg = ""
+            if self.font_path and Path(self.font_path).exists():
+                safe_fp = (self.font_path.replace("\\", "/")
+                                         .replace("'", "\\'")
+                                         .replace(":", "\\:"))
+                fp_arg = f"fontfile='{safe_fp}':"
+
+            # Quebra o título em linhas de ~24 chars (fontsize=68 @ 1280px)
+            words = title.split()
+            lines: List[str] = []
+            cur = ""
+            for w in words:
+                probe = f"{cur} {w}".strip() if cur else w
+                if len(probe) <= 24:
+                    cur = probe
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            lines = lines[:3]  # máximo 3 linhas
+
+            fontsize  = 68
+            line_h    = fontsize + 16   # altura de cada linha com espaçamento
+            n         = len(lines)
+            y_center  = THUMB_H // 2
+            y_start   = y_center - (n * line_h) // 2
+
+            # Fundo escuro semitransparente atrás do bloco de texto
+            box_pad_x = int(THUMB_W * 0.06)
+            box_pad_y = 22
+            box_h     = n * line_h + box_pad_y * 2
+            box_y     = max(0, y_start - box_pad_y)
+
+            vf_parts = [
+                f"drawbox=x={box_pad_x}:y={box_y}"
+                f":w={THUMB_W - box_pad_x * 2}:h={box_h}"
+                f":color=0x000000@0.58:t=fill"
+            ]
+
+            for idx, line in enumerate(lines):
+                y_pos = y_start + idx * line_h
+                vf_parts.append(
+                    f"drawtext={fp_arg}"
+                    f"text='{_esc(line)}':"
+                    f"fontsize={fontsize}:fontcolor=white:"
+                    f"borderw=3:bordercolor=0x000000@0.90:"
+                    f"shadowx=3:shadowy=3:shadowcolor=0x000000@0.70:"
+                    f"x=(w-text_w)/2:y={y_pos}:"
+                    f"fix_bounds=1"
+                )
+
+            cmd_t = [
+                "ffmpeg", "-y", "-hide_banner",
+                "-i", str(best),
+                "-vf", ",".join(vf_parts),
+                "-q:v", "1",
+                str(titled),
+            ]
+            res_t = run_cmd_capture(cmd_t, log_t, 60, self.proc_reg)
+            if res_t.rc == 0 and titled.exists() and titled.stat().st_size > 5_000:
+                best = titled
+
         try:
             if thumb_out.exists():
                 thumb_out.unlink(missing_ok=True)
@@ -1310,13 +1460,15 @@ class StudioEngine:
     # ------------------------------------------------------------------ #
 
     def _save_metadata(self, video_path: Path, metadata: Dict) -> None:
-        meta_file = video_path.with_suffix(".meta.json")
-        try:
-            with meta_file.open("w", encoding="utf-8") as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
-            print(f"  ✓  Metadata: {meta_file.name}")
-        except Exception as e:
-            print(f"  ⚠  Falha ao salvar metadata: {e}")
+        sep = "─" * 60
+        tags_str = ", ".join(metadata.get("tags", []))
+        print(f"\n{sep}")
+        print("  METADADOS YOUTUBE — pronto para copiar e colar")
+        print(sep)
+        print(f"\n  TITULO:\n{metadata.get('title', '')}\n")
+        print(f"  DESCRICAO:\n{metadata.get('description', '')}\n")
+        print(f"  TAGS:\n{tags_str}\n")
+        print(sep)
 
     # ------------------------------------------------------------------ #
     # Pipeline principal: um vídeo                                        #
@@ -1386,21 +1538,23 @@ class StudioEngine:
             if not ok:
                 return None
 
-            # --- Thumbnail ---
-            if self.make_thumbs:
-                thumb = self.thumbs_dir / f"{out_final.stem}.jpg"
-                if self.generate_thumbnail(out_final, thumb):
-                    print(f"  ✓  Thumbnail: {thumb.name}")
-                else:
-                    print("  ⚠  Não foi possível gerar thumbnail.")
-
-            # --- Metadados YouTube ---
+            # --- Metadados YouTube (gerado antes da thumbnail para usar o título) ---
+            thumb_title = ""
             if self._ai_enabled:
                 dur_min = int(_get_duration(out_final) // 60)
                 meta = self.deepseek.generate_youtube_metadata(
                     style=self.mode, phrases=[], duration_min=dur_min
                 )
                 self._save_metadata(out_final, meta)
+                thumb_title = meta.get("title", "")
+
+            # --- Thumbnail ---
+            if self.make_thumbs:
+                thumb = self.thumbs_dir / f"{out_final.stem}.jpg"
+                if self.generate_thumbnail(out_final, thumb, title=thumb_title):
+                    print(f"  ✓  Thumbnail: {thumb.name}")
+                else:
+                    print("  ⚠  Não foi possível gerar thumbnail.")
 
             size_mb = out_final.stat().st_size / (1024 * 1024)
             print(f"\n  Concluido: {out_final.name} ({size_mb:.1f} MB)")
@@ -1410,19 +1564,49 @@ class StudioEngine:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def run_batch(self, n: int) -> List[Path]:
-        outs: List[Path] = []
-        for i in range(n):
-            print(f"\n{'='*68}\n  JOB {i+1}/{n} — {self.mode.upper()}\n{'='*68}")
+        if self.max_workers <= 1 or n == 1:
+            outs: List[Path] = []
+            for i in range(n):
+                print(f"\n{'='*68}\n  JOB {i+1}/{n} — {self.mode.upper()}\n{'='*68}")
+                try:
+                    out = self.run_one()
+                except KeyboardInterrupt:
+                    print("  Batch interrompido.")
+                    break
+                if out:
+                    outs.append(out)
+            return outs
+
+        # Modo paralelo: executa múltiplos vídeos ao mesmo tempo
+        print(f"\n  Batch paralelo: {n} vídeo(s) em {self.max_workers} worker(s) simultâneos")
+        outs_lock = threading.Lock()
+        completed_outs: List[Path] = []
+        job_counter = threading.local()
+
+        def _run_job(job_idx: int) -> Optional[Path]:
+            print(f"\n{'='*68}\n  JOB {job_idx+1}/{n} — {self.mode.upper()} (worker)\n{'='*68}")
+            return self.run_one()
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+            futures = {pool.submit(_run_job, i): i for i in range(n)}
             try:
-                out = self.run_one()
+                for fut in as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        out = fut.result()
+                        if out:
+                            with outs_lock:
+                                completed_outs.append(out)
+                            print(f"  ✓  JOB {idx+1}/{n} concluído: {out.name}")
+                        else:
+                            print(f"  ⚠  JOB {idx+1}/{n} não gerou saída.")
+                    except Exception as exc:
+                        print(f"  ✗  JOB {idx+1}/{n} falhou: {exc}")
             except KeyboardInterrupt:
                 print("  Batch interrompido.")
-                break
-            if out:
-                outs.append(out)
-            if i < n - 1:
-                time.sleep(random.uniform(2, 5))
-        return outs
+                pool.shutdown(wait=False, cancel_futures=True)
+
+        return completed_outs
 
 
 # ---------------------------------------------------------------------------
@@ -1462,7 +1646,7 @@ Exemplos:
     p.add_argument("--failed-dir",    default="failed")
 
     # Processamento
-    p.add_argument("--workers",            type=int,   default=1)
+    p.add_argument("--workers",            type=int,   default=max(1, (os.cpu_count() or 4) // 4))
     p.add_argument("--num-videos",         type=int,   default=1)
     p.add_argument("--clip-timeout",       type=int,   default=900)
     p.add_argument("--clip-timeout-mult",  type=float, default=1.0)
@@ -1473,8 +1657,9 @@ Exemplos:
     p.add_argument("--final-crf",    type=int, default=20)
     p.add_argument("--final-preset", default="medium")
     p.add_argument("--concat-copy",  action="store_true")
-    p.add_argument("--encoder",      choices=["x264", "nvenc"], default="x264")
-    p.add_argument("--nvenc-preset", default="p5")
+    p.add_argument("--encoder",      choices=["x264", "nvenc"], default="nvenc")
+    p.add_argument("--nvenc-preset", default="p4",
+                   help="p1=fastest, p4=balanced, p7=best quality (default: p4)")
     p.add_argument("--nvenc-cq",     type=int, default=19)
     p.add_argument("--nvenc-tune",   default="hq")
 
