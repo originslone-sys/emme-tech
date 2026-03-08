@@ -1,4 +1,4 @@
-"""Motor estatístico — Poisson, médias, forma, H2H."""
+"""Motor estatístico — Poisson com peso por recência, forma e H2H."""
 
 import math
 from scipy.stats import poisson
@@ -9,17 +9,30 @@ def poisson_prob(lam, k):
     return poisson.pmf(k, lam)
 
 
+def _recency_weights(n, decay=0.92):
+    """Gera pesos exponenciais para n jogos (mais recente = maior peso).
+
+    Com decay=0.92, os últimos 5 jogos pesam ~2x mais que os 5 mais antigos
+    numa temporada de 30 jogos.
+    """
+    weights = [decay ** (n - 1 - i) for i in range(n)]
+    total = sum(weights)
+    return [w / total for w in weights]
+
+
 def calc_team_stats(matches, team_name):
-    """Calcula estatísticas ofensivas/defensivas de um time.
+    """Calcula estatísticas ofensivas/defensivas de um time com peso por recência.
 
     Retorna dict com:
         goals_scored_avg, goals_conceded_avg (casa e fora separados),
         form (últimos 5 jogos: W/D/L),
-        total_matches
+        total_matches,
+        recent_over25_pct, recent_btts_pct (últimos 10 jogos)
     """
-    home_scored, home_conceded, home_count = [], [], 0
-    away_scored, away_conceded, away_count = [], [], 0
+    home_scored, home_conceded = [], []
+    away_scored, away_conceded = [], []
     form = []
+    recent_goals = []  # (total_gols, btts) dos últimos jogos
 
     for m in matches:
         if m.get("status") != "FINISHED":
@@ -33,33 +46,66 @@ def calc_team_stats(matches, team_name):
         if home_team == team_name:
             home_scored.append(h_goals)
             home_conceded.append(a_goals)
-            home_count += 1
             if h_goals > a_goals:
                 form.append("W")
             elif h_goals == a_goals:
                 form.append("D")
             else:
                 form.append("L")
-        else:
+            recent_goals.append((h_goals + a_goals, h_goals > 0 and a_goals > 0))
+        elif m["awayTeam"]["name"] == team_name:
             away_scored.append(a_goals)
             away_conceded.append(h_goals)
-            away_count += 1
             if a_goals > h_goals:
                 form.append("W")
             elif a_goals == h_goals:
                 form.append("D")
             else:
                 form.append("L")
+            recent_goals.append((h_goals + a_goals, h_goals > 0 and a_goals > 0))
+
+    home_count = len(home_scored)
+    away_count = len(away_scored)
+
+    # Médias ponderadas por recência
+    if home_count > 0:
+        hw = _recency_weights(home_count)
+        home_scored_avg = sum(g * w for g, w in zip(home_scored, hw))
+        home_conceded_avg = sum(g * w for g, w in zip(home_conceded, hw))
+    else:
+        home_scored_avg = 0
+        home_conceded_avg = 0
+
+    if away_count > 0:
+        aw = _recency_weights(away_count)
+        away_scored_avg = sum(g * w for g, w in zip(away_scored, aw))
+        away_conceded_avg = sum(g * w for g, w in zip(away_conceded, aw))
+    else:
+        away_scored_avg = 0
+        away_conceded_avg = 0
+
+    # Tendências recentes (últimos 10 jogos)
+    last10 = recent_goals[-10:] if len(recent_goals) >= 5 else recent_goals
+    recent_over25_pct = sum(1 for g, _ in last10 if g > 2) / len(last10) if last10 else 0
+    recent_btts_pct = sum(1 for _, b in last10 if b) / len(last10) if last10 else 0
+
+    # Forma recente — pontuação (W=3, D=1, L=0) normalizada
+    form_last5 = form[-5:] if form else []
+    form_points = sum(3 if r == "W" else 1 if r == "D" else 0 for r in form_last5)
+    form_score = form_points / (len(form_last5) * 3) if form_last5 else 0.5
 
     return {
-        "home_scored_avg": sum(home_scored) / home_count if home_count else 0,
-        "home_conceded_avg": sum(home_conceded) / home_count if home_count else 0,
-        "away_scored_avg": sum(away_scored) / away_count if away_count else 0,
-        "away_conceded_avg": sum(away_conceded) / away_count if away_count else 0,
+        "home_scored_avg": home_scored_avg,
+        "home_conceded_avg": home_conceded_avg,
+        "away_scored_avg": away_scored_avg,
+        "away_conceded_avg": away_conceded_avg,
         "home_matches": home_count,
         "away_matches": away_count,
         "total_matches": home_count + away_count,
-        "form_last5": form[-5:] if form else [],
+        "form_last5": form_last5,
+        "form_score": form_score,
+        "recent_over25_pct": round(recent_over25_pct, 4),
+        "recent_btts_pct": round(recent_btts_pct, 4),
     }
 
 
@@ -85,11 +131,13 @@ def calc_league_averages(matches):
     }
 
 
-def predict_match(home_stats, away_stats, league_avg):
-    """Gera previsão usando Poisson.
+def predict_match(home_stats, away_stats, league_avg, h2h=None):
+    """Gera previsão usando Poisson + ajustes de forma e H2H.
 
-    Calcula lambda para cada time e gera matriz de probabilidades de placares.
-    Retorna probabilidades para os mercados Over/Under 2.5 e BTTS.
+    1. Calcula lambda base via attack/defense strength (Poisson clássico)
+    2. Ajusta pela forma recente dos times (±10%)
+    3. Gera matriz de placares e probabilidades dos mercados
+    4. Incorpora tendências recentes e H2H como correção final
     """
     if league_avg["home_avg"] == 0 or league_avg["away_avg"] == 0:
         return None
@@ -100,13 +148,20 @@ def predict_match(home_stats, away_stats, league_avg):
     away_attack = away_stats["away_scored_avg"] / league_avg["away_avg"]
     away_defense = away_stats["away_conceded_avg"] / league_avg["home_avg"]
 
-    # Expected goals (lambda)
+    # Expected goals (lambda) base
     lambda_home = home_attack * away_defense * league_avg["home_avg"]
     lambda_away = away_attack * home_defense * league_avg["away_avg"]
 
+    # Ajuste pela forma recente (time em boa forma ataca ~5-10% mais)
+    home_form_adj = 1.0 + (home_stats["form_score"] - 0.5) * 0.15
+    away_form_adj = 1.0 + (away_stats["form_score"] - 0.5) * 0.15
+
+    lambda_home *= home_form_adj
+    lambda_away *= away_form_adj
+
     # Limitar lambdas a valores razoáveis
-    lambda_home = max(0.2, min(lambda_home, 5.0))
-    lambda_away = max(0.2, min(lambda_away, 5.0))
+    lambda_home = max(0.3, min(lambda_home, 4.5))
+    lambda_away = max(0.2, min(lambda_away, 4.0))
 
     # Matriz de placares (0-6 gols para cada time)
     max_goals = 7
@@ -119,13 +174,30 @@ def predict_match(home_stats, away_stats, league_avg):
     under_25 = sum(
         prob for (h, a), prob in score_matrix.items() if h + a < 3
     )
-    over_25 = 1 - under_25
+    over_25_poisson = 1 - under_25
 
     # BTTS
     btts_no = sum(
         prob for (h, a), prob in score_matrix.items() if h == 0 or a == 0
     )
-    btts_yes = 1 - btts_no
+    btts_yes_poisson = 1 - btts_no
+
+    # Ajustar com tendências recentes dos times (peso 25%)
+    # Média das tendências recentes dos dois times
+    avg_recent_over25 = (home_stats["recent_over25_pct"] + away_stats["recent_over25_pct"]) / 2
+    avg_recent_btts = (home_stats["recent_btts_pct"] + away_stats["recent_btts_pct"]) / 2
+
+    over_25 = 0.75 * over_25_poisson + 0.25 * avg_recent_over25
+    btts_yes = 0.75 * btts_yes_poisson + 0.25 * avg_recent_btts
+
+    # Ajustar com H2H se disponível (peso 10%, tira dos 75% do Poisson)
+    if h2h and h2h["count"] >= 2:
+        over_25 = 0.65 * over_25_poisson + 0.25 * avg_recent_over25 + 0.10 * h2h["over_25_pct"]
+        btts_yes = 0.65 * btts_yes_poisson + 0.25 * avg_recent_btts + 0.10 * h2h["btts_pct"]
+
+    # Garantir limites válidos
+    over_25 = max(0.05, min(0.95, over_25))
+    btts_yes = max(0.05, min(0.95, btts_yes))
 
     # 1X2
     home_win = sum(prob for (h, a), prob in score_matrix.items() if h > a)
@@ -139,9 +211,9 @@ def predict_match(home_stats, away_stats, league_avg):
         "lambda_home": round(lambda_home, 2),
         "lambda_away": round(lambda_away, 2),
         "over_25": round(over_25, 4),
-        "under_25": round(under_25, 4),
+        "under_25": round(1 - over_25, 4),
         "btts_yes": round(btts_yes, 4),
-        "btts_no": round(btts_no, 4),
+        "btts_no": round(1 - btts_yes, 4),
         "home_win": round(home_win, 4),
         "draw": round(draw, 4),
         "away_win": round(away_win, 4),

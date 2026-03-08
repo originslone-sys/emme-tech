@@ -32,9 +32,9 @@ ODDS_SPORT_KEYS = {
 MARKETS = ["over_under_25", "btts"]
 
 # Filtros de value bet
-MIN_EDGE = 0.05           # Edge mínimo de 5% para considerar value bet
+MIN_EDGE = 0.08           # Edge mínimo de 8% para considerar value bet
 MIN_MATCHES_HISTORY = 10  # Mínimo de jogos no histórico para análise
-MIN_CONFIDENCE = 0.55     # Confiança mínima para recomendar
+MIN_CONFIDENCE = 3        # Confiança mínima (1-5) para recomendar
 
 # Gestão de banca
 BANKROLL = 1000.0         # Banca inicial (ajustável)
