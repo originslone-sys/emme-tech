@@ -215,14 +215,14 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
             print(f"    Dados insuficientes para {away} ({away_stats['total_matches']} jogos). Pulando.")
             continue
 
-        # Previsão Poisson
-        prediction = predict_match(home_stats, away_stats, league_avg)
+        # H2H
+        h2h = calc_h2h_stats(season_matches, home, away)
+
+        # Previsão Poisson + forma + H2H
+        prediction = predict_match(home_stats, away_stats, league_avg, h2h)
         if not prediction:
             print("    Erro na previsao. Pulando.")
             continue
-
-        # H2H
-        h2h = calc_h2h_stats(season_matches, home, away)
 
         # Odds
         odds_info = None
