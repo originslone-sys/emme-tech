@@ -52,17 +52,16 @@ PAIR = "ETH-USDT"
 
 # Número de grids (níveis de preço)
 # Mais grids = mais trades, mas lucro menor por trade
-# Recomendado: 15-30 para range de 3-6%
-GRID_COUNT = 20
+# Com $25 e 5 grids = $5 por grid (mínimo da OKX)
+GRID_COUNT = 5
 
 # Faixa do grid em porcentagem (±%)
-# Ex: 3.0 significa que o grid cobre de -3% a +3% do preço atual
-# Range maior = menos trades, mas mais resiliente
-# Range menor = mais trades, mas recalibra mais frequentemente
-GRID_RANGE_PERCENT = 3.0
+# Ex: 2.0 significa que o grid cobre de -2% a +2% do preço atual
+# Range menor com poucos grids = espaçamento maior = mais lucro por ciclo
+GRID_RANGE_PERCENT = 2.0
 
 # Capital total em USDT para alocar ao bot
-INVESTMENT_USDT = 500.0
+INVESTMENT_USDT = 25.0
 
 # Stop Loss: % abaixo do preço inferior do grid
 # Se o preço cair abaixo disso, o bot vende tudo para limitar perdas
@@ -120,10 +119,10 @@ QTY_PRECISION = 6       # Casas decimais na quantidade
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Máximo de perda diária permitida em USDT
-MAX_DAILY_LOSS_USDT = 50.0
+MAX_DAILY_LOSS_USDT = 5.0
 
 # Máximo de perda diária em % do capital
-MAX_DAILY_LOSS_PERCENT = 10.0
+MAX_DAILY_LOSS_PERCENT = 20.0
 
 # Número máximo de recalibrações por hora
 # Muitas recalibrações indicam mercado instável demais
