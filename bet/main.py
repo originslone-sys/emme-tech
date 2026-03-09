@@ -19,7 +19,7 @@ from tabulate import tabulate
 # Adiciona o diretório ao path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import LEAGUES, BANKROLL, MIN_MATCHES_HISTORY, MIN_CONFIDENCE
+from config import LEAGUES, BANKROLL, MIN_MATCHES_HISTORY, MIN_MATCHES_SHORT, MIN_CONFIDENCE, SHORT_COMPETITIONS
 from football_data_client import get_all_upcoming, get_upcoming_matches, get_season_matches
 from odds_client import get_odds, extract_odds_for_match
 from stats_engine import calc_team_stats, calc_league_averages, predict_match, calc_h2h_stats
@@ -202,6 +202,14 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
 
     all_recommendations = []
 
+    # Determinar mínimo de jogos com base na competição
+    # Cups/competições curtas ou início de temporada usam limite menor
+    min_matches = MIN_MATCHES_SHORT if league_code in SHORT_COMPETITIONS else MIN_MATCHES_HISTORY
+    # Se a liga tem poucos jogos (início de temporada), reduzir o mínimo
+    if league_avg["total_matches"] < 80 and min_matches == MIN_MATCHES_HISTORY:
+        min_matches = MIN_MATCHES_SHORT
+        print(f"  [!] Inicio de temporada detectado — minimo reduzido para {min_matches} jogos.")
+
     # 4. Analisar cada jogo
     for match in upcoming:
         home = match["homeTeam"]["name"]
@@ -215,12 +223,12 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
         home_stats = calc_team_stats(season_matches, home)
         away_stats = calc_team_stats(season_matches, away)
 
-        if home_stats["total_matches"] < MIN_MATCHES_HISTORY:
-            print(f"    Dados insuficientes para {home} ({home_stats['total_matches']} jogos). Pulando.")
+        if home_stats["total_matches"] < min_matches:
+            print(f"    Dados insuficientes para {home} ({home_stats['total_matches']} jogos, minimo: {min_matches}). Pulando.")
             continue
 
-        if away_stats["total_matches"] < MIN_MATCHES_HISTORY:
-            print(f"    Dados insuficientes para {away} ({away_stats['total_matches']} jogos). Pulando.")
+        if away_stats["total_matches"] < min_matches:
+            print(f"    Dados insuficientes para {away} ({away_stats['total_matches']} jogos, minimo: {min_matches}). Pulando.")
             continue
 
         # H2H

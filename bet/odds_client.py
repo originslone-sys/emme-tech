@@ -5,6 +5,12 @@ from config import ODDS_API_KEY, ODDS_SPORT_KEYS
 
 BASE_URL = "https://api.the-odds-api.com/v4"
 
+# Fallbacks para sport keys que podem variar na API
+_SPORT_KEY_FALLBACKS = {
+    "soccer_brazil_campeonato": "soccer_brazil_serie_a",
+    "soccer_brazil_serie_a": "soccer_brazil_campeonato",
+}
+
 
 def _get(endpoint, params=None):
     """Request genérico."""
@@ -32,6 +38,7 @@ def get_odds(league_code, markets="totals,alternate_totals,btts"):
 
     market_list = [m.strip() for m in markets.split(",")]
     merged = {}  # event_id -> event data
+    tried_fallback = False
 
     for mkt in market_list:
         try:
@@ -48,10 +55,30 @@ def get_odds(league_code, markets="totals,alternate_totals,btts"):
                 if eid not in merged:
                     merged[eid] = event
                 else:
-                    # Mescla bookmakers/markets do novo request
                     _merge_bookmakers(merged[eid], event)
         except requests.exceptions.HTTPError as e:
-            print(f"  [!] Mercado '{mkt}' indisponivel para {league_code}: {e}")
+            # Se 404 e existe fallback, troca a sport key e tenta de novo
+            if "404" in str(e) and not tried_fallback and sport_key in _SPORT_KEY_FALLBACKS:
+                fallback = _SPORT_KEY_FALLBACKS[sport_key]
+                print(f"  [!] Sport key '{sport_key}' nao encontrada, tentando '{fallback}'...")
+                sport_key = fallback
+                tried_fallback = True
+                try:
+                    data = _get(
+                        f"/sports/{sport_key}/odds",
+                        params={"regions": "eu", "markets": mkt, "oddsFormat": "decimal"},
+                    )
+                    for event in data:
+                        eid = event.get("id")
+                        if eid not in merged:
+                            merged[eid] = event
+                        else:
+                            _merge_bookmakers(merged[eid], event)
+                except Exception:
+                    print(f"  [!] Mercado '{mkt}' indisponivel para {league_code}")
+            else:
+                if "422" not in str(e):
+                    print(f"  [!] Mercado '{mkt}' indisponivel para {league_code}: {e}")
         except Exception as e:
             print(f"  [!] Erro ao buscar odds {league_code}/{mkt}: {e}")
 
