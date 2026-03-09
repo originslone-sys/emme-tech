@@ -1,0 +1,13 @@
+# Credenciais - NUNCA commit
+.env
+
+# Logs e dados de operação
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
