@@ -311,7 +311,7 @@ class GridBot:
                 side=grid.side,
                 price=grid.price,
                 size=grid.quantity,
-                client_order_id=f"grid_{grid.index}_{int(time.time())}",
+                client_order_id=f"g{grid.index}t{int(time.time()) % 100000}",
             )
             if result["success"]:
                 grid.order_id = result["order_id"]
@@ -412,7 +412,7 @@ class GridBot:
             side=side,
             price=grid.price,
             size=quantity,
-            client_order_id=f"grid_{grid.index}_{int(time.time())}",
+            client_order_id=f"g{grid.index}t{int(time.time()) % 100000}",
         )
         if result["success"]:
             grid.order_id = result["order_id"]
