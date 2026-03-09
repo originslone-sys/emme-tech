@@ -76,13 +76,13 @@ TAKE_PROFIT_PERCENT = 5.0
 #  TAXAS E CUSTOS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Taxas da OKX para Spot Trading (Nível 1 - padrão)
+# Taxas da OKX para Spot Trading (Nível 1 - pares não BRL)
 # https://www.okx.com/fees
-MAKER_FEE = 0.0008    # 0.08% - Limit orders (usado pelo bot)
-TAKER_FEE = 0.0010    # 0.10% - Market orders (usado apenas em emergências)
+MAKER_FEE = 0.0010    # 0.10% - Limit orders (formador - usado pelo bot)
+TAKER_FEE = 0.0040    # 0.40% - Market orders (tomador - usado apenas em emergências)
 
-# Custo total por ciclo completo (compra + venda)
-# = MAKER_FEE * 2 = 0.16% por ciclo grid
+# Custo total por ciclo completo (compra + venda com limit orders)
+# = MAKER_FEE * 2 = 0.20% por ciclo grid
 ROUND_TRIP_FEE = MAKER_FEE * 2
 
 
