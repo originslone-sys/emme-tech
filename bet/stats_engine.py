@@ -9,6 +9,28 @@ def poisson_prob(lam, k):
     return poisson.pmf(k, lam)
 
 
+def _dixon_coles_correction(h, a, lambda_home, lambda_away, rho=-0.13):
+    """Correção de Dixon-Coles para placares baixos.
+
+    O modelo Poisson básico assume que gols de casa e fora são independentes.
+    Na realidade, placares baixos (0-0, 1-0, 0-1, 1-1) são correlacionados.
+
+    rho negativo (~-0.13) reflete que jogos reais têm MAIS empates 0-0 e 1-1
+    e MENOS resultados 1-0 e 0-1 do que o Poisson puro prevê.
+
+    Referência: Dixon & Coles (1997) — "Modelling Association Football Scores"
+    """
+    if h == 0 and a == 0:
+        return 1 - lambda_home * lambda_away * rho
+    elif h == 1 and a == 0:
+        return 1 + lambda_away * rho
+    elif h == 0 and a == 1:
+        return 1 + lambda_home * rho
+    elif h == 1 and a == 1:
+        return 1 - rho
+    return 1.0
+
+
 def _recency_weights(n, decay=0.92):
     """Gera pesos exponenciais para n jogos (mais recente = maior peso).
 
@@ -163,12 +185,20 @@ def predict_match(home_stats, away_stats, league_avg, h2h=None):
     lambda_home = max(0.3, min(lambda_home, 4.5))
     lambda_away = max(0.2, min(lambda_away, 4.0))
 
-    # Matriz de placares (0-6 gols para cada time)
+    # Matriz de placares com correção Dixon-Coles (0-6 gols para cada time)
     max_goals = 7
     score_matrix = {}
     for i in range(max_goals):
         for j in range(max_goals):
-            score_matrix[(i, j)] = poisson_prob(lambda_home, i) * poisson_prob(lambda_away, j)
+            base_prob = poisson_prob(lambda_home, i) * poisson_prob(lambda_away, j)
+            dc_factor = _dixon_coles_correction(i, j, lambda_home, lambda_away)
+            score_matrix[(i, j)] = base_prob * dc_factor
+
+    # Normalizar para somar 1.0 (a correção pode alterar ligeiramente o total)
+    total_prob = sum(score_matrix.values())
+    if total_prob > 0:
+        for key in score_matrix:
+            score_matrix[key] /= total_prob
 
     # Over/Under 2.5
     under_25 = sum(
