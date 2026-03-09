@@ -12,11 +12,19 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 
 # Football-data.org league codes
 LEAGUES = {
+    # Top 5 ligas europeias
     "PL": {"name": "Premier League", "code": "PL", "country": "England"},
     "BL1": {"name": "Bundesliga", "code": "BL1", "country": "Germany"},
     "PD": {"name": "La Liga", "code": "PD", "country": "Spain"},
     "SA": {"name": "Serie A", "code": "SA", "country": "Italy"},
     "FL1": {"name": "Ligue 1", "code": "FL1", "country": "France"},
+    # Brasil
+    "BSA": {"name": "Brasileirao Serie A", "code": "BSA", "country": "Brazil"},
+    # Competicoes europeias
+    "CL": {"name": "Champions League", "code": "CL", "country": "Europe"},
+    # Selecoes
+    "WC": {"name": "Copa do Mundo", "code": "WC", "country": "International"},
+    "EC": {"name": "Eurocopa", "code": "EC", "country": "Europe"},
 }
 
 # The Odds API sport keys (mapeados para football-data.org codes)
@@ -26,6 +34,10 @@ ODDS_SPORT_KEYS = {
     "PD": "soccer_spain_la_liga",
     "SA": "soccer_italy_serie_a",
     "FL1": "soccer_france_ligue_one",
+    "BSA": "soccer_brazil_serie_a",
+    "CL": "soccer_uefa_champs_league",
+    "WC": "soccer_fifa_world_cup",
+    "EC": "soccer_uefa_european_championship",
 }
 
 # Mercados foco

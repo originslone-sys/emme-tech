@@ -311,7 +311,7 @@ def print_summary(all_recs, bankroll):
 def main():
     parser = argparse.ArgumentParser(description="Bet Analyzer — Analise estatistica + IA")
     parser.add_argument("--days", type=int, default=3, help="Dias a frente para buscar jogos (default: 3)")
-    parser.add_argument("--league", type=str, default=None, help="Codigo da liga (PL, BL1, PD, SA, FL1)")
+    parser.add_argument("--league", type=str, default=None, help="Codigo da liga (PL, BL1, PD, SA, FL1, BSA, CL, WC, EC)")
     parser.add_argument("--no-ai", action="store_true", help="Desabilitar analise de IA")
     parser.add_argument("--bankroll", type=float, default=BANKROLL, help=f"Valor da banca (default: {BANKROLL})")
     args = parser.parse_args()
