@@ -17,7 +17,7 @@ def _get(endpoint, params=None):
     return resp.json()
 
 
-def get_odds(league_code, markets="totals,btts"):
+def get_odds(league_code, markets="totals,alternate_totals,btts"):
     """Busca odds para uma liga.
 
     markets: 'totals' para Over/Under, 'btts' para Both Teams To Score
@@ -96,24 +96,46 @@ def extract_odds_for_match(odds_data, home_team, away_team):
         "home_team": best_match.get("home_team"),
         "away_team": best_match.get("away_team"),
         "commence_time": best_match.get("commence_time"),
+        "over_15": None,
+        "under_15": None,
         "over_25": None,
         "under_25": None,
+        "over_35": None,
+        "under_35": None,
         "btts_yes": None,
         "btts_no": None,
     }
 
     # Coleta TODAS as odds de todas as casas para calcular mediana
-    all_odds = {"over_25": [], "under_25": [], "btts_yes": [], "btts_no": []}
+    all_odds = {
+        "over_15": [], "under_15": [],
+        "over_25": [], "under_25": [],
+        "over_35": [], "under_35": [],
+        "btts_yes": [], "btts_no": [],
+    }
 
     for bookmaker in best_match.get("bookmakers", []):
         for market in bookmaker.get("markets", []):
-            if market["key"] == "totals":
+            if market["key"] in ("totals", "alternate_totals"):
                 for outcome in market.get("outcomes", []):
-                    if outcome.get("point") == 2.5:
-                        if outcome["name"] == "Over":
-                            all_odds["over_25"].append(outcome["price"])
-                        elif outcome["name"] == "Under":
-                            all_odds["under_25"].append(outcome["price"])
+                    point = outcome.get("point")
+                    name = outcome.get("name")
+                    price = outcome.get("price")
+                    if point == 1.5:
+                        if name == "Over":
+                            all_odds["over_15"].append(price)
+                        elif name == "Under":
+                            all_odds["under_15"].append(price)
+                    elif point == 2.5:
+                        if name == "Over":
+                            all_odds["over_25"].append(price)
+                        elif name == "Under":
+                            all_odds["under_25"].append(price)
+                    elif point == 3.5:
+                        if name == "Over":
+                            all_odds["over_35"].append(price)
+                        elif name == "Under":
+                            all_odds["under_35"].append(price)
 
             elif market["key"] == "btts":
                 for outcome in market.get("outcomes", []):
