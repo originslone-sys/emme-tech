@@ -31,10 +31,10 @@
 ║                                                                            ║
 ║  Lucro por ciclo (grid spacing 0.30%):                                     ║
 ║  ─────────────────────────────────────────────────────────────────────────  ║
-║  • Espaçamento:  0.30%                                                     ║
-║  • Taxa compra:  -0.08% (maker)                                            ║
-║  • Taxa venda:   -0.08% (maker)                                            ║
-║  • LUCRO LÍQUIDO: 0.14% por ciclo                                          ║
+║  • Espaçamento:  0.80%                                                     ║
+║  • Taxa compra:  -0.10% (maker/formador)                                   ║
+║  • Taxa venda:   -0.10% (maker/formador)                                   ║
+║  • LUCRO LÍQUIDO: 0.60% por ciclo                                          ║
 ║                                                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
@@ -64,11 +64,13 @@ class GridLevel:
     """Representa um nível individual do grid."""
 
     index: int           # Índice do grid (0 = mais baixo)
-    price: float         # Preço deste nível
-    side: str            # 'buy' ou 'sell'
+    price: float         # Preço de compra deste nível
+    sell_price: float = 0.0  # Preço de venda (grid acima) para realizar lucro
+    side: str = "buy"    # 'buy' ou 'sell'
     order_id: str = ""   # ID da ordem na OKX (vazio = sem ordem ativa)
     status: str = "idle"  # idle, active, filled
     quantity: float = 0.0
+    filled_qty: float = 0.0  # Quantidade preenchida na compra (para a contra-ordem)
 
 
 @dataclass
@@ -255,10 +257,15 @@ class GridBot:
         # Capital por grid
         capital_per_grid = self.stats.initial_capital / config.GRID_COUNT
 
-        # Cria os níveis do grid
-        self.grids = []
+        # Calcula todos os preços do grid primeiro
+        all_prices = []
         for i in range(config.GRID_COUNT + 1):
             price = round(self.stats.grid_lower + (i * grid_step), price_prec)
+            all_prices.append(price)
+
+        # Cria os níveis do grid
+        self.grids = []
+        for i, price in enumerate(all_prices):
             quantity = round(capital_per_grid / price, inst_info["qty_precision"])
 
             side = "buy" if price < current_price else "sell"
@@ -266,9 +273,15 @@ class GridBot:
                 # Muito próximo do preço atual, pula este nível
                 continue
 
+            # sell_price = preço do grid acima (onde vender após compra)
+            sell_price = all_prices[i + 1] if i + 1 < len(all_prices) else round(
+                price * (1 + grid_step / price), price_prec
+            )
+
             grid = GridLevel(
                 index=i,
                 price=price,
+                sell_price=sell_price,
                 side=side,
                 quantity=quantity,
             )
@@ -381,47 +394,55 @@ class GridBot:
             f"Qty: {fill_qty} | Taxa: ${fee:.4f}"
         )
 
-        grid.status = "filled"
         grid.order_id = ""
 
-        # Encontra o grid vizinho para a contra-ordem
-        grid_idx = self.grids.index(grid)
-
         if grid.side == "buy":
-            # Compra executada → coloca venda no grid acima
-            if grid_idx + 1 < len(self.grids):
-                target_grid = self.grids[grid_idx + 1]
-                self._place_counter_order(target_grid, "sell", fill_qty)
-            # Registra trade parcial (compra realizada, aguardando venda)
-            grid.side = "sell"  # Marca para tracking
+            # Compra executada → coloca venda NO MESMO GRID no sell_price
+            grid.filled_qty = fill_qty
+            grid.status = "filled"
+            logger.info(
+                f"Grid {grid.index} | Colocando VENDA @ ${grid.sell_price:,.2f} "
+                f"(lucro alvo: {((grid.sell_price / grid.price) - 1) * 100:.4f}%)"
+            )
+            result = self.client.place_limit_order(
+                side="sell",
+                price=grid.sell_price,
+                size=fill_qty,
+                client_order_id=f"g{grid.index}s{int(time.time()) % 100000}",
+            )
+            if result["success"]:
+                grid.order_id = result["order_id"]
+                grid.side = "sell"
+                grid.status = "active"
+            else:
+                logger.error(
+                    f"Falha ao criar venda para grid {grid.index} "
+                    f"@ ${grid.sell_price:,.2f}: {result['message']}"
+                )
 
         elif grid.side == "sell":
-            # Venda executada → coloca compra no grid abaixo + registra lucro
-            if grid_idx - 1 >= 0:
-                target_grid = self.grids[grid_idx - 1]
-                self._place_counter_order(target_grid, "buy", fill_qty)
+            # Venda executada → registra lucro + recoloca compra no preço original
+            self._record_trade(grid.price, fill_price, fill_qty, grid.index)
 
-            # Registra trade completo
-            buy_grid_price = self.grids[grid_idx - 1].price if grid_idx > 0 else fill_price
-            self._record_trade(buy_grid_price, fill_price, fill_qty, grid.index)
-            grid.side = "buy"  # Marca para tracking
-
-    def _place_counter_order(self, grid: GridLevel, side: str, quantity: float):
-        """Coloca a contra-ordem em um grid vizinho."""
-        result = self.client.place_limit_order(
-            side=side,
-            price=grid.price,
-            size=quantity,
-            client_order_id=f"g{grid.index}t{int(time.time()) % 100000}",
-        )
-        if result["success"]:
-            grid.order_id = result["order_id"]
-            grid.side = side
-            grid.status = "active"
-        else:
-            logger.error(
-                f"Falha na contra-ordem: {side} @ ${grid.price} | {result['message']}"
+            logger.info(
+                f"Grid {grid.index} | Ciclo completo! Recolocando COMPRA @ ${grid.price:,.2f}"
             )
+            result = self.client.place_limit_order(
+                side="buy",
+                price=grid.price,
+                size=grid.quantity,
+                client_order_id=f"g{grid.index}b{int(time.time()) % 100000}",
+            )
+            if result["success"]:
+                grid.order_id = result["order_id"]
+                grid.side = "buy"
+                grid.status = "active"
+            else:
+                logger.error(
+                    f"Falha ao recriar compra para grid {grid.index} "
+                    f"@ ${grid.price:,.2f}: {result['message']}"
+                )
+                grid.status = "idle"
 
     def _record_trade(
         self,
@@ -438,8 +459,8 @@ class GridBot:
         Valor compra    = buy_price × quantity
         Valor venda     = sell_price × quantity
         Lucro bruto     = valor_venda - valor_compra
-        Taxa compra     = valor_compra × 0.08%
-        Taxa venda      = valor_venda × 0.08%
+        Taxa compra     = valor_compra × 0.10% (maker)
+        Taxa venda      = valor_venda × 0.10% (maker)
         Lucro líquido   = lucro_bruto - taxa_compra - taxa_venda
         ─────────────────────────────────────────────────
         """
