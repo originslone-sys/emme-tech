@@ -34,7 +34,8 @@ ODDS_SPORT_KEYS = {
     "PD": "soccer_spain_la_liga",
     "SA": "soccer_italy_serie_a",
     "FL1": "soccer_france_ligue_one",
-    "BSA": "soccer_brazil_serie_a",
+    # Brasileirão: tenta "soccer_brazil_campeonato", fallback "soccer_brazil_serie_a"
+    "BSA": "soccer_brazil_campeonato",
     "CL": "soccer_uefa_champs_league",
     "WC": "soccer_fifa_world_cup",
     "EC": "soccer_uefa_european_championship",
@@ -45,8 +46,12 @@ MARKETS = ["over_under_25", "btts"]
 
 # Filtros de value bet
 MIN_EDGE = 0.08           # Edge mínimo de 8% para considerar value bet
-MIN_MATCHES_HISTORY = 10  # Mínimo de jogos no histórico para análise
+MIN_MATCHES_HISTORY = 10  # Mínimo de jogos no histórico (ligas regulares)
+MIN_MATCHES_SHORT = 3     # Mínimo para competições curtas (cups, início temporada)
 MIN_CONFIDENCE = 3        # Confiança mínima (1-5) para recomendar
+
+# Competições com menos jogos (cups, fase de grupos, início temporada)
+SHORT_COMPETITIONS = {"CL", "WC", "EC"}
 
 # Gestão de banca
 BANKROLL = 1000.0         # Banca inicial (ajustável)
