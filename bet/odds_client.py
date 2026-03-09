@@ -102,28 +102,41 @@ def extract_odds_for_match(odds_data, home_team, away_team):
         "btts_no": None,
     }
 
+    # Coleta TODAS as odds de todas as casas para calcular mediana
+    all_odds = {"over_25": [], "under_25": [], "btts_yes": [], "btts_no": []}
+
     for bookmaker in best_match.get("bookmakers", []):
         for market in bookmaker.get("markets", []):
             if market["key"] == "totals":
                 for outcome in market.get("outcomes", []):
                     if outcome.get("point") == 2.5:
                         if outcome["name"] == "Over":
-                            if result["over_25"] is None or outcome["price"] > result["over_25"]:
-                                result["over_25"] = outcome["price"]
+                            all_odds["over_25"].append(outcome["price"])
                         elif outcome["name"] == "Under":
-                            if result["under_25"] is None or outcome["price"] > result["under_25"]:
-                                result["under_25"] = outcome["price"]
+                            all_odds["under_25"].append(outcome["price"])
 
             elif market["key"] == "btts":
                 for outcome in market.get("outcomes", []):
                     if outcome["name"] == "Yes":
-                        if result["btts_yes"] is None or outcome["price"] > result["btts_yes"]:
-                            result["btts_yes"] = outcome["price"]
+                        all_odds["btts_yes"].append(outcome["price"])
                     elif outcome["name"] == "No":
-                        if result["btts_no"] is None or outcome["price"] > result["btts_no"]:
-                            result["btts_no"] = outcome["price"]
+                        all_odds["btts_no"].append(outcome["price"])
+
+    # Usa mediana para evitar outliers inflando o edge
+    for key in all_odds:
+        if all_odds[key]:
+            result[key] = _median(all_odds[key])
 
     return result
+
+
+def _median(values):
+    """Calcula mediana de uma lista de valores."""
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        return s[n // 2]
+    return round((s[n // 2 - 1] + s[n // 2]) / 2, 2)
 
 
 def _fuzzy_match(name1, name2):

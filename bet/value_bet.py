@@ -56,6 +56,25 @@ def kelly_stake(probability, odd, fraction=KELLY_FRACTION, bankroll=BANKROLL):
     return round(stake_pct * bankroll, 2)
 
 
+def _market_sanity_check(estimated_prob, market_odd):
+    """Verifica se a probabilidade estimada não diverge demais do mercado.
+
+    Se o modelo diz 70% mas o mercado (todas as casas) diz 45%,
+    provavelmente o modelo está errado. O mercado incorpora informações
+    (lesões, escalações, etc.) que o modelo não tem.
+
+    Rejeita quando a divergência é >20 pontos percentuais.
+    """
+    if not market_odd or market_odd <= 1:
+        return True  # Sem odd, não tem como checar
+
+    market_implied = implied_probability(market_odd)
+    divergence = estimated_prob - market_implied
+
+    # Aceita se a divergência não é extrema
+    return divergence <= 0.20
+
+
 def _ai_agrees(ai_analysis, market_type, stats_prob):
     """Verifica se a IA concorda com a direção da aposta.
 
@@ -118,7 +137,9 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
     # Avaliar Acima 2.5
     if odds_info.get("over_25"):
         edge = calculate_edge(over_25_prob, odds_info["over_25"])
-        if edge >= MIN_EDGE and _ai_agrees(ai_analysis, "over_25", over_25_prob):
+        if (edge >= MIN_EDGE
+                and _market_sanity_check(over_25_prob, odds_info["over_25"])
+                and _ai_agrees(ai_analysis, "over_25", over_25_prob)):
             confidence = _calc_confidence(edge, ai_analysis, "over_25", over_25_prob, prediction["over_25"])
             if confidence >= MIN_CONFIDENCE:
                 stake = kelly_stake(over_25_prob, odds_info["over_25"], bankroll=bankroll)
@@ -139,7 +160,9 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
     under_prob = 1 - over_25_prob
     if odds_info.get("under_25"):
         edge = calculate_edge(under_prob, odds_info["under_25"])
-        if edge >= MIN_EDGE and _ai_agrees(ai_analysis, "under_25", under_prob):
+        if (edge >= MIN_EDGE
+                and _market_sanity_check(under_prob, odds_info["under_25"])
+                and _ai_agrees(ai_analysis, "under_25", under_prob)):
             confidence = _calc_confidence(edge, ai_analysis, "under_25", under_prob, prediction["under_25"])
             if confidence >= MIN_CONFIDENCE:
                 stake = kelly_stake(under_prob, odds_info["under_25"], bankroll=bankroll)
@@ -159,7 +182,9 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
     # Avaliar BTTS Sim
     if odds_info.get("btts_yes"):
         edge = calculate_edge(btts_prob, odds_info["btts_yes"])
-        if edge >= MIN_EDGE and _ai_agrees(ai_analysis, "btts", btts_prob):
+        if (edge >= MIN_EDGE
+                and _market_sanity_check(btts_prob, odds_info["btts_yes"])
+                and _ai_agrees(ai_analysis, "btts", btts_prob)):
             confidence = _calc_confidence(edge, ai_analysis, "btts", btts_prob, prediction["btts_yes"])
             if confidence >= MIN_CONFIDENCE:
                 stake = kelly_stake(btts_prob, odds_info["btts_yes"], bankroll=bankroll)
@@ -180,7 +205,9 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
     btts_no_prob = 1 - btts_prob
     if odds_info.get("btts_no"):
         edge = calculate_edge(btts_no_prob, odds_info["btts_no"])
-        if edge >= MIN_EDGE and _ai_agrees(ai_analysis, "btts_no", btts_no_prob):
+        if (edge >= MIN_EDGE
+                and _market_sanity_check(btts_no_prob, odds_info["btts_no"])
+                and _ai_agrees(ai_analysis, "btts_no", btts_no_prob)):
             confidence = _calc_confidence(edge, ai_analysis, "btts_no", btts_no_prob, prediction["btts_no"])
             if confidence >= MIN_CONFIDENCE:
                 stake = kelly_stake(btts_no_prob, odds_info["btts_no"], bankroll=bankroll)
