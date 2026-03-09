@@ -20,12 +20,12 @@
 ║  4. Execute: pip install -r requirements.txt                               ║
 ║  5. RECOMENDADO: Comece com OKX_DEMO_TRADING=True no .env                  ║
 ║                                                                            ║
-║  TAXAS OKX (Spot - Nível 1):                                               ║
+║  TAXAS OKX (Spot - pares não BRL, Nível 1):                                 ║
 ║  ─────────────────────────────────────────────────────────────────────────  ║
-║  • Maker (limit):  0.08% por ordem                                         ║
-║  • Taker (market): 0.10% por ordem                                         ║
-║  • Custo por ciclo grid: 0.16% (2x maker)                                  ║
-║  • Lucro mínimo por ciclo: espaçamento_grid - 0.16%                        ║
+║  • Maker/Formador (limit):  0.10% por ordem                                ║
+║  • Taker/Tomador (market):  0.40% por ordem                                ║
+║  • Custo por ciclo grid: 0.20% (2x maker)                                  ║
+║  • Lucro mínimo por ciclo: espaçamento_grid - 0.20%                        ║
 ║                                                                            ║
 ║  RISCOS:                                                                   ║
 ║  ─────────────────────────────────────────────────────────────────────────  ║
@@ -167,8 +167,8 @@ def main():
     print("  ║          OKX GRID TRADING BOT v1.0                      ║")
     print("  ║          Estrategia: Grid Trading (Spot)                ║")
     print("  ║                                                         ║")
-    print("  ║   Taxas:   Maker 0.08% | Taker 0.10%                   ║")
-    print("  ║   Custo:   0.16% por ciclo (compra+venda)              ║")
+    print("  ║   Taxas:   Maker 0.10% | Taker 0.40%                   ║")
+    print("  ║   Custo:   0.20% por ciclo (compra+venda)              ║")
     print("  ║                                                         ║")
     print("  ╚═══════════════════════════════════════════════════════════╝")
     print()

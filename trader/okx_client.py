@@ -43,8 +43,8 @@ class OKXClient:
     """
     Cliente para a API REST v5 da OKX.
 
-    Todas as ordens do bot são LIMIT (maker) para pagar a menor taxa possível.
-    Taxa maker OKX: 0.08% | Taxa taker: 0.10%
+    Todas as ordens do bot são LIMIT (maker/formador) para pagar a menor taxa.
+    Taxa maker OKX: 0.10% | Taxa taker: 0.40% (pares não BRL, Nível 1)
     """
 
     BASE_URL = "https://www.okx.com"
@@ -315,7 +315,7 @@ class OKXClient:
         client_order_id: str = None,
     ) -> dict:
         """
-        Coloca ordem LIMIT (maker) - taxa de 0.08%.
+        Coloca ordem LIMIT (maker/formador) - taxa de 0.10%.
 
         Args:
             side: 'buy' ou 'sell'
@@ -355,7 +355,7 @@ class OKXClient:
             "instId": pair,
             "tdMode": "cash",      # Spot trading (sem margem)
             "side": side,
-            "ordType": "limit",    # SEMPRE limit para pagar maker fee (0.08%)
+            "ordType": "limit",    # SEMPRE limit para pagar maker fee (0.10%)
             "px": str(price),
             "sz": str(size),
         }
@@ -400,7 +400,7 @@ class OKXClient:
 
     def place_market_order(self, side: str, size: float, pair: str = None) -> dict:
         """
-        Ordem MARKET (taker) - taxa de 0.10%.
+        Ordem MARKET (taker/tomador) - taxa de 0.40%.
         Usada APENAS em emergências (stop loss, take profit).
 
         Args:

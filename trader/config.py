@@ -15,10 +15,10 @@
 ║  • STOP_LOSS     → Stop loss em % abaixo do preço inferior do grid        ║
 ║  • TAKE_PROFIT   → Take profit em % acima do preço superior do grid       ║
 ║                                                                            ║
-║  TAXAS OKX (Spot):                                                         ║
+║  TAXAS OKX (Spot - pares não BRL, Nível 1):                                ║
 ║  ─────────────────────────────────────────────────────────────────────────  ║
-║  • Maker (limit order): 0.08%                                              ║
-║  • Taker (market order): 0.10%                                             ║
+║  • Maker/Formador (limit order): 0.10%                                     ║
+║  • Taker/Tomador (market order): 0.40%                                     ║
 ║  • O bot usa APENAS limit orders para pagar a menor taxa (maker)           ║
 ║                                                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
