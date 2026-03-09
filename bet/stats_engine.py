@@ -108,7 +108,9 @@ def calc_team_stats(matches, team_name):
 
     # Tendências recentes (últimos 10 jogos)
     last10 = recent_goals[-10:] if len(recent_goals) >= 5 else recent_goals
+    recent_over15_pct = sum(1 for g, _ in last10 if g > 1) / len(last10) if last10 else 0
     recent_over25_pct = sum(1 for g, _ in last10 if g > 2) / len(last10) if last10 else 0
+    recent_over35_pct = sum(1 for g, _ in last10 if g > 3) / len(last10) if last10 else 0
     recent_btts_pct = sum(1 for _, b in last10 if b) / len(last10) if last10 else 0
 
     # Forma recente — pontuação (W=3, D=1, L=0) normalizada
@@ -126,7 +128,9 @@ def calc_team_stats(matches, team_name):
         "total_matches": home_count + away_count,
         "form_last5": form_last5,
         "form_score": form_score,
+        "recent_over15_pct": round(recent_over15_pct, 4),
         "recent_over25_pct": round(recent_over25_pct, 4),
+        "recent_over35_pct": round(recent_over35_pct, 4),
         "recent_btts_pct": round(recent_btts_pct, 4),
     }
 
@@ -200,11 +204,15 @@ def predict_match(home_stats, away_stats, league_avg, h2h=None):
         for key in score_matrix:
             score_matrix[key] /= total_prob
 
-    # Over/Under 2.5
-    under_25 = sum(
-        prob for (h, a), prob in score_matrix.items() if h + a < 3
-    )
+    # Over/Under para múltiplas linhas
+    under_15 = sum(prob for (h, a), prob in score_matrix.items() if h + a < 2)
+    over_15_poisson = 1 - under_15
+
+    under_25 = sum(prob for (h, a), prob in score_matrix.items() if h + a < 3)
     over_25_poisson = 1 - under_25
+
+    under_35 = sum(prob for (h, a), prob in score_matrix.items() if h + a < 4)
+    over_35_poisson = 1 - under_35
 
     # BTTS
     btts_no = sum(
@@ -213,11 +221,14 @@ def predict_match(home_stats, away_stats, league_avg, h2h=None):
     btts_yes_poisson = 1 - btts_no
 
     # Ajustar com tendências recentes dos times (peso 25%)
-    # Média das tendências recentes dos dois times
+    avg_recent_over15 = (home_stats["recent_over15_pct"] + away_stats["recent_over15_pct"]) / 2
     avg_recent_over25 = (home_stats["recent_over25_pct"] + away_stats["recent_over25_pct"]) / 2
+    avg_recent_over35 = (home_stats["recent_over35_pct"] + away_stats["recent_over35_pct"]) / 2
     avg_recent_btts = (home_stats["recent_btts_pct"] + away_stats["recent_btts_pct"]) / 2
 
+    over_15 = 0.75 * over_15_poisson + 0.25 * avg_recent_over15
     over_25 = 0.75 * over_25_poisson + 0.25 * avg_recent_over25
+    over_35 = 0.75 * over_35_poisson + 0.25 * avg_recent_over35
     btts_yes = 0.75 * btts_yes_poisson + 0.25 * avg_recent_btts
 
     # Ajustar com H2H se disponível (peso 10%, tira dos 75% do Poisson)
@@ -226,7 +237,9 @@ def predict_match(home_stats, away_stats, league_avg, h2h=None):
         btts_yes = 0.65 * btts_yes_poisson + 0.25 * avg_recent_btts + 0.10 * h2h["btts_pct"]
 
     # Garantir limites válidos
+    over_15 = max(0.05, min(0.98, over_15))
     over_25 = max(0.05, min(0.95, over_25))
+    over_35 = max(0.05, min(0.90, over_35))
     btts_yes = max(0.05, min(0.95, btts_yes))
 
     # 1X2
@@ -240,8 +253,12 @@ def predict_match(home_stats, away_stats, league_avg, h2h=None):
     return {
         "lambda_home": round(lambda_home, 2),
         "lambda_away": round(lambda_away, 2),
+        "over_15": round(over_15, 4),
+        "under_15": round(1 - over_15, 4),
         "over_25": round(over_25, 4),
         "under_25": round(1 - over_25, 4),
+        "over_35": round(over_35, 4),
+        "under_35": round(1 - over_35, 4),
         "btts_yes": round(btts_yes, 4),
         "btts_no": round(1 - btts_yes, 4),
         "home_win": round(home_win, 4),

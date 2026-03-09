@@ -99,15 +99,23 @@ def print_match_report(match, prediction, ai_result, recommendations, odds_info)
 
     # Tabela de probabilidades — destacar mercados com value
     value_markets = {rec['market'] for rec in recommendations} if recommendations else set()
-    market_map = {"Acima 2.5 Gols": "Acima 2.5", "Abaixo 2.5 Gols": "Abaixo 2.5",
-                  "BTTS Sim": "BTTS Sim", "BTTS Nao": "BTTS Nao"}
+    market_map = {
+        "Acima 1.5 Gols": "Acima 1.5", "Abaixo 1.5 Gols": "Abaixo 1.5",
+        "Acima 2.5 Gols": "Acima 2.5", "Abaixo 2.5 Gols": "Abaixo 2.5",
+        "Acima 3.5 Gols": "Acima 3.5", "Abaixo 3.5 Gols": "Abaixo 3.5",
+        "BTTS Sim": "BTTS Sim", "BTTS Nao": "BTTS Nao",
+    }
     value_labels = set()
     for vm in value_markets:
         value_labels.add(market_map.get(vm, vm))
 
     rows = [
+        ("Acima 1.5", prediction.get('over_15', 0), odds_info.get('over_15') if odds_info else None),
+        ("Abaixo 1.5", prediction.get('under_15', 0), odds_info.get('under_15') if odds_info else None),
         ("Acima 2.5", prediction['over_25'], odds_info.get('over_25') if odds_info else None),
         ("Abaixo 2.5", prediction['under_25'], odds_info.get('under_25') if odds_info else None),
+        ("Acima 3.5", prediction.get('over_35', 0), odds_info.get('over_35') if odds_info else None),
+        ("Abaixo 3.5", prediction.get('under_35', 0), odds_info.get('under_35') if odds_info else None),
         ("BTTS Sim", prediction['btts_yes'], odds_info.get('btts_yes') if odds_info else None),
         ("BTTS Nao", prediction['btts_no'], odds_info.get('btts_no') if odds_info else None),
     ]
