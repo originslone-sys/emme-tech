@@ -243,7 +243,7 @@ def analyze_league(league_code, days_ahead, use_ai, bankroll):
         # Odds
         odds_info = None
         if odds_data:
-            odds_info = extract_odds_for_match(odds_data, home, away)
+            odds_info = extract_odds_for_match(odds_data, home, away, league_code=league_code)
 
         # IA
         ai_result = None

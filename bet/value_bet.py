@@ -251,14 +251,16 @@ def _calc_confidence(edge, ai_analysis, market_type, final_prob, stats_prob):
     """
     stars = 1
 
-    # Base no edge (critério mais importante)
-    if edge >= 0.20:
+    # Base no edge
+    if edge >= 0.25:
         stars += 2
     elif edge >= 0.12:
+        stars += 2
+    elif edge >= 0.08:
         stars += 1
 
-    # Probabilidade forte (>75% — modelo muito confiante)
-    if final_prob > 0.75:
+    # Probabilidade forte (>70% — modelo confiante)
+    if final_prob > 0.70:
         stars += 1
 
     # Concordância da IA

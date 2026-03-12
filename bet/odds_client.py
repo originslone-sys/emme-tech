@@ -23,7 +23,7 @@ def _get(endpoint, params=None):
     return resp.json()
 
 
-def get_odds(league_code, markets="totals,alternate_totals,btts"):
+def get_odds(league_code, markets="totals,btts"):
     """Busca odds para uma liga.
 
     markets: 'totals' para Over/Under, 'btts' para Both Teams To Score
@@ -99,10 +99,32 @@ def _merge_bookmakers(base_event, new_event):
             base_event.setdefault("bookmakers", []).append(bk)
 
 
-def extract_odds_for_match(odds_data, home_team, away_team):
+def _fetch_event_alternate_totals(sport_key, event_id):
+    """Busca alternate_totals por evento (endpoint per-event).
+
+    A API exige que alternate_totals seja consultada por evento,
+    não na rota bulk. Isso retorna linhas 1.5, 2.5, 3.5 etc.
+    """
+    try:
+        data = _get(
+            f"/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "regions": "eu",
+                "markets": "alternate_totals",
+                "oddsFormat": "decimal",
+            },
+        )
+        return data.get("bookmakers", [])
+    except Exception:
+        return []
+
+
+def extract_odds_for_match(odds_data, home_team, away_team, league_code=None):
     """Extrai odds relevantes para um jogo específico.
 
     Faz match fuzzy pelos nomes dos times.
+    Se não houver odds para 1.5/3.5 e league_code for fornecido,
+    tenta buscar alternate_totals per-event.
     """
     best_match = None
     best_score = 0
@@ -141,7 +163,29 @@ def extract_odds_for_match(odds_data, home_team, away_team):
         "btts_yes": [], "btts_no": [],
     }
 
-    for bookmaker in best_match.get("bookmakers", []):
+    _collect_odds_from_bookmakers(best_match.get("bookmakers", []), all_odds)
+
+    # Se faltam odds para 1.5/3.5, tenta buscar alternate_totals per-event
+    needs_alt = not all_odds["over_15"] or not all_odds["over_35"]
+    if needs_alt and league_code:
+        sport_key = ODDS_SPORT_KEYS.get(league_code)
+        event_id = best_match.get("id")
+        if sport_key and event_id:
+            alt_bookmakers = _fetch_event_alternate_totals(sport_key, event_id)
+            if alt_bookmakers:
+                _collect_odds_from_bookmakers(alt_bookmakers, all_odds)
+
+    # Usa mediana para evitar outliers inflando o edge
+    for key in all_odds:
+        if all_odds[key]:
+            result[key] = _median(all_odds[key])
+
+    return result
+
+
+def _collect_odds_from_bookmakers(bookmakers, all_odds):
+    """Extrai odds de bookmakers para preencher all_odds dict."""
+    for bookmaker in bookmakers:
         for market in bookmaker.get("markets", []):
             if market["key"] in ("totals", "alternate_totals"):
                 for outcome in market.get("outcomes", []):
@@ -170,13 +214,6 @@ def extract_odds_for_match(odds_data, home_team, away_team):
                         all_odds["btts_yes"].append(outcome["price"])
                     elif outcome["name"] == "No":
                         all_odds["btts_no"].append(outcome["price"])
-
-    # Usa mediana para evitar outliers inflando o edge
-    for key in all_odds:
-        if all_odds[key]:
-            result[key] = _median(all_odds[key])
-
-    return result
 
 
 def _median(values):
