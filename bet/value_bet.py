@@ -7,6 +7,22 @@ from config import MIN_EDGE, KELLY_FRACTION, MAX_STAKE_PCT, BANKROLL, MIN_CONFID
 # porque a margem é menor mas a taxa de acerto compensa
 MIN_EDGE_HIGH_PROB = 0.05
 
+# Probabilidades mínimas por tipo de mercado
+# Evita recomendar apostas com alta chance de perder
+MIN_PROB_DEFAULTS = {
+    "Acima 1.5 Gols": 0.75,    # Só recomenda se >= 75%
+    "Abaixo 1.5 Gols": 0.45,   # Mín 45% (sem apostas de 21%)
+    "Acima 2.5 Gols": 0.50,    # Mín 50%
+    "Abaixo 2.5 Gols": 0.50,   # Mín 50%
+    "Acima 3.5 Gols": 0.55,    # Só jogos muito ofensivos
+    "Abaixo 3.5 Gols": 0.70,   # Alta prob para mercado seguro
+    "BTTS Sim": 0.50,           # Mín 50%
+    "BTTS Nao": 0.50,           # Mín 50%
+}
+
+# Máximo de apostas recomendadas (evita ultrapassar a banca)
+MAX_BETS = 10
+
 
 def implied_probability(odd):
     """Converte odd decimal em probabilidade implícita."""
@@ -112,10 +128,15 @@ def _ai_agrees(ai_analysis, market_type, stats_prob):
 
 def _evaluate_market(market_name, prob, odds_key, odds_info, ai_analysis,
                      ai_market_type, prediction_key, prediction, bankroll,
-                     min_edge=MIN_EDGE, min_prob=0.0):
+                     min_edge=MIN_EDGE):
     """Avalia um mercado individual e retorna recomendação se aprovado."""
     odd = odds_info.get(odds_key)
     if not odd:
+        return None
+
+    # Probabilidade mínima por mercado (filtro principal de qualidade)
+    min_prob = MIN_PROB_DEFAULTS.get(market_name, 0.45)
+    if prob < min_prob:
         return None
 
     edge = calculate_edge(prob, odd)
@@ -124,10 +145,6 @@ def _evaluate_market(market_name, prob, odds_key, odds_info, ai_analysis,
     if not _market_sanity_check(prob, odd):
         return None
     if not _ai_agrees(ai_analysis, ai_market_type, prob):
-        return None
-
-    # Para mercados de alta probabilidade, exigir prob mínima
-    if min_prob > 0 and prob < min_prob:
         return None
 
     confidence = _calc_confidence(edge, ai_analysis, ai_market_type, prob, prediction.get(prediction_key, prob))
@@ -192,11 +209,10 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
             btts_prob = 0.80 * prediction["btts_yes"] + 0.20 * ai_btts
 
     # === MERCADOS DE ALTA PROBABILIDADE (Acima 1.5) ===
-    # Edge mínimo menor (5%), mas exige probabilidade >= 75%
     rec = _evaluate_market(
         "Acima 1.5 Gols", over_15_prob, "over_15", odds_info,
         ai_analysis, "over_15", "over_15", prediction, bankroll,
-        min_edge=MIN_EDGE_HIGH_PROB, min_prob=0.75)
+        min_edge=MIN_EDGE_HIGH_PROB)
     if rec:
         recommendations.append(rec)
 
@@ -220,11 +236,9 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
         recommendations.append(rec)
 
     # === MERCADOS DE GOLEADA (Acima/Abaixo 3.5) ===
-    # Só recomenda acima 3.5 se a probabilidade for forte (>55%)
     rec = _evaluate_market(
         "Acima 3.5 Gols", over_35_prob, "over_35", odds_info,
-        ai_analysis, "over_35", "over_35", prediction, bankroll,
-        min_prob=0.55)
+        ai_analysis, "over_35", "over_35", prediction, bankroll)
     if rec:
         recommendations.append(rec)
 
@@ -247,8 +261,8 @@ def evaluate_bets(prediction, ai_analysis, odds_info, bankroll=BANKROLL):
     if rec:
         recommendations.append(rec)
 
-    # Ordenar por confiança primeiro, depois por edge
-    recommendations.sort(key=lambda x: (x["confidence"], x["edge"]), reverse=True)
+    # Ordenar por confiança primeiro, depois por probabilidade (NÃO edge)
+    recommendations.sort(key=lambda x: (x["confidence"], x["probability"]), reverse=True)
     return recommendations
 
 

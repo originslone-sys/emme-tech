@@ -281,12 +281,23 @@ def print_summary(all_recs, bankroll):
         print(f"{DIM}{'=' * 65}{RESET}")
         return
 
-    # Ordenar por edge
-    all_recs.sort(key=lambda x: x["edge"], reverse=True)
+    # Ordenar por confiança > probabilidade (apostas mais seguras primeiro)
+    all_recs.sort(key=lambda x: (x["confidence"], x["probability"]), reverse=True)
+
+    # Limitar apostas para não ultrapassar a banca
+    selected = []
+    total_stake = 0
+    for rec in all_recs:
+        if total_stake + rec["stake"] > bankroll * 0.50:
+            # Máximo 50% da banca em apostas simultâneas
+            continue
+        selected.append(rec)
+        total_stake += rec["stake"]
+        if len(selected) >= 10:
+            break
 
     # Imprimir cada aposta de forma clara
-    total_stake = 0
-    for i, rec in enumerate(all_recs, 1):
+    for i, rec in enumerate(selected, 1):
         edge_c = _edge_color(rec["edge"])
         conf_bar = _confidence_bar(rec["confidence"])
 
@@ -299,12 +310,16 @@ def print_summary(all_recs, bankroll):
         print(f"      Edge:      {edge_c}{rec['edge_pct']}{RESET}")
         print(f"      Confianca: {conf_bar}")
         print(f"      {BG_GREEN} STAKE: R${rec['stake']:.2f} ({rec['stake_pct']}% da banca) {RESET}")
-        total_stake += rec["stake"]
+
+    total_stake = sum(r["stake"] for r in selected)
+
+    if len(selected) < len(all_recs):
+        print(f"\n  {DIM}({len(all_recs) - len(selected)} apostas adicionais omitidas — limite de banca){RESET}")
 
     # Rodapé resumo
     print()
     print(f"{BOLD_GREEN}{'-' * 65}{RESET}")
-    print(f"  {BOLD}Total de apostas:  {BOLD_GREEN}{len(all_recs)}{RESET}")
+    print(f"  {BOLD}Total de apostas:  {BOLD_GREEN}{len(selected)}{RESET}")
     print(f"  {BOLD}Stake total:       {BOLD_GREEN}R${total_stake:.2f}{RESET} ({total_stake/bankroll*100:.1f}% da banca)")
     print(f"  {BOLD}Banca disponivel:  {RESET}R${bankroll:.2f}")
     print(f"  {BOLD}Banca restante:    {RESET}R${bankroll - total_stake:.2f}")
