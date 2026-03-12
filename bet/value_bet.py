@@ -131,7 +131,15 @@ def _evaluate_market(market_name, prob, odds_key, odds_info, ai_analysis,
         return None
 
     confidence = _calc_confidence(edge, ai_analysis, ai_market_type, prob, prediction.get(prediction_key, prob))
-    if confidence < MIN_CONFIDENCE:
+
+    # Mercados "seguros" (Over 1.5, Under 3.5): aceita 2 estrelas se prob >= 75%
+    safe_markets = {"Acima 1.5 Gols", "Abaixo 3.5 Gols"}
+    if market_name in safe_markets and prob >= 0.75:
+        min_conf = 2
+    else:
+        min_conf = MIN_CONFIDENCE
+
+    if confidence < min_conf:
         return None
 
     stake = kelly_stake(prob, odd, bankroll=bankroll)
