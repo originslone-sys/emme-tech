@@ -1,5 +1,0 @@
-$last = Get-ChildItem .\logs -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 12
-$last | ForEach-Object {
-  "`n==== $($_.Name) ===="
-  Select-String -Path $_.FullName -Pattern "Error|Invalid|failed|No such|Cannot|not found|rc=|TIMED_OUT=True" -Context 2,4
-}
