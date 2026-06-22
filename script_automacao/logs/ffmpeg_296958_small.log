@@ -1,61 +1,0 @@
-ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers
-  built with gcc 15.2.0 (Rev8, Built by MSYS2 project)
-  configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-liboapv --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-openal --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint --enable-whisper
-  libavutil      60.  8.100 / 60.  8.100
-  libavcodec     62. 11.100 / 62. 11.100
-  libavformat    62.  3.100 / 62.  3.100
-  libavdevice    62.  1.100 / 62.  1.100
-  libavfilter    11.  4.100 / 11.  4.100
-  libswscale      9.  1.100 /  9.  1.100
-  libswresample   6.  1.100 /  6.  1.100
-Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'input\296958_small.mp4':
-  Metadata:
-    major_brand     : iso5
-    minor_version   : 512
-    compatible_brands: iso5iso6mp41
-    encoder         : Lavf59.27.100
-  Duration: 00:00:25.13, start: 0.000000, bitrate: 2060 kb/s
-  Stream #0:0[0x1](eng): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 720x1280, 2057 kb/s, 30 fps, 30 tbr, 15360 tbn (default)
-    Metadata:
-      handler_name    : VideoHandle
-      vendor_id       : [0][0][0][0]
-      encoder         : Lavc59.37.100 libx264
-Stream mapping:
-  Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))
-Press [q] to stop, [?] for help
-[libx264 @ 000002b66902d040] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
-[libx264 @ 000002b66902d040] profile High, level 3.1, 4:2:0, 8-bit
-[libx264 @ 000002b66902d040] 264 - core 165 r3223 0480cb0 - H.264/MPEG-4 AVC codec - Copyleft 2003-2025 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
-Output #0, mp4, to 'output\296958_small_edit_1771885403.mp4':
-  Metadata:
-    major_brand     : iso5
-    minor_version   : 512
-    compatible_brands: iso5iso6mp41
-    encoder         : Lavf62.3.100
-  Stream #0:0(eng): Video: h264 (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 690x1228, q=2-31, 30 fps, 15360 tbn (default)
-    Metadata:
-      encoder         : Lavc62.11.100 libx264
-      handler_name    : VideoHandle
-      vendor_id       : [0][0][0][0]
-    Side data:
-      cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
-frame=   17 fps=0.0 q=29.0 size=       0KiB time=00:00:00.50 bitrate=   0.8kbits/s speed=0.979x elapsed=0:00:00.51    frame=   60 fps= 57 q=29.0 size=     512KiB time=00:00:01.80 bitrate=2330.4kbits/s dup=0 drop=1 speed=1.71x elapsed=0:00:01.05    frame=  102 fps= 64 q=29.0 size=     768KiB time=00:00:03.23 bitrate=1945.9kbits/s dup=0 drop=2 speed=2.04x elapsed=0:00:01.58    frame=  143 fps= 68 q=29.0 size=    1024KiB time=00:00:04.66 bitrate=1797.6kbits/s dup=0 drop=3 speed=2.21x elapsed=0:00:02.10    frame=  187 fps= 71 q=29.0 size=    1280KiB time=00:00:06.13 bitrate=1709.7kbits/s dup=0 drop=4 speed=2.33x elapsed=0:00:02.63    frame=  231 fps= 73 q=29.0 size=    1792KiB time=00:00:07.56 bitrate=1940.1kbits/s dup=0 drop=5 speed=2.39x elapsed=0:00:03.16    frame=  273 fps= 74 q=29.0 size=    2048KiB time=00:00:09.03 bitrate=1857.3kbits/s dup=0 drop=6 speed=2.44x elapsed=0:00:03.69    frame=  318 fps= 75 q=29.0 size=    2560KiB time=00:00:10.53 bitrate=1991.0kbits/s dup=0 drop=7 speed=2.48x elapsed=0:00:04.24    frame=  363 fps= 76 q=29.0 size=    2816KiB time=00:00:12.03 bitrate=1917.1kbits/s dup=0 drop=7 speed=2.52x elapsed=0:00:04.78    frame=  403 fps= 76 q=29.0 size=    3072KiB time=00:00:13.36 bitrate=1882.8kbits/s dup=0 drop=8 speed=2.51x elapsed=0:00:05.32    frame=  451 fps= 77 q=29.0 size=    3584KiB time=00:00:14.83 bitrate=1979.4kbits/s dup=0 drop=9 speed=2.54x elapsed=0:00:05.84    frame=  491 fps= 77 q=29.0 size=    3840KiB time=00:00:16.26 bitrate=1933.9kbits/s dup=0 drop=10 speed=2.54x elapsed=0:00:06.39    frame=  533 fps= 77 q=29.0 size=    4096KiB time=00:00:17.63 bitrate=1902.9kbits/s dup=0 drop=11 speed=2.54x elapsed=0:00:06.93    frame=  576 fps= 77 q=29.0 size=    4608KiB time=00:00:19.10 bitrate=1976.4kbits/s dup=0 drop=12 speed=2.56x elapsed=0:00:07.47    frame=  621 fps= 78 q=29.0 size=    4864KiB time=00:00:20.60 bitrate=1934.3kbits/s dup=0 drop=13 speed=2.58x elapsed=0:00:07.99    frame=  665 fps= 78 q=29.0 size=    5120KiB time=00:00:22.10 bitrate=1897.9kbits/s dup=0 drop=14 speed= 2.6x elapsed=0:00:08.50    frame=  717 fps= 79 q=29.0 size=    5632KiB time=00:00:23.83 bitrate=1935.8kbits/s dup=0 drop=14 speed=2.64x elapsed=0:00:09.02    [out#0/mp4 @ 000002b668a60140] video:5781KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.165992%
-frame=  740 fps= 80 q=-1.0 Lsize=    5790KiB time=00:00:24.60 bitrate=1928.3kbits/s dup=0 drop=14 speed=2.67x elapsed=0:00:09.21    
-[libx264 @ 000002b66902d040] frame I:3     Avg QP:20.29  size:100887
-[libx264 @ 000002b66902d040] frame P:186   Avg QP:22.20  size: 19511
-[libx264 @ 000002b66902d040] frame B:551   Avg QP:26.26  size:  3606
-[libx264 @ 000002b66902d040] consecutive B-frames:  0.7%  0.0%  0.4% 98.9%
-[libx264 @ 000002b66902d040] mb I  I16..4: 18.9% 42.4% 38.7%
-[libx264 @ 000002b66902d040] mb P  I16..4:  5.0%  3.2%  0.8%  P16..4: 47.6% 14.5% 10.7%  0.0%  0.0%    skip:18.3%
-[libx264 @ 000002b66902d040] mb B  I16..4:  0.3%  0.1%  0.1%  B16..8: 38.3%  2.8%  0.4%  direct: 4.8%  skip:53.2%  L0:48.3% L1:48.9% BI: 2.7%
-[libx264 @ 000002b66902d040] 8x8 transform intra:35.6% inter:67.6%
-[libx264 @ 000002b66902d040] coded y,uvDC,uvAC intra: 20.3% 46.4% 9.5% inter: 9.7% 18.0% 0.5%
-[libx264 @ 000002b66902d040] i16 v,h,dc,p:  9% 45%  7% 40%
-[libx264 @ 000002b66902d040] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 11% 25% 48%  1%  4%  3%  5%  1%  2%
-[libx264 @ 000002b66902d040] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 17% 48% 11%  3%  4%  3%  6%  4%  5%
-[libx264 @ 000002b66902d040] i8c dc,h,v,p: 52% 29% 13%  6%
-[libx264 @ 000002b66902d040] Weighted P-Frames: Y:0.0% UV:0.0%
-[libx264 @ 000002b66902d040] ref P L0: 56.4%  6.8% 22.5% 14.2%
-[libx264 @ 000002b66902d040] ref B L0: 80.3% 14.7%  5.0%
-[libx264 @ 000002b66902d040] ref B L1: 89.2% 10.8%
-[libx264 @ 000002b66902d040] kb/s:1919.63
