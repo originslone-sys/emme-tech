@@ -52,7 +52,7 @@ async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
 
-    data = json.loads(content)
+    data = json.loads(content, strict=False)
     clips = data.get("clips", [])
     # Sanitiza e ordena pela nota
     valid = []
@@ -152,7 +152,7 @@ async def generate_viral_script(topic: str, duration: int = 30,
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
 
-    data = json.loads(content)
+    data = json.loads(content, strict=False)
     raw_scenes = data.get("scenes", [])
 
     scenes = []
