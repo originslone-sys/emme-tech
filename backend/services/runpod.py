@@ -21,8 +21,8 @@ def file_to_url(path: str) -> str:
 
 async def submit_animate_job(image_path: str, video_path: str) -> str:
     payload = {
-        "image": file_to_url(image_path),
-        "video": file_to_url(video_path),
+        "image_url": file_to_url(image_path),
+        "video_url": file_to_url(video_path),
         "prompt": "animate the character replicating the movements from the reference video, high quality, realistic motion",
         "num_inference_steps": 30,
         "guidance_scale": 7.5,
