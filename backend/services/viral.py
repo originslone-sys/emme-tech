@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import uuid
 from pathlib import Path
 
 from services import storage, deepseek, pexels, music, ffmpeg, runpod, tts
+
+log = logging.getLogger("viral")
 
 DIMENSIONS = {
     "9:16": (1080, 1920),
@@ -71,9 +74,14 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
             try:
                 narr = await tts.synthesize_scenes(
                     [sc["narration"] for sc in scenes], language, voice)
+                if not narr or not any(narr):
+                    raise RuntimeError("o TTS não retornou áudio")
                 _apply_narration_timing(scenes, narr)
-            except Exception:
-                narr = None  # fallback: segue sem narração
+            except Exception as e:
+                # Não falha o vídeo todo, mas registra o motivo para diagnóstico.
+                narr = None
+                log.exception("Narração (TTS) falhou")
+                storage.update_job(job_id, {"warning": f"Narração falhou: {e}"})
 
         # 3. Encontra um clipe do Pexels para cada cena
         storage.update_job(job_id, {"stage": "fetching", "total": len(scenes), "done": 0})
@@ -111,6 +119,9 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                     local_paths.append(None)
 
             track = music_path or music.pick(script["music_mood"])
+            if not track:
+                storage.update_job(job_id, {"warning_music":
+                    "Sem trilha: a biblioteca de músicas está vazia e nenhuma foi enviada."})
             narr_paths = [n["path"] if n else None for n in narr] if narr else None
 
             def on_progress(pct: int):
