@@ -31,15 +31,12 @@ MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 # Falantes embutidos do XTTS-v2
 _SPEAKER = {"feminina": "Ana Florence", "masculina": "Damien Black"}
 
-_tts = None
-
-
-def _model():
-    global _tts
-    if _tts is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        _tts = TTS(MODEL).to(device)
-    return _tts
+# Carrega o modelo na inicialização do worker (antes do primeiro job chegar).
+# Isso garante que o tempo de carregamento (~60-120s) não conta no timeout do job.
+print("[TTS] Carregando modelo XTTS-v2...", flush=True)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+_tts = TTS(MODEL).to(device)
+print(f"[TTS] Modelo pronto no device={device}", flush=True)
 
 
 def _wav_duration(path: str) -> float:
@@ -57,7 +54,6 @@ def handler(job):
     voice = inp.get("voice", "feminina")
     speaker = _SPEAKER.get(voice, "Ana Florence")
 
-    tts = _model()
     clips = []
     for text in texts:
         text = (text or "").strip()
@@ -67,7 +63,7 @@ def handler(job):
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             path = f.name
         try:
-            tts.tts_to_file(text=text, file_path=path, speaker=speaker, language=language)
+            _tts.tts_to_file(text=text, file_path=path, speaker=speaker, language=language)
             dur = _wav_duration(path)
             with open(path, "rb") as fb:
                 b64 = base64.b64encode(fb.read()).decode("utf-8")
