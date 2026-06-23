@@ -91,10 +91,16 @@ async def save_output(job_result: dict, output_path: str) -> bool:
         return True
 
     if "image_url" in output:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(output["image_url"], timeout=60)
+        raw = output["image_url"]
+        if isinstance(raw, str) and raw.startswith("data:"):
+            raw = raw.split(",", 1)[1]
             with open(output_path, "wb") as f:
-                f.write(r.content)
+                f.write(base64.b64decode(raw))
+        else:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(raw, timeout=60)
+                with open(output_path, "wb") as f:
+                    f.write(r.content)
         return True
 
     # fallback base64
