@@ -14,10 +14,10 @@ _POLL_INTERVAL = 4
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 
-# Vozes multilíngues do ElevenLabs (modelo eleven_multilingual_v2)
+# Vozes do ElevenLabs em português brasileiro (modelo eleven_multilingual_v2)
 _EL_VOICE = {
-    "feminina": "EXAVITQu4vr4xnSDxMaL",  # Sarah — natural, expressiva
-    "masculina": "onwK4e9ZLuTAKqWW03F9",  # Daniel — clara, profissional
+    "feminina": "ORgG8rwdAiMYRug8RJwR",   # Ana Alice — Friendly & Clear (PT-BR)
+    "masculina": "7lu3ze7orhWaNeSPowWx",  # Lucas — Engaging & Captivating (PT-BR)
 }
 _EL_MODEL = "eleven_multilingual_v2"
 
@@ -91,9 +91,17 @@ async def _via_elevenlabs(narrations: list[str], voice: str) -> list[dict | None
             payload = {
                 "text": text,
                 "model_id": _EL_MODEL,
-                "voice_settings": {"stability": 0.45, "similarity_boost": 0.80},
+                "voice_settings": {
+                    "stability": 0.40,          # mais expressiva, menos robótica
+                    "similarity_boost": 0.85,
+                    "style": 0.35,              # entonação dinâmica p/ social media
+                    "use_speaker_boost": True,  # mais clareza e presença
+                },
             }
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.post(
+                url, json=payload, headers=headers,
+                params={"output_format": "mp3_44100_128"},  # áudio em alta qualidade
+            )
             resp.raise_for_status()
             path = str(storage.DIRS["uploads"] / f"narr_{uuid.uuid4()}.mp3")
             with open(path, "wb") as f:
