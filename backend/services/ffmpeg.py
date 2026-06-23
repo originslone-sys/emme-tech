@@ -230,13 +230,14 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
 # ---------- Vídeo viral gerado do zero (cenas + legenda + música) ----------
 
 def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: str):
-    """Gera um .ass com o texto de cada cena, grande e centralizado, com fade.
+    """Gera um .ass com o texto de cada cena no rodapé (influencer style), com fade.
 
     scenes: lista de {text, duration} na ordem da timeline.
     """
-    fontsize = max(40, round(height / 15))
+    fontsize = max(36, round(height / 18))  # ligeiramente menor que antes
     outline = max(2, round(fontsize / 18))
-    margin = round(width * 0.07)
+    margin_h = round(width * 0.07)
+    margin_v = round(height * 0.08)  # distância do rodapé
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -248,7 +249,7 @@ def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: st
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Viral,DejaVu Sans,{fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
-        f"-1,0,0,0,100,100,0,0,1,{outline},3,5,{margin},{margin},0,1\n\n"
+        f"-1,0,0,0,100,100,0,0,1,{outline},2,2,{margin_h},{margin_h},{margin_v},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )

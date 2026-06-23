@@ -1,6 +1,9 @@
 import httpx
 import os
 import json
+import re
+
+_SYMBOL_RE = re.compile(r"[^\w\sÀ-ɏ]")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 BASE_URL = "https://api.deepseek.com/chat/completions"
@@ -79,12 +82,15 @@ async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
 # ---------- Roteiro de vídeo viral (do zero) ----------
 
 _SYSTEM_VIRAL = (
-    "Você é um roteirista especialista em vídeos virais para TikTok, Reels e YouTube Shorts. "
-    "Domina as técnicas que prendem atenção: gancho irresistível nos 3 primeiros segundos, "
-    "quebras de padrão, loops de curiosidade (open loops), ritmo acelerado, tensão emocional "
-    "e uma chamada pra ação no final. Seus roteiros NUNCA são genéricos: cada frase tem função, "
-    "cada cena empurra o espectador pra próxima. Você escreve para reter o espectador até o fim "
-    "(retenção = viralização)."
+    "Você é um roteirista de vídeos virais para TikTok, Reels e YouTube Shorts. "
+    "Você escreve como um influencer real: linguagem do dia a dia, direta, sem enrolação. "
+    "PROIBIDO: palavras difíceis ou pouco usadas (ex: 'protagonizar', 'perpasse', 'alavancar', "
+    "'fomentar', 'imprescindível', 'outrossim'), clichês de marketing, frases genéricas que "
+    "servem pra qualquer assunto. "
+    "OBRIGATÓRIO: cada vídeo é uma criação única — gancho diferente, ângulo diferente, "
+    "ritmo diferente. Escreva como se estivesse conversando com um amigo. "
+    "Sem símbolos no texto da tela: sem '...', '!?', '*', '#', '@', '—', '→'. "
+    "O texto da tela tem no máximo 5 palavras e é tão direto que dá pra ler em meio segundo."
 )
 
 
@@ -98,21 +104,23 @@ def _build_viral_prompt(topic: str, duration: int, language: str, fmt: str) -> s
         f"- Formato: {fmt}\n"
         f"- Idioma do texto na tela e legendas: {language}\n"
         f"- Aproximadamente {n_scenes} cenas (ritmo rápido).\n\n"
-        "Regras OBRIGATÓRIAS para viralizar:\n"
-        "1. A PRIMEIRA cena é o GANCHO — uma frase de choque/curiosidade que faz parar de rolar o feed "
-        "(ex: 'Você está fazendo isso errado a vida toda', 'Ninguém te conta isso sobre...'). Nada de introdução.\n"
-        "2. Cada cena tem um texto CURTO de tela (no máximo ~8 palavras), de altíssimo impacto, no idioma pedido. "
-        "Sem frases longas — o olho precisa ler em 1 segundo.\n"
-        "3. Cada cena tem também uma 'narration': a frase FALADA pelo narrador (1 frase natural, fluida, "
-        "no idioma pedido), que expande o texto da tela e mantém o ritmo da fala. É o que será dito em voz alta.\n"
-        "4. Mantenha um loop de curiosidade: cada cena cria vontade de ver a próxima.\n"
-        "5. A ÚLTIMA cena é uma chamada pra ação (seguir, comentar, salvar, ou uma virada final).\n"
-        "6. Para cada cena, defina uma 'visual_query' EM INGLÊS, concreta e filmável, que exista como vídeo "
-        "de banco de imagens (ex: 'slow motion ocean waves at sunset', 'person typing on laptop close up', "
-        "'busy city street timelapse night'). Evite conceitos abstratos que não rendem vídeo.\n"
-        "7. Defina a duração de cada cena (entre 2 e 5 segundos) somando ~"
-        f"{duration} segundos no total. A narração de cada cena deve caber nesse tempo falando num ritmo natural.\n"
-        "8. Escolha um 'music_mood' para a trilha entre: energetic, upbeat, inspirational, calm, dramatic, epic.\n\n"
+        "Regras OBRIGATÓRIAS:\n"
+        "1. GANCHO na primeira cena — uma frase de impacto que faz parar de rolar o feed. "
+        "Sem 'Olá', sem apresentação. Direto ao ponto. Exemplo de ângulo: revelar algo "
+        "surpreendente, contradizer o senso comum, ou prometer algo valioso em segundos.\n"
+        "2. O campo 'text' (texto da tela) tem NO MÁXIMO 5 palavras. Sem pontuação elaborada, "
+        "sem reticências, sem símbolos. Letras e espaços apenas. Tem que dar pra ler em 0,5 segundo.\n"
+        "3. O campo 'narration' é a fala do narrador: 1 frase curta, linguagem casual, "
+        "como você diria pra um amigo. Sem palavras difíceis. Sem repetir o texto da tela.\n"
+        "4. Cada cena leva a próxima — o espectador não pode achar que acabou antes da última cena.\n"
+        "5. A ÚLTIMA cena tem uma chamada pra ação concreta (ex: 'segue pra ver mais', "
+        "'comenta aqui embaixo', 'salva esse video').\n"
+        "6. 'visual_query' em inglês, concreta, filmável, existente em banco de vídeo "
+        "(ex: 'slow motion coffee being poured', 'woman laughing on phone closeup', "
+        "'city traffic aerial view night'). Sem conceitos abstratos.\n"
+        "7. Duração de cada cena: entre 2 e 5 segundos, soma total ~"
+        f"{duration} segundos.\n"
+        "8. Escolha 'music_mood' entre: energetic, upbeat, inspirational, calm, dramatic, epic.\n\n"
         "Responda APENAS em JSON válido neste formato exato:\n"
         '{"title": "título chamativo até 60 caracteres", '
         '"description": "legenda pronta pra postar com emojis e hashtags", '
@@ -126,6 +134,17 @@ def _build_viral_prompt(topic: str, duration: int, language: str, fmt: str) -> s
 
 
 _VALID_MOODS = {"energetic", "upbeat", "inspirational", "calm", "dramatic", "epic"}
+
+
+def _sanitize_screen_text(text: str) -> str:
+    """Remove símbolos e limita o texto da tela a 6 palavras."""
+    text = text.strip()
+    text = _SYMBOL_RE.sub("", text)   # remove tudo que não é letra/número/espaço
+    text = " ".join(text.split())     # normaliza espaços
+    words = text.split()
+    if len(words) > 6:
+        text = " ".join(words[:6])
+    return text
 
 
 async def generate_viral_script(topic: str, duration: int = 30,
@@ -157,7 +176,7 @@ async def generate_viral_script(topic: str, duration: int = 30,
 
     scenes = []
     for s in raw_scenes:
-        text = str(s.get("text", "")).strip()
+        text = _sanitize_screen_text(str(s.get("text", "")))
         narration = str(s.get("narration", "")).strip()
         query = str(s.get("visual_query", "")).strip()
         if not query:
