@@ -2,6 +2,12 @@ import Link from 'next/link'
 
 const cards = [
   {
+    href: '/cortes',
+    icon: '🔥',
+    title: 'Cortes Virais',
+    description: 'Transforme um vídeo longo (upload ou link do YouTube) em cortes verticais com legenda, prontos pra TikTok, Reels e Shorts — com título, descrição e tags gerados por IA.',
+  },
+  {
     href: '/editar',
     icon: '🎬',
     title: 'Editar Vídeo',

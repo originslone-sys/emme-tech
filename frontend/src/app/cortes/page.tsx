@@ -1,0 +1,159 @@
+'use client'
+
+import { useRef, useState } from 'react'
+import Link from 'next/link'
+import VideoDrop from '@/components/VideoDrop'
+
+const API = process.env.NEXT_PUBLIC_API_URL || ''
+
+const STAGES: Record<string, string> = {
+  starting: 'Iniciando...',
+  downloading: 'Baixando o vídeo do YouTube...',
+  transcribing: 'Transcrevendo o áudio...',
+  analyzing: 'Analisando os melhores momentos com IA...',
+  rendering: 'Renderizando os cortes...',
+}
+
+export default function CortesPage() {
+  const [mode, setMode] = useState<'upload' | 'youtube'>('upload')
+  const [video, setVideo] = useState<File | null>(null)
+  const [url, setUrl] = useState('')
+  const [numClips, setNumClips] = useState(3)
+  const [banner, setBanner] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [stage, setStage] = useState('')
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState('')
+  const bannerInput = useRef<HTMLInputElement>(null)
+
+  const submit = async () => {
+    if (mode === 'upload' && !video) return setError('Selecione um vídeo')
+    if (mode === 'youtube' && !url.trim()) return setError('Cole o link do YouTube')
+    setError(''); setDone(false); setLoading(true); setStage('starting'); setProgress({ done: 0, total: 0 })
+
+    const form = new FormData()
+    if (mode === 'upload' && video) form.append('video', video)
+    if (mode === 'youtube') form.append('youtube_url', url.trim())
+    form.append('num_clips', String(numClips))
+    if (banner) form.append('banner', banner)
+
+    try {
+      const res = await fetch(`${API}/api/clips/generate`, { method: 'POST', body: form })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      poll(data.job_id)
+    } catch {
+      setError('Erro ao enviar. Tente novamente.')
+      setLoading(false)
+    }
+  }
+
+  const poll = (id: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/clips/jobs/${id}`)
+        const data = await res.json()
+        setStage(data.stage)
+        setProgress({ done: data.done || 0, total: data.total || 0 })
+        if (data.status === 'COMPLETED') {
+          clearInterval(interval); setLoading(false); setDone(true)
+          setVideo(null); setUrl(''); setBanner(null)
+        } else if (data.status === 'FAILED') {
+          clearInterval(interval); setLoading(false)
+          setError(data.error || 'Processamento falhou.'); setStage('')
+        }
+      } catch { /* continua tentando */ }
+    }, 3000)
+  }
+
+  const stageLabel = stage === 'rendering' && progress.total
+    ? `Renderizando cortes (${progress.done}/${progress.total})...`
+    : STAGES[stage] || 'Processando...'
+
+  return (
+    <div className="max-w-xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white">Cortes Virais</h1>
+        <p className="text-white/40 mt-1">Transforme um vídeo longo em cortes prontos pra TikTok, Reels e Shorts</p>
+      </div>
+
+      <div className="flex gap-2 mb-5">
+        {(['upload', 'youtube'] as const).map((m) => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === m ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+            }`}>
+            {m === 'upload' ? 'Enviar vídeo' : 'Link do YouTube'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'upload' ? (
+        <div className="mb-6"><VideoDrop file={video} onChange={(f) => { setVideo(f); setDone(false) }} /></div>
+      ) : (
+        <input
+          type="url" value={url} onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://youtube.com/watch?v=..."
+          className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-3 text-white text-sm mb-6 focus:border-violet-500/50 outline-none"
+        />
+      )}
+
+      <div className="bg-[#111] border border-white/10 rounded-xl p-5 mb-6 space-y-5">
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">Quantos cortes gerar</label>
+          <div className="flex gap-2">
+            {[2, 3, 5].map((n) => (
+              <button key={n} onClick={() => setNumClips(n)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  numClips === n ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                }`}>{n}</button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">Banner (opcional)</label>
+          <input ref={bannerInput} type="file" accept="image/*" className="hidden"
+            onChange={(e) => e.target.files?.[0] && setBanner(e.target.files[0])} />
+          {banner ? (
+            <div className="flex items-center gap-3">
+              <img src={URL.createObjectURL(banner)} className="h-12 rounded-lg" alt="" />
+              <span className="flex-1 text-white/50 text-xs truncate">{banner.name}</span>
+              <button onClick={() => setBanner(null)} className="text-red-400 text-sm">remover</button>
+            </div>
+          ) : (
+            <button onClick={() => bannerInput.current?.click()}
+              className="w-full border-2 border-dashed border-white/15 hover:border-violet-500/40 rounded-lg py-3 text-white/30 text-xs transition-colors">
+              Clique para adicionar uma imagem fixa no topo dos cortes
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm mb-4">{error}</div>
+      )}
+      {loading && (
+        <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 text-violet-400 text-sm flex items-center gap-3 mb-4">
+          <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          {stageLabel}
+        </div>
+      )}
+      {done && (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3 text-green-400 text-sm mb-4">
+          Cortes gerados! <Link href="/biblioteca" className="underline">Ver na Biblioteca</Link>
+        </div>
+      )}
+
+      <button onClick={submit} disabled={loading}
+        className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-colors text-sm">
+        {loading ? 'Processando...' : 'Gerar Cortes'}
+      </button>
+
+      <p className="text-white/25 text-xs text-center mt-4">
+        Pode levar alguns minutos dependendo da duração do vídeo.
+      </p>
+    </div>
+  )
+}

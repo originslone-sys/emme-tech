@@ -56,15 +56,18 @@ def add_image(file_id: str, path: str, prompt: str = ""):
     write_db(db)
 
 
-def add_video(file_id: str, path: str, label: str = ""):
+def add_video(file_id: str, path: str, label: str = "", meta: Optional[dict] = None):
     db = read_db()
-    db["videos"].append({
+    entry = {
         "id": file_id,
         "path": path,
         "filename": Path(path).name,
         "label": label,
         "created_at": datetime.now().isoformat(),
-    })
+    }
+    if meta:
+        entry.update(meta)
+    db["videos"].append(entry)
     write_db(db)
 
 
@@ -96,6 +99,15 @@ def save_job(job_id: str, endpoint_id: str, job_type: str, meta: dict = {}):
         "meta": meta,
         "created_at": datetime.now().isoformat(),
     }
+    write_db(db)
+
+
+def update_job(job_id: str, meta_updates: dict):
+    db = read_db()
+    job = db["jobs"].get(job_id)
+    if not job:
+        return
+    job["meta"].update(meta_updates)
     write_db(db)
 
 

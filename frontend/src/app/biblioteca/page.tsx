@@ -9,6 +9,11 @@ interface VideoItem {
   filename: string
   label?: string
   created_at: string
+  kind?: string
+  title?: string
+  description?: string
+  tags?: string[]
+  score?: number
 }
 
 const formatDate = (iso: string) =>
@@ -31,6 +36,8 @@ export default function BibliotecaPage() {
   }, [])
 
   useEffect(() => { fetchLibrary() }, [fetchLibrary])
+
+  const copy = (text: string) => navigator.clipboard?.writeText(text)
 
   const deleteVideo = async (id: string) => {
     if (!confirm('Excluir este vídeo permanentemente?')) return
@@ -55,12 +62,38 @@ export default function BibliotecaPage() {
             <div key={vid.id} className="bg-[#111] border border-white/10 rounded-xl overflow-hidden">
               <video
                 src={`${API}/api/library/videos/${vid.id}/download`}
-                className="w-full aspect-video object-cover bg-black"
+                className={`w-full bg-black ${vid.kind === 'clip' ? 'aspect-[9/16] object-contain' : 'aspect-video object-cover'}`}
                 controls
               />
               <div className="p-3">
-                {vid.label && <p className="text-white/70 text-sm font-medium truncate">{vid.label}</p>}
-                <p className="text-white/30 text-xs mt-0.5">{formatDate(vid.created_at)}</p>
+                {vid.kind === 'clip' ? (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-white/80 text-sm font-semibold">{vid.title}</p>
+                      {typeof vid.score === 'number' && vid.score > 0 && (
+                        <span className="shrink-0 bg-violet-500/20 text-violet-300 text-xs px-2 py-0.5 rounded-full">🔥 {vid.score}</span>
+                      )}
+                    </div>
+                    {vid.description && (
+                      <div className="mt-2">
+                        <p className="text-white/50 text-xs whitespace-pre-wrap line-clamp-4">{vid.description}</p>
+                        <button onClick={() => copy(vid.description!)} className="text-violet-400 hover:text-violet-300 text-xs mt-1">
+                          copiar legenda
+                        </button>
+                      </div>
+                    )}
+                    {vid.tags && vid.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {vid.tags.map((t, i) => (
+                          <span key={i} className="bg-white/5 text-white/40 text-[10px] px-1.5 py-0.5 rounded">#{t.replace(/^#/, '')}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  vid.label && <p className="text-white/70 text-sm font-medium truncate">{vid.label}</p>
+                )}
+                <p className="text-white/30 text-xs mt-2">{formatDate(vid.created_at)}</p>
                 <div className="flex gap-2 mt-3">
                   <a
                     href={`${API}/api/library/videos/${vid.id}/download`}
