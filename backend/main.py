@@ -16,10 +16,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Emme API", lifespan=lifespan)
 
+_frontend_url = os.getenv("FRONTEND_URL", "")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "*")],
-    allow_credentials=True,
+    allow_origins=[_frontend_url] if _frontend_url else ["*"],
+    allow_credentials=bool(_frontend_url),
     allow_methods=["*"],
     allow_headers=["*"],
 )
