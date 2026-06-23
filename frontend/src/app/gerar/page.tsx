@@ -34,6 +34,7 @@ export default function GerarPage() {
   const [music, setMusic] = useState<File | null>(null)
   const [musicSource, setMusicSource] = useState<MusicSource>('generate')
   const [channelName, setChannelName] = useState('')
+  const [introTitle, setIntroTitle] = useState(true)
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0, percent: 0 })
@@ -57,6 +58,7 @@ export default function GerarPage() {
     form.append('music_source', musicSource)
     if (music) form.append('music', music)
     if (channelName.trim()) form.append('channel_name', channelName.trim())
+    form.append('intro_title', introTitle ? '1' : '0')
 
     try {
       const res = await fetch(`${API}/api/viral/generate`, { method: 'POST', body: form })
@@ -175,6 +177,17 @@ export default function GerarPage() {
           ) : (
             <p className="text-white/30 text-xs">Sem voz — só legendas e música.</p>
           )}
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm font-medium text-white/60">Abrir com o título</label>
+            <button onClick={() => setIntroTitle(!introTitle)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${introTitle ? 'bg-violet-600' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${introTitle ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          <p className="text-white/30 text-xs">O narrador começa apresentando o vídeo com o título.</p>
         </div>
 
         <div>
