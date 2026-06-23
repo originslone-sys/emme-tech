@@ -88,7 +88,8 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                        language: str, music_path: str | None = None,
                        narration: bool = True, voice: str = "feminina",
                        music_source: str = "library",
-                       channel_name: str | None = None):
+                       channel_name: str | None = None,
+                       intro_title: bool = True):
     try:
         width, height = DIMENSIONS.get(fmt, DIMENSIONS["9:16"])
 
@@ -99,7 +100,7 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
 
         # O narrador abre apresentando o vídeo com o título (vira fala + legenda).
         title = (script.get("title") or "").strip()
-        if scenes and title:
+        if intro_title and scenes and title:
             first = scenes[0]
             opening = (first.get("narration") or "").strip()
             if not opening.lower().startswith(title.lower()[:18]):
