@@ -33,12 +33,13 @@ export default function GerarPage() {
   const [stage, setStage] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0, percent: 0 })
   const [done, setDone] = useState(false)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
   const musicInput = useRef<HTMLInputElement>(null)
 
   const submit = async () => {
     if (!topic.trim()) return setError('Descreva o tema do vídeo')
-    setError(''); setDone(false); setLoading(true); setStage('starting')
+    setError(''); setDone(false); setWarnings([]); setLoading(true); setStage('starting')
     setProgress({ done: 0, total: 0, percent: 0 })
 
     const form = new FormData()
@@ -70,6 +71,7 @@ export default function GerarPage() {
         setProgress({ done: data.done || 0, total: data.total || 0, percent: data.percent || 0 })
         if (data.status === 'COMPLETED') {
           clearInterval(interval); setLoading(false); setDone(true)
+          setWarnings(data.warnings || [])
           setTopic(''); setMusic(null)
         } else if (data.status === 'FAILED') {
           clearInterval(interval); setLoading(false)
@@ -209,6 +211,11 @@ export default function GerarPage() {
       {done && (
         <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3 text-green-400 text-sm mb-4">
           Vídeo gerado! <Link href="/biblioteca" className="underline">Ver na Biblioteca</Link>
+          {warnings.length > 0 && (
+            <ul className="mt-2 text-amber-300/80 text-xs list-disc list-inside space-y-0.5">
+              {warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          )}
         </div>
       )}
 

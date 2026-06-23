@@ -57,8 +57,10 @@ async def get_viral_status(job_id: str):
         return {"status": "FAILED", "stage": stage, "error": meta.get("error"),
                 "video_id": None, "done": 0, "total": 0, "percent": 0}
     if stage == "completed":
+        warnings = [w for w in (meta.get("warning"), meta.get("warning_music")) if w]
         return {"status": "COMPLETED", "stage": stage, "error": None,
                 "video_id": meta.get("video_id"),
+                "warnings": warnings,
                 "done": meta.get("done", 0), "total": meta.get("total", 0),
                 "percent": 100}
     return {"status": "processing", "stage": stage, "error": None,
