@@ -80,7 +80,8 @@ Sem ele, o backend monta na CPU (mais lento).
    (conecte sua conta GitHub e autorize o repositório `originslone-sys/emme-tech`).
 2. Branch: a sua branch de deploy.
 3. **Dockerfile Path:** `runpod-workers/viral-render/Dockerfile`
-4. **Build Context:** `runpod-workers/viral-render`
+4. **Build Context:** deixe **em branco** (a raiz do repositório). Os `COPY` do
+   Dockerfile já apontam o caminho completo a partir da raiz.
 5. GPU com NVENC (ex: RTX A4000/4090), disco ~10 GB → Deploy.
 6. Copie o **Endpoint ID** → backend: `RUNPOD_RENDER_ENDPOINT`.
 
@@ -104,7 +105,8 @@ Gera a narração com **XTTS-v2** (voz natural, pt/en/es). Sem ele, o backend us
 **Forma A — Deploy pelo GitHub (sem Docker local):**
 1. **Serverless → New Endpoint → Import Git Repository** (repo `originslone-sys/emme-tech`).
 2. **Dockerfile Path:** `runpod-workers/viral-tts/Dockerfile`
-3. **Build Context:** `runpod-workers/viral-tts`
+3. **Build Context:** deixe **em branco** (a raiz do repositório). Os `COPY` do
+   Dockerfile já apontam o caminho completo a partir da raiz.
 4. GPU ~8–12 GB, disco ~15 GB (o modelo XTTS-v2 é embutido na imagem) → Deploy.
 5. Copie o **Endpoint ID** → backend: `RUNPOD_TTS_ENDPOINT`.
 
