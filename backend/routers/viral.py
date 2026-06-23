@@ -20,6 +20,7 @@ async def generate_viral(
     voice: str = Form("feminina"),
     music_source: str = Form("library"),
     music: Optional[UploadFile] = File(None),
+    channel_name: Optional[str] = Form(None),
 ):
     topic = topic.strip()
     if not topic:
@@ -43,6 +44,7 @@ async def generate_viral(
     asyncio.create_task(viral.run_pipeline(
         job_id, topic, fmt, duration, language, music_path,
         narration=bool(narration), voice=voice, music_source=music_source,
+        channel_name=channel_name or None,
     ))
 
     return {"job_id": job_id, "status": "processing"}

@@ -87,7 +87,8 @@ async def _resolve_music(job_id: str, mood: str, music_path: str | None,
 async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                        language: str, music_path: str | None = None,
                        narration: bool = True, voice: str = "feminina",
-                       music_source: str = "library"):
+                       music_source: str = "library",
+                       channel_name: str | None = None):
     try:
         width, height = DIMENSIONS.get(fmt, DIMENSIONS["9:16"])
 
@@ -160,7 +161,7 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
 
             await asyncio.to_thread(
                 ffmpeg.render_viral, local_paths, scenes, width, height,
-                track, output_path, on_progress, narr_paths,
+                track, output_path, on_progress, narr_paths, channel_name,
             )
             for p in local_paths:
                 if p:

@@ -33,6 +33,7 @@ export default function GerarPage() {
   const [voice, setVoice] = useState<'feminina' | 'masculina'>('feminina')
   const [music, setMusic] = useState<File | null>(null)
   const [musicSource, setMusicSource] = useState<MusicSource>('generate')
+  const [channelName, setChannelName] = useState('')
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0, percent: 0 })
@@ -55,6 +56,7 @@ export default function GerarPage() {
     form.append('voice', voice)
     form.append('music_source', musicSource)
     if (music) form.append('music', music)
+    if (channelName.trim()) form.append('channel_name', channelName.trim())
 
     try {
       const res = await fetch(`${API}/api/viral/generate`, { method: 'POST', body: form })
@@ -173,6 +175,21 @@ export default function GerarPage() {
           ) : (
             <p className="text-white/30 text-xs">Sem voz — só legendas e música.</p>
           )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">
+            Nome do canal
+            <span className="text-white/30 font-normal ml-1">(marca d'água no centro)</span>
+          </label>
+          <input
+            type="text"
+            value={channelName}
+            onChange={(e) => setChannelName(e.target.value)}
+            maxLength={40}
+            placeholder="Ex: @seucanal · deixe vazio para não exibir"
+            className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-2.5 text-white text-sm focus:border-violet-500/50 outline-none"
+          />
         </div>
 
         <div>
