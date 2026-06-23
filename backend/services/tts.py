@@ -1,6 +1,9 @@
 import asyncio
 import base64
+import os
 import uuid
+
+import httpx
 
 from services import storage, runpod, ffmpeg
 
@@ -8,6 +11,15 @@ _LANG = {"Português": "pt", "English": "en", "Español": "es"}
 
 _TTS_TIMEOUT = 60 * 10  # 10 min
 _POLL_INTERVAL = 4
+
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+
+# Vozes multilíngues do ElevenLabs (modelo eleven_multilingual_v2)
+_EL_VOICE = {
+    "feminina": "EXAVITQu4vr4xnSDxMaL",  # Sarah — natural, expressiva
+    "masculina": "onwK4e9ZLuTAKqWW03F9",  # Daniel — clara, profissional
+}
+_EL_MODEL = "eleven_multilingual_v2"
 
 
 def _lang_code(language: str) -> str:
@@ -18,12 +30,13 @@ async def synthesize_scenes(narrations: list[str], language: str,
                             voice: str) -> list[dict | None]:
     """Gera o áudio de narração de cada cena.
 
-    Retorna uma lista alinhada às cenas com {path, duration} ou None (cena
-    sem narração). Usa o worker RunPod (XTTS) se configurado; senão, gTTS.
+    Prioridade: RunPod XTTS → ElevenLabs → gTTS.
     """
     lang = _lang_code(language)
     if runpod.TTS_ENDPOINT:
         return await _via_runpod(narrations, lang, voice)
+    if ELEVENLABS_API_KEY:
+        return await _via_elevenlabs(narrations, voice)
     return await asyncio.to_thread(_via_gtts, narrations, lang)
 
 
@@ -61,6 +74,35 @@ def _save_runpod_clips(data: dict) -> list[dict | None]:
     return result
 
 
+async def _via_elevenlabs(narrations: list[str], voice: str) -> list[dict | None]:
+    voice_id = _EL_VOICE.get(voice, _EL_VOICE["feminina"])
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+    }
+    result: list[dict | None] = []
+    async with httpx.AsyncClient(timeout=60) as client:
+        for text in narrations:
+            text = (text or "").strip()
+            if not text:
+                result.append(None)
+                continue
+            payload = {
+                "text": text,
+                "model_id": _EL_MODEL,
+                "voice_settings": {"stability": 0.45, "similarity_boost": 0.80},
+            }
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            path = str(storage.DIRS["uploads"] / f"narr_{uuid.uuid4()}.mp3")
+            with open(path, "wb") as f:
+                f.write(resp.content)
+            dur = ffmpeg.probe_duration(path)
+            result.append({"path": path, "duration": dur})
+    return result
+
+
 def _via_gtts(narrations: list[str], lang: str) -> list[dict | None]:
     from gtts import gTTS
     result: list[dict | None] = []
@@ -72,3 +114,4 @@ def _via_gtts(narrations: list[str], lang: str) -> list[dict | None]:
         gTTS(text=text, lang=lang).save(path)
         result.append({"path": path, "duration": ffmpeg.probe_duration(path)})
     return result
+
