@@ -25,7 +25,9 @@ async def _transcribe(audio_path: str, language: str) -> list[dict]:
 
 async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
                        language: str, video_path: str | None = None,
-                       youtube_url: str | None = None):
+                       youtube_url: str | None = None,
+                       show_title: bool = True,
+                       channel_name: str | None = None):
     try:
         # 0. Baixa do YouTube se for o caso
         if youtube_url:
@@ -57,12 +59,13 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
             out_path = str(storage.DIRS["videos"] / f"{out_id}.mp4")
             ass_path = str(storage.DIRS["uploads"] / f"{out_id}.ass")
 
+            clip_title = clip["title"] if show_title else None
             await asyncio.to_thread(
-                ffmpeg.build_ass, segments, clip["start"], clip["end"], ass_path,
+                ffmpeg.build_ass, segments, clip["start"], clip["end"], ass_path, clip_title,
             )
             await asyncio.to_thread(
                 ffmpeg.render_clip, video_path, out_path,
-                clip["start"], clip["end"], ass_path, banner_path,
+                clip["start"], clip["end"], ass_path, banner_path, channel_name,
             )
             Path(ass_path).unlink(missing_ok=True)
 

@@ -158,25 +158,35 @@ def _ass_escape(text: str) -> str:
     return text.replace("\n", " ").replace("{", "(").replace("}", ")").strip().upper()
 
 
-def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_path: str):
-    """Gera um arquivo .ass com legenda estilizada para o trecho do corte."""
+def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_path: str,
+              clip_title: str | None = None):
+    """Gera um arquivo .ass com legenda no rodapé e título fixo opcional no topo."""
     dur = clip_end - clip_start
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
         "PlayResX: 1080\n"
         "PlayResY: 1920\n"
-        "WrapStyle: 0\n\n"
+        "WrapStyle: 1\n\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        "Style: Viral,DejaVu Sans,70,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,"
-        "-1,0,0,0,100,100,0,0,1,5,2,2,60,60,260,1\n\n"
+        # Alignment=2 = bottom-center; MarginV do rodapé
+        "Style: Sub,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
+        "-1,0,0,0,100,100,0,0,1,4,2,2,80,80,120,1\n"
+        # Alignment=8 = top-center; MarginV do topo
+        "Style: Title,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&HB4000000,"
+        "-1,0,0,0,100,100,0,0,1,4,2,8,80,80,100,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     lines = []
+    # Título fixo no topo (dura o clipe inteiro)
+    if clip_title and clip_title.strip():
+        title_text = _ass_escape(clip_title)
+        lines.append(f"Dialogue: 0,{_ass_time(0)},{_ass_time(dur)},Title,,0,0,0,,{title_text}")
+
     for s in segments:
         if s["end"] <= clip_start or s["start"] >= clip_end:
             continue
@@ -187,13 +197,14 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
         text = _ass_escape(s["text"])
         if not text:
             continue
-        lines.append(f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Viral,,0,0,0,,{text}")
+        lines.append(f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Sub,,0,0,0,,{text}")
 
     Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
 
 def render_clip(input_path: str, output_path: str, start: float, end: float,
-                ass_path: str, banner_path: str | None = None):
+                ass_path: str, banner_path: str | None = None,
+                channel_name: str | None = None):
     """Renderiza um corte vertical 9:16 com fundo desfocado, legenda e banner opcional."""
     dur = max(0.0, end - start)
     args = ["-ss", str(start), "-i", input_path]
@@ -215,7 +226,11 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
     if banner_idx is not None:
         fc += f";[{banner_idx}:v]scale=1080:-1[ban];[base][ban]overlay=(W-w)/2:0[bn]"
         last = "bn"
-    fc += f";[{last}]{sub}[outv]"
+
+    video_filters = sub
+    if channel_name and channel_name.strip():
+        video_filters += "," + _drawtext_watermark(channel_name, 1080, 1920)
+    fc += f";[{last}]{video_filters}[outv]"
 
     args += [
         "-t", str(dur),
