@@ -64,6 +64,7 @@ export default function BibliotecaPage() {
                 src={`${API}/api/library/videos/${vid.id}/download`}
                 className={`w-full bg-black ${vid.kind === 'clip' || vid.kind === 'viral' ? 'aspect-[9/16] object-contain' : 'aspect-video object-cover'}`}
                 controls
+                preload="none"
               />
               <div className="p-3">
                 {vid.kind === 'clip' || vid.kind === 'viral' ? (
