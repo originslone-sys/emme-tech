@@ -44,14 +44,18 @@ async def submit_animate_job(image_path: str, video_path: str) -> str:
 
 
 async def submit_generate_job(reference_paths: list[str], prompt: str) -> str:
-    image_b64 = file_to_base64(reference_paths[0])
     payload = {
         "prompt": prompt,
-        "image_path": image_b64,
+        "negative_prompt": "blurry, low quality, deformed, ugly, watermark",
+        "image_url": file_to_url(reference_paths[0]),
+        "width": 1024,
+        "height": 1024,
+        "num_inference_steps": 25,
+        "guidance_scale": 7.5,
+        "strength": 0.6,
+        "high_noise_frac": 0.8,
         "seed": 42,
-        "guidance": 2.5,
-        "width": 512,
-        "height": 512,
+        "num_images": 1,
     }
     async with httpx.AsyncClient() as client:
         response = await client.post(
