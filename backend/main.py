@@ -1,20 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 import os
 
 from routers import generate, animate, library
 from services.storage import init_storage, DIRS
 
+# Garante que os diretórios existem antes de montar os estáticos
+init_storage()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_storage()
-    yield
-
-
-app = FastAPI(title="Emme API", lifespan=lifespan)
+app = FastAPI(title="Emme API")
 
 _frontend_url = os.getenv("FRONTEND_URL", "")
 app.add_middleware(
@@ -29,10 +24,8 @@ app.include_router(generate.router, prefix="/api/generate", tags=["generate"])
 app.include_router(animate.router, prefix="/api/animate", tags=["animate"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
 
-
-@app.on_event("startup")
-async def mount_static():
-    app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
+# Serve os uploads para o RunPod baixar via URL pública
+app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
 
 
 @app.get("/health")
