@@ -26,11 +26,12 @@ def _run(args: list[str]):
 def _run_with_progress(args: list[str], total_duration: float, on_progress=None):
     """Executa o ffmpeg reportando progresso (0–99%) via callback on_progress(pct)."""
     cmd = [_ffmpeg_bin(), "-y", *args, "-progress", "pipe:1", "-nostats"]
-    # stderr vai para arquivo temporário para não travar o pipe em encodes longos
     with tempfile.TemporaryFile(mode="w+") as errf:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errf, text=True)
         for line in proc.stdout:
             line = line.strip()
+            if line == "progress=end":
+                break
             if line.startswith("out_time_us=") and total_duration > 0 and on_progress:
                 try:
                     us = int(line.split("=")[1])
@@ -38,7 +39,11 @@ def _run_with_progress(args: list[str], total_duration: float, on_progress=None)
                     on_progress(pct)
                 except ValueError:
                     pass
-        proc.wait()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            proc.wait()
         errf.seek(0)
         stderr = errf.read()
     if proc.returncode != 0:
