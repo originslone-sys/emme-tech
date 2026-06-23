@@ -217,11 +217,14 @@ def spin(input_path: str, output_path: str):
     - Espelhamento horizontal aleatório
     - Variação de velocidade ±3%
     - Ajuste sutil de brilho/contraste/saturação
-    - Logo mini no canto (muda o hash do vídeo)
+    - Ruído granular 1–2% em cada frame
+    - Mudança de framerate (ex: 30 → 29.97)
+    - Logo micro no canto (altera hash binário)
     - Re-encode H.265 com CRF aleatório
     """
     tmp_dir = str(Path(input_path).parent)
-    logo_path = _make_logo(random.randint(20, 50), tmp_dir)
+    logo_size = random.randint(20, 50)
+    logo_path = _make_logo(logo_size, tmp_dir)
 
     try:
         crop_l = random.uniform(0.01, 0.05)
@@ -239,20 +242,32 @@ def spin(input_path: str, output_path: str):
         saturation = round(random.uniform(0.95, 1.05), 3)
         eq = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}"
 
+        # Ruído granular 1–2%: strength 4–10 é imperceptível mas muda cada frame
+        noise_strength = random.randint(4, 10)
+        noise = f"noise=alls={noise_strength}:allf=t+u"
+
+        # Framerate ligeiramente diferente do original
+        fps_choices = [23.976, 24.0, 25.0, 29.97, 30.0]
+        fps = random.choice(fps_choices)
+        fps_filter = f"fps={fps}"
+
         logo_x = random.randint(10, 30)
         logo_y = random.randint(10, 30)
-        overlay = f"overlay=W-w-{logo_x}:H-h-{logo_y}"
-
         crf = random.randint(23, 28)
-
-        video_filters = f"{crop}{hflip},{setpts},{eq},{overlay}"
         audio_filters = f"atempo={speed:.4f}"
+
+        # filter_complex explícito: video pipeline → overlay logo
+        fc = (
+            f"[0:v]{crop}{hflip},{setpts},{eq},{noise},{fps_filter}[base];"
+            f"[1:v]scale={logo_size}:{logo_size}[logo];"
+            f"[base][logo]overlay=W-w-{logo_x}:H-h-{logo_y}[v];"
+            f"[0:a]{audio_filters}[a]"
+        )
 
         _run([
             "-i", input_path,
             "-loop", "1", "-i", logo_path,
-            "-filter_complex",
-            f"[0:v]{video_filters}[v];[0:a]{audio_filters}[a]",
+            "-filter_complex", fc,
             "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx265",
