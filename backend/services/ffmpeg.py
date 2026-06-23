@@ -227,6 +227,110 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
     _run(args)
 
 
+# ---------- Vídeo viral gerado do zero (cenas + legenda + música) ----------
+
+def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: str):
+    """Gera um .ass com o texto de cada cena, grande e centralizado, com fade.
+
+    scenes: lista de {text, duration} na ordem da timeline.
+    """
+    fontsize = max(40, round(height / 15))
+    outline = max(2, round(fontsize / 18))
+    margin = round(width * 0.07)
+    header = (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        f"PlayResX: {width}\n"
+        f"PlayResY: {height}\n"
+        "WrapStyle: 0\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        f"Style: Viral,DejaVu Sans,{fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
+        f"-1,0,0,0,100,100,0,0,1,{outline},3,5,{margin},{margin},0,1\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+    lines = []
+    t = 0.0
+    for sc in scenes:
+        dur = float(sc.get("duration", 3))
+        st, en = t, t + dur
+        t = en
+        text = _ass_escape(sc.get("text", ""))
+        if not text:
+            continue
+        lines.append(
+            f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Viral,,0,0,0,,{{\\fad(150,150)}}{text}"
+        )
+    Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def render_viral(scene_paths: list[str | None], scenes: list[dict],
+                 width: int, height: int, music_path: str | None,
+                 output_path: str, on_progress=None):
+    """Monta o vídeo viral: normaliza cada cena, concatena, queima legendas e
+    mixa a trilha. scene_paths[i]=None vira um fundo escuro (fallback)."""
+    work = Path(output_path).parent
+    stem = Path(output_path).stem
+    norm: list[str] = []
+    total = sum(float(s.get("duration", 3)) for s in scenes)
+    cleanup: list[str] = []
+    try:
+        for i, (src, sc) in enumerate(zip(scene_paths, scenes)):
+            dur = float(sc.get("duration", 3))
+            n = str(work / f"_vs_{i}_{stem}.mp4")
+            if src:
+                _run([
+                    "-stream_loop", "-1", "-i", src,
+                    "-t", f"{dur:.3f}",
+                    "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                           f"crop={width}:{height},setsar=1,fps=30",
+                    "-an", "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p", n,
+                ])
+            else:
+                _run([
+                    "-f", "lavfi",
+                    "-i", f"color=c=0x0E0E12:s={width}x{height}:d={dur:.3f}:r=30",
+                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p", n,
+                ])
+            norm.append(n)
+            cleanup.append(n)
+
+        list_file = work / f"_vcat_{stem}.txt"
+        list_file.write_text("".join(f"file '{p}'\n" for p in norm))
+        cleanup.append(str(list_file))
+        silent = str(work / f"_vsilent_{stem}.mp4")
+        cleanup.append(silent)
+        _run(["-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", silent])
+
+        ass = str(work / f"_v_{stem}.ass")
+        cleanup.append(ass)
+        build_viral_ass(scenes, width, height, ass)
+
+        sub = f"subtitles=f='{ass}':fontsdir='{FONTS_DIR}'"
+        args = ["-i", silent]
+        if music_path:
+            args += ["-stream_loop", "-1", "-i", music_path]
+        args += ["-vf", sub]
+        if music_path:
+            fade_st = max(0.0, total - 2)
+            args += [
+                "-map", "0:v", "-map", "1:a",
+                "-af", f"volume=0.28,afade=t=out:st={fade_st:.2f}:d=2",
+                "-shortest", "-c:a", "aac", "-b:a", "128k",
+            ]
+        else:
+            args += ["-map", "0:v"]
+        args += ["-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                 "-movflags", "+faststart", output_path]
+        _run_with_progress(args, total, on_progress)
+    finally:
+        for p in cleanup:
+            Path(p).unlink(missing_ok=True)
+
+
 # ---------- Originalizar (spin) para repostagem em outras redes ----------
 
 def _make_logo(size: int, tmp_dir: str) -> str:

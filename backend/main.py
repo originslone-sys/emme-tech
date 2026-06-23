@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from routers import editor, library, clips
+from routers import editor, library, clips, viral
 from services.storage import init_storage, DIRS
 
 # Garante que os diretórios existem antes de montar os estáticos
@@ -22,6 +22,7 @@ app.add_middleware(
 
 app.include_router(editor.router, prefix="/api/editor", tags=["editor"])
 app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
+app.include_router(viral.router, prefix="/api/viral", tags=["viral"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
 
 # Serve os uploads para o RunPod baixar via URL pública
