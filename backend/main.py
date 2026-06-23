@@ -3,13 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from routers import generate, animate, library
+from routers import editor, library
 from services.storage import init_storage, DIRS
 
 # Garante que os diretórios existem antes de montar os estáticos
 init_storage()
 
-app = FastAPI(title="Emme API")
+app = FastAPI(title="Emme Video Editor API")
 
 _frontend_url = os.getenv("FRONTEND_URL", "")
 app.add_middleware(
@@ -20,8 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(generate.router, prefix="/api/generate", tags=["generate"])
-app.include_router(animate.router, prefix="/api/animate", tags=["animate"])
+app.include_router(editor.router, prefix="/api/editor", tags=["editor"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
 
 # Serve os uploads para o RunPod baixar via URL pública

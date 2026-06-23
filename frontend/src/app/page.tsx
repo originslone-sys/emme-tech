@@ -2,22 +2,34 @@ import Link from 'next/link'
 
 const cards = [
   {
-    href: '/modelo',
+    href: '/melhorar',
     icon: '✨',
-    title: 'Criar Modelo',
-    description: 'Gere imagens consistentes de uma modelo a partir de fotos de referência usando InstantID + FLUX.',
+    title: 'Melhorar Qualidade',
+    description: 'Aumente a resolução, nitidez e reduza ruído de vídeos de baixa qualidade com IA.',
   },
   {
-    href: '/animar',
-    icon: '🎬',
-    title: 'Animar',
-    description: 'Clone movimentos de um vídeo real para sua imagem usando MimicMotion.',
+    href: '/cortar',
+    icon: '✂️',
+    title: 'Cortar',
+    description: 'Remova as partes que você não quer, escolhendo o início e o fim do trecho.',
+  },
+  {
+    href: '/juntar',
+    icon: '🎞️',
+    title: 'Juntar Vídeos',
+    description: 'Monte uma linha do tempo unindo vários vídeos em sequência.',
+  },
+  {
+    href: '/ajustar',
+    icon: '💡',
+    title: 'Iluminação',
+    description: 'Ajuste brilho, contraste e saturação para melhorar a aparência do vídeo.',
   },
   {
     href: '/biblioteca',
     icon: '📁',
     title: 'Biblioteca',
-    description: 'Acesse todas as imagens e vídeos gerados. Baixe ou exclua quando quiser.',
+    description: 'Acesse todos os vídeos processados. Baixe ou exclua quando quiser.',
   },
 ]
 
@@ -25,8 +37,8 @@ export default function Home() {
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-10">
-        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-        <p className="text-white/40 mt-1">Bem-vindo ao Emme Studio</p>
+        <h1 className="text-3xl font-bold text-white">Editor de Vídeo</h1>
+        <p className="text-white/40 mt-1">Melhore, corte e monte seus vídeos</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4">

@@ -56,15 +56,22 @@ def add_image(file_id: str, path: str, prompt: str = ""):
     write_db(db)
 
 
-def add_video(file_id: str, path: str):
+def add_video(file_id: str, path: str, label: str = ""):
     db = read_db()
     db["videos"].append({
         "id": file_id,
         "path": path,
         "filename": Path(path).name,
+        "label": label,
         "created_at": datetime.now().isoformat(),
     })
     write_db(db)
+
+
+async def save_upload_temp(file) -> str:
+    """Salva um upload na pasta de uploads e retorna apenas o caminho."""
+    _, path = await save_upload(file, "uploads")
+    return path
 
 
 def delete_file(file_id: str, file_type: str) -> bool:

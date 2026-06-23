@@ -4,9 +4,11 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const nav = [
-  { href: '/', label: 'Dashboard', icon: '⚡' },
-  { href: '/modelo', label: 'Criar Modelo', icon: '✨' },
-  { href: '/animar', label: 'Animar', icon: '🎬' },
+  { href: '/', label: 'Início', icon: '⚡' },
+  { href: '/melhorar', label: 'Melhorar Qualidade', icon: '✨' },
+  { href: '/cortar', label: 'Cortar', icon: '✂️' },
+  { href: '/juntar', label: 'Juntar Vídeos', icon: '🎞️' },
+  { href: '/ajustar', label: 'Iluminação', icon: '💡' },
   { href: '/biblioteca', label: 'Biblioteca', icon: '📁' },
 ]
 
@@ -17,7 +19,7 @@ export default function Sidebar() {
     <aside className="w-56 bg-[#111111] border-r border-white/10 flex flex-col shrink-0">
       <div className="p-6 border-b border-white/10">
         <h1 className="text-xl font-bold tracking-tight text-white">emme</h1>
-        <p className="text-xs text-white/40 mt-0.5">Studio de IA</p>
+        <p className="text-xs text-white/40 mt-0.5">Editor de Vídeo</p>
       </div>
       <nav className="flex-1 p-3 space-y-1">
         {nav.map((item) => {

@@ -6,8 +6,8 @@ import Sidebar from '@/components/Sidebar'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Emme Studio',
-  description: 'Geração e animação de modelos com IA',
+  title: 'Emme — Editor de Vídeo',
+  description: 'Melhore a qualidade, corte e junte seus vídeos',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
