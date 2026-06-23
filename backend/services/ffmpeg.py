@@ -269,13 +269,17 @@ def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: st
 
 def render_viral(scene_paths: list[str | None], scenes: list[dict],
                  width: int, height: int, music_path: str | None,
-                 output_path: str, on_progress=None):
+                 output_path: str, on_progress=None,
+                 narration_paths: list[str | None] | None = None):
     """Monta o vídeo viral: normaliza cada cena, concatena, queima legendas e
-    mixa a trilha. scene_paths[i]=None vira um fundo escuro (fallback)."""
+    mixa narração (volume cheio) + música (abafada). scene_paths[i]=None vira
+    um fundo escuro; narration_paths[i]=None vira silêncio naquela cena."""
     work = Path(output_path).parent
     stem = Path(output_path).stem
     norm: list[str] = []
+    narr_segs: list[str] = []
     total = sum(float(s.get("duration", 3)) for s in scenes)
+    has_narr = bool(narration_paths and any(narration_paths))
     cleanup: list[str] = []
     try:
         for i, (src, sc) in enumerate(zip(scene_paths, scenes)):
@@ -298,6 +302,20 @@ def render_viral(scene_paths: list[str | None], scenes: list[dict],
             norm.append(n)
             cleanup.append(n)
 
+            if has_narr:
+                seg = str(work / f"_na_{i}_{stem}.wav")
+                na = narration_paths[i] if narration_paths else None
+                if na:
+                    # narração + silêncio até o fim da cena (alinha com o vídeo)
+                    _run(["-i", na, "-af", "apad", "-t", f"{dur:.3f}",
+                          "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", seg])
+                else:
+                    _run(["-f", "lavfi",
+                          "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                          "-t", f"{dur:.3f}", "-c:a", "pcm_s16le", seg])
+                narr_segs.append(seg)
+                cleanup.append(seg)
+
         list_file = work / f"_vcat_{stem}.txt"
         list_file.write_text("".join(f"file '{p}'\n" for p in norm))
         cleanup.append(str(list_file))
@@ -305,24 +323,52 @@ def render_viral(scene_paths: list[str | None], scenes: list[dict],
         cleanup.append(silent)
         _run(["-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", silent])
 
+        narr_wav = None
+        if has_narr:
+            nlist = work / f"_nacat_{stem}.txt"
+            nlist.write_text("".join(f"file '{p}'\n" for p in narr_segs))
+            cleanup.append(str(nlist))
+            narr_wav = str(work / f"_narr_{stem}.wav")
+            cleanup.append(narr_wav)
+            _run(["-f", "concat", "-safe", "0", "-i", str(nlist), "-c", "copy", narr_wav])
+
         ass = str(work / f"_v_{stem}.ass")
         cleanup.append(ass)
         build_viral_ass(scenes, width, height, ass)
 
         sub = f"subtitles=f='{ass}':fontsdir='{FONTS_DIR}'"
-        args = ["-i", silent]
+        fade_st = max(0.0, total - 2)
+
+        inputs = ["-i", silent]
+        idx = 1
+        narr_idx = music_idx = None
+        if narr_wav:
+            inputs += ["-i", narr_wav]
+            narr_idx = idx
+            idx += 1
         if music_path:
-            args += ["-stream_loop", "-1", "-i", music_path]
-        args += ["-vf", sub]
-        if music_path:
-            fade_st = max(0.0, total - 2)
-            args += [
-                "-map", "0:v", "-map", "1:a",
-                "-af", f"volume=0.28,afade=t=out:st={fade_st:.2f}:d=2",
-                "-shortest", "-c:a", "aac", "-b:a", "128k",
-            ]
-        else:
-            args += ["-map", "0:v"]
+            inputs += ["-stream_loop", "-1", "-i", music_path]
+            music_idx = idx
+            idx += 1
+
+        parts = [f"[0:v]{sub}[v]"]
+        audio_label = None
+        if narr_idx is not None and music_idx is not None:
+            parts.append(f"[{narr_idx}:a]volume=1.0,aresample=44100[na]")
+            parts.append(f"[{music_idx}:a]volume=0.12,"
+                         f"afade=t=out:st={fade_st:.2f}:d=2,aresample=44100[ma]")
+            parts.append("[na][ma]amix=inputs=2:duration=first:dropout_transition=0[a]")
+            audio_label = "[a]"
+        elif narr_idx is not None:
+            parts.append(f"[{narr_idx}:a]volume=1.0[a]")
+            audio_label = "[a]"
+        elif music_idx is not None:
+            parts.append(f"[{music_idx}:a]volume=0.28,afade=t=out:st={fade_st:.2f}:d=2[a]")
+            audio_label = "[a]"
+
+        args = [*inputs, "-filter_complex", ";".join(parts), "-map", "[v]"]
+        if audio_label:
+            args += ["-map", audio_label, "-c:a", "aac", "-b:a", "128k", "-shortest"]
         args += ["-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
                  "-movflags", "+faststart", output_path]
         _run_with_progress(args, total, on_progress)

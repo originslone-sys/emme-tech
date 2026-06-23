@@ -6,6 +6,7 @@ RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 ENHANCE_ENDPOINT = os.getenv("RUNPOD_ENHANCE_ENDPOINT", "")
 WHISPER_ENDPOINT = os.getenv("RUNPOD_WHISPER_ENDPOINT", "")
 RENDER_ENDPOINT = os.getenv("RUNPOD_RENDER_ENDPOINT", "")
+TTS_ENDPOINT = os.getenv("RUNPOD_TTS_ENDPOINT", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
 BASE_URL = "https://api.runpod.ai/v2"
 
@@ -40,8 +41,8 @@ async def submit_render_job(scenes: list[dict], width: int, height: int,
                             music_url: str = "") -> str:
     """Envia a montagem do vídeo viral para o worker de render na GPU.
 
-    scenes: [{video_url, duration, text}] — o worker baixa, corta, concatena,
-    legenda e mixa a música, devolvendo o vídeo final.
+    scenes: [{video_url, duration, text, narration_url}] — o worker baixa,
+    corta, concatena, legenda, mixa narração + música e devolve o vídeo final.
     """
     payload = {
         "input": {
@@ -54,6 +55,26 @@ async def submit_render_job(scenes: list[dict], width: int, height: int,
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{BASE_URL}/{RENDER_ENDPOINT}/run",
+            json=payload,
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
+
+
+async def submit_tts_job(texts: list[str], language: str, voice: str) -> str:
+    """Envia as narrações para o worker de TTS (XTTS) e retorna o job id."""
+    payload = {
+        "input": {
+            "texts": texts,
+            "language": language,
+            "voice": voice,
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{BASE_URL}/{TTS_ENDPOINT}/run",
             json=payload,
             headers={**_HEADERS, "Content-Type": "application/json"},
             timeout=60,

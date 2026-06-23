@@ -33,7 +33,8 @@ No painel do RunPod:
 {
   "input": {
     "scenes": [
-      {"video_url": "https://.../clip.mp4", "duration": 3.0, "text": "TEXTO NA TELA"}
+      {"video_url": "https://.../clip.mp4", "duration": 3.0,
+       "text": "TEXTO NA TELA", "narration_url": "https://.../narr.wav"}
     ],
     "width": 1080,
     "height": 1920,
@@ -43,8 +44,10 @@ No painel do RunPod:
 ```
 
 - `video_url` vazio em uma cena → fundo escuro com a legenda (fallback).
-- `music_url` precisa ser uma URL pública (o áudio enviado pelo usuário é
-  servido pelo backend em `/files/uploads/...`).
+- `narration_url` (opcional) é a narração da cena; a música fica abafada
+  (volume baixo) quando há narração.
+- `narration_url` e `music_url` precisam ser URLs públicas (o áudio gerado/
+  enviado é servido pelo backend em `/files/uploads/...`).
 
 **Output**
 
