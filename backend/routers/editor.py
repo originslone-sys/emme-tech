@@ -14,23 +14,49 @@ def _new_video_path() -> tuple[str, str]:
     return vid, str(storage.DIRS["videos"] / f"{vid}.mp4")
 
 
-# ---------- Melhoria de qualidade (RunPod / GPU) ----------
+# ---------- Edição completa num único passe ----------
 
-@router.post("/enhance")
-async def enhance_video(
+@router.post("/process")
+async def process_video(
     video: UploadFile = File(...),
-    scale: int = Form(2),
+    trim_start: float = Form(0.0),
+    trim_end: float = Form(0.0),      # 0 = até o fim
+    brightness: float = Form(0.0),
+    contrast: float = Form(1.0),
+    saturation: float = Form(1.0),
+    upscale: int = Form(0),           # 0 = não, 2 ou 4 = fator de upscaling
 ):
-    video_path = await storage.save_upload_temp(video)
-    job_id = await runpod.submit_enhance_job(video_path, scale)
-
+    src = await storage.save_upload_temp(video)
+    label = f"{Path(video.filename).stem} (editado)"
     output_id, output_path = _new_video_path()
-    storage.save_job(job_id, runpod.ENHANCE_ENDPOINT, "enhance", {
-        "output_id": output_id,
-        "output_path": output_path,
-        "label": f"{Path(video.filename).stem} (melhorado)",
-    })
-    return {"job_id": job_id, "status": "processing"}
+
+    try:
+        if upscale:
+            # Estágio 1: corte + iluminação localmente, salvando num arquivo
+            # público para o RunPod baixar. Estágio 2: upscaling na GPU.
+            interm_path = str(storage.DIRS["uploads"] / f"{uuid.uuid4()}.mp4")
+            await run_in_threadpool(
+                ffmpeg.process, src, interm_path,
+                trim_start, trim_end, brightness, contrast, saturation,
+            )
+            job_id = await runpod.submit_enhance_job(interm_path, upscale)
+            storage.save_job(job_id, runpod.ENHANCE_ENDPOINT, "process", {
+                "output_id": output_id,
+                "output_path": output_path,
+                "label": label,
+            })
+            return {"job_id": job_id, "status": "processing", "video_id": None}
+
+        # Sem upscaling: tudo num único passe local, resultado imediato.
+        await run_in_threadpool(
+            ffmpeg.process, src, output_path,
+            trim_start, trim_end, brightness, contrast, saturation,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Falha ao processar: {e}")
+
+    storage.add_video(output_id, output_path, label)
+    return {"job_id": None, "status": "COMPLETED", "video_id": output_id}
 
 
 @router.get("/jobs/{job_id}")
@@ -65,28 +91,6 @@ async def get_status(job_id: str):
     return {"job_id": job_id, "status": status, "video_id": None, "error": None}
 
 
-# ---------- Corte (FFmpeg / síncrono) ----------
-
-@router.post("/trim")
-async def trim_video(
-    video: UploadFile = File(...),
-    start: float = Form(...),
-    end: float = Form(...),
-):
-    if end <= start:
-        raise HTTPException(400, "O fim deve ser maior que o início")
-
-    src = await storage.save_upload_temp(video)
-    output_id, output_path = _new_video_path()
-    try:
-        await run_in_threadpool(ffmpeg.trim, src, output_path, start, end)
-    except Exception as e:
-        raise HTTPException(500, f"Falha ao cortar: {e}")
-
-    storage.add_video(output_id, output_path, f"{Path(video.filename).stem} (corte)")
-    return {"video_id": output_id, "status": "COMPLETED"}
-
-
 # ---------- Linha do tempo / juntar (FFmpeg) ----------
 
 @router.post("/join")
@@ -103,33 +107,3 @@ async def join_videos(videos: List[UploadFile] = File(...)):
 
     storage.add_video(output_id, output_path, "Vídeos unidos")
     return {"video_id": output_id, "status": "COMPLETED"}
-
-
-# ---------- Ajuste de iluminação (FFmpeg) ----------
-
-@router.post("/adjust")
-async def adjust_video(
-    video: UploadFile = File(...),
-    brightness: float = Form(0.0),
-    contrast: float = Form(1.0),
-    saturation: float = Form(1.0),
-):
-    src = await storage.save_upload_temp(video)
-    output_id, output_path = _new_video_path()
-    try:
-        await run_in_threadpool(ffmpeg.adjust, src, output_path,
-                                brightness, contrast, saturation)
-    except Exception as e:
-        raise HTTPException(500, f"Falha ao ajustar: {e}")
-
-    storage.add_video(output_id, output_path, f"{Path(video.filename).stem} (ajustado)")
-    return {"video_id": output_id, "status": "COMPLETED"}
-
-
-# ---------- Duração (utilitário para o frontend) ----------
-
-@router.post("/duration")
-async def video_duration(video: UploadFile = File(...)):
-    src = await storage.save_upload_temp(video)
-    duration = await run_in_threadpool(ffmpeg.probe_duration, src)
-    return {"duration": duration}
