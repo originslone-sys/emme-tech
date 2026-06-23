@@ -56,9 +56,38 @@ async def _render_on_runpod(scene_urls: list[str | None], scenes: list[dict],
     raise RuntimeError("Tempo esgotado no render da GPU")
 
 
+async def _resolve_music(job_id: str, mood: str, music_path: str | None,
+                         music_source: str) -> str | None:
+    """Decide a trilha conforme a opção escolhida no app.
+
+    - upload tem prioridade absoluta (music_path)
+    - "generate": gera nova faixa via Eleven Music e salva na biblioteca
+    - "library": usa uma faixa já existente na biblioteca
+    - "none": sem música
+    """
+    if music_path:
+        return music_path
+    if music_source == "none":
+        return None
+    if music_source == "generate":
+        storage.update_job(job_id, {"stage": "music"})
+        try:
+            track = await music.generate(mood)
+            if track:
+                return track
+        except Exception as e:
+            log.exception("Eleven Music falhou")
+            storage.update_job(job_id, {"warning_music":
+                f"Geração de música falhou, tentando a biblioteca: {e}"})
+        return music.pick(mood)  # fallback se a geração falhar
+    # "library" (ou padrão)
+    return music.pick(mood)
+
+
 async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                        language: str, music_path: str | None = None,
-                       narration: bool = True, voice: str = "feminina"):
+                       narration: bool = True, voice: str = "feminina",
+                       music_source: str = "library"):
     try:
         width, height = DIMENSIONS.get(fmt, DIMENSIONS["9:16"])
 
@@ -98,11 +127,17 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
         output_id = str(uuid.uuid4())
         output_path = str(storage.DIRS["videos"] / f"{output_id}.mp4")
 
-        # 4. Render — GPU no RunPod se configurado, senão local
+        # 4. Trilha sonora (pode gerar via Eleven Music e salvar na biblioteca)
+        track = await _resolve_music(job_id, script["music_mood"], music_path, music_source)
+        if not track and music_source != "none":
+            storage.update_job(job_id, {"warning_music":
+                "Sem trilha: a biblioteca de músicas está vazia. Gere uma faixa ou envie a sua."})
+
+        # 5. Render — GPU no RunPod se configurado, senão local
         storage.update_job(job_id, {"stage": "rendering", "percent": 0})
 
         if runpod.RENDER_ENDPOINT:
-            music_url = runpod.file_to_url(music_path) if music_path else ""
+            music_url = runpod.file_to_url(track) if track else ""
             await _render_on_runpod(scene_urls, scenes, narr, width, height,
                                     music_url, output_path)
         else:
@@ -118,10 +153,6 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                 except Exception:
                     local_paths.append(None)
 
-            track = music_path or music.pick(script["music_mood"])
-            if not track:
-                storage.update_job(job_id, {"warning_music":
-                    "Sem trilha: a biblioteca de músicas está vazia e nenhuma foi enviada."})
             narr_paths = [n["path"] if n else None for n in narr] if narr else None
 
             def on_progress(pct: int):
@@ -135,7 +166,7 @@ async def run_pipeline(job_id: str, topic: str, fmt: str, duration: int,
                 if p:
                     Path(p).unlink(missing_ok=True)
 
-        # 5. Salva na biblioteca
+        # 6. Salva na biblioteca
         storage.add_video(output_id, output_path, script["title"], meta={
             "kind": "viral",
             "title": script["title"],

@@ -10,8 +10,11 @@ const STAGES: Record<string, string> = {
   scripting: 'Criando o roteiro viral com IA...',
   narrating: 'Gerando a narração por voz...',
   fetching: 'Buscando as cenas no Pexels...',
+  music: 'Compondo a trilha sonora com IA...',
   rendering: 'Montando o vídeo...',
 }
+
+type MusicSource = 'generate' | 'library' | 'none'
 
 const FORMATS = [
   { id: '9:16', label: 'Vertical', sub: 'TikTok / Reels / Shorts' },
@@ -29,6 +32,7 @@ export default function GerarPage() {
   const [narration, setNarration] = useState(true)
   const [voice, setVoice] = useState<'feminina' | 'masculina'>('feminina')
   const [music, setMusic] = useState<File | null>(null)
+  const [musicSource, setMusicSource] = useState<MusicSource>('generate')
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0, percent: 0 })
@@ -49,6 +53,7 @@ export default function GerarPage() {
     form.append('language', language)
     form.append('narration', narration ? '1' : '0')
     form.append('voice', voice)
+    form.append('music_source', musicSource)
     if (music) form.append('music', music)
 
     try {
@@ -171,7 +176,34 @@ export default function GerarPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-white/60 mb-2">Música (opcional)</label>
+          <label className="block text-sm font-medium text-white/60 mb-2">Trilha sonora</label>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {([
+              ['generate', 'Gerar com IA', 'faixa nova'],
+              ['library', 'Da biblioteca', 'reaproveita'],
+              ['none', 'Sem música', 'só narração'],
+            ] as const).map(([id, label, sub]) => (
+              <button key={id} onClick={() => { setMusicSource(id); if (id !== 'generate') setMusic(null) }}
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-colors ${
+                  musicSource === id && !music ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                }`}>
+                {label}
+                <span className="block text-[10px] opacity-60 font-normal">{sub}</span>
+              </button>
+            ))}
+          </div>
+
+          {musicSource === 'generate' && (
+            <p className="text-white/30 text-[11px] mb-2">
+              A IA compõe uma trilha única no clima do vídeo e salva na biblioteca pra reusar depois. Consome créditos do ElevenLabs.
+            </p>
+          )}
+          {musicSource === 'library' && (
+            <p className="text-white/30 text-[11px] mb-2">
+              Usa uma trilha já existente na biblioteca (sem custo). Se estiver vazia, o vídeo sai sem música.
+            </p>
+          )}
+
           <input ref={musicInput} type="file" accept="audio/*" className="hidden"
             onChange={(e) => e.target.files?.[0] && setMusic(e.target.files[0])} />
           {music ? (
@@ -182,8 +214,8 @@ export default function GerarPage() {
             </div>
           ) : (
             <button onClick={() => musicInput.current?.click()}
-              className="w-full border-2 border-dashed border-white/15 hover:border-violet-500/40 rounded-lg py-3 text-white/30 text-xs transition-colors">
-              Enviar uma trilha sua, ou deixe a IA escolher pelo clima do vídeo
+              className="w-full border-2 border-dashed border-white/15 hover:border-violet-500/40 rounded-lg py-2.5 text-white/30 text-xs transition-colors">
+              ou envie uma trilha sua (.mp3)
             </button>
           )}
         </div>

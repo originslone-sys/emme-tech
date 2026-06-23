@@ -18,6 +18,7 @@ async def generate_viral(
     language: str = Form("Português"),
     narration: int = Form(1),
     voice: str = Form("feminina"),
+    music_source: str = Form("library"),
     music: Optional[UploadFile] = File(None),
 ):
     topic = topic.strip()
@@ -27,10 +28,13 @@ async def generate_viral(
         fmt = "9:16"
     duration = max(10, min(duration, 90))
     voice = voice if voice in ("feminina", "masculina") else "feminina"
+    if music_source not in ("generate", "library", "none"):
+        music_source = "library"
 
     music_path = None
     if music:
         music_path = await storage.save_upload_temp(music)
+        music_source = "upload"  # arquivo enviado tem prioridade
 
     job_id = str(uuid.uuid4())
     endpoint = runpod.RENDER_ENDPOINT or "local"
@@ -38,7 +42,7 @@ async def generate_viral(
 
     asyncio.create_task(viral.run_pipeline(
         job_id, topic, fmt, duration, language, music_path,
-        narration=bool(narration), voice=voice,
+        narration=bool(narration), voice=voice, music_source=music_source,
     ))
 
     return {"job_id": job_id, "status": "processing"}
