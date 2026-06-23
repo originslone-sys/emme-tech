@@ -17,6 +17,8 @@ def download(url: str) -> str:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "geo_bypass": True,
+        "geo_bypass_country": "BR",
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.extract_info(url, download=True)
