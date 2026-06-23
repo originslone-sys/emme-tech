@@ -36,7 +36,12 @@ async def synthesize_scenes(narrations: list[str], language: str,
     if runpod.TTS_ENDPOINT:
         return await _via_runpod(narrations, lang, voice)
     if ELEVENLABS_API_KEY:
-        return await _via_elevenlabs(narrations, voice)
+        try:
+            return await _via_elevenlabs(narrations, voice)
+        except Exception as e:
+            # ElevenLabs indisponível (402/quota/abuso) → não deixa o vídeo
+            # sem voz: cai para o gTTS gratuito.
+            print(f"[tts] ElevenLabs falhou, usando gTTS: {e}")
     return await asyncio.to_thread(_via_gtts, narrations, lang)
 
 
@@ -99,7 +104,11 @@ async def _via_elevenlabs(narrations: list[str], voice: str) -> list[dict | None
                 },
             }
             resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                detail = resp.text[:300]
+                raise RuntimeError(
+                    f"ElevenLabs {resp.status_code}: {detail}"
+                )
             path = str(storage.DIRS["uploads"] / f"narr_{uuid.uuid4()}.mp3")
             with open(path, "wb") as f:
                 f.write(resp.content)
