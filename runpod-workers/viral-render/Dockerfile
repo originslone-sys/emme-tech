@@ -13,9 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Caminhos a partir da RAIZ do repositório (contexto de build do RunPod/GitHub).
+# Para build manual, rode a partir da raiz com:
+#   docker build -f runpod-workers/viral-render/Dockerfile -t SEU_USUARIO/emme-viral-render .
+COPY runpod-workers/viral-render/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-COPY handler.py .
+COPY runpod-workers/viral-render/handler.py .
 
 CMD ["python3", "-u", "handler.py"]
