@@ -158,9 +158,25 @@ def _ass_escape(text: str) -> str:
     return text.replace("\n", " ").replace("{", "(").replace("}", ")").strip().upper()
 
 
+def banner_overlay_height(banner_path: str, video_width: int = 1080) -> int:
+    """Altura que o banner terá ao ser escalado para a largura do vídeo."""
+    try:
+        with Image.open(banner_path) as im:
+            w, h = im.size
+        if w <= 0:
+            return 0
+        return round(video_width * h / w)
+    except Exception:
+        return 0
+
+
 def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_path: str,
-              clip_title: str | None = None):
-    """Gera um arquivo .ass com legenda no rodapé e título fixo opcional no topo."""
+              clip_title: str | None = None, sub_margin_v: int = 120):
+    """Gera um arquivo .ass com legenda no rodapé e título fixo opcional no topo.
+
+    sub_margin_v: distância da legenda até o rodapé (px) — sobe a legenda quando
+    há um banner embaixo, para não sobrepor.
+    """
     dur = clip_end - clip_start
     header = (
         "[Script Info]\n"
@@ -173,8 +189,8 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         # Alignment=2 = bottom-center; MarginV do rodapé
-        "Style: Sub,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
-        "-1,0,0,0,100,100,0,0,1,4,2,2,80,80,120,1\n"
+        f"Style: Sub,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
+        f"-1,0,0,0,100,100,0,0,1,4,2,2,80,80,{sub_margin_v},1\n"
         # Alignment=8 = top-center; MarginV do topo
         "Style: Title,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&HB4000000,"
         "-1,0,0,0,100,100,0,0,1,4,2,8,80,80,100,1\n\n"
@@ -224,7 +240,7 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
     )
     last = "base"
     if banner_idx is not None:
-        fc += f";[{banner_idx}:v]scale=1080:-1[ban];[base][ban]overlay=(W-w)/2:0[bn]"
+        fc += f";[{banner_idx}:v]scale=1080:-1[ban];[base][ban]overlay=(W-w)/2:H-h[bn]"
         last = "bn"
 
     video_filters = sub
