@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pathlib import Path
 from typing import List
+import asyncio
 import uuid
 
 from services import storage, runpod, ffmpeg
@@ -111,14 +112,47 @@ async def join_videos(videos: List[UploadFile] = File(...)):
 
 # ---------- Originalizar (repostagem em outras redes) ----------
 
+async def _run_spin(job_id: str, src: str, output_id: str, output_path: str, label: str):
+    try:
+        def on_progress(pct: int):
+            storage.update_job(job_id, {"percent": pct})
+
+        storage.update_job(job_id, {"stage": "processing", "percent": 0})
+        await asyncio.to_thread(ffmpeg.spin, src, output_path, on_progress)
+        storage.add_video(output_id, output_path, label, meta={"kind": "repost"})
+        storage.update_job(job_id, {"stage": "completed", "percent": 100,
+                                    "video_id": output_id})
+    except Exception as e:
+        storage.update_job(job_id, {"stage": "failed", "error": str(e)})
+
+
 @router.post("/spin")
 async def spin_video(video: UploadFile = File(...)):
     src = await storage.save_upload_temp(video)
     output_id, output_path = _new_video_path()
-    try:
-        await run_in_threadpool(ffmpeg.spin, src, output_path)
-    except Exception as e:
-        raise HTTPException(500, f"Falha ao originalizar: {e}")
+    label = f"{Path(video.filename).stem} (repost)"
 
-    storage.add_video(output_id, output_path, f"{Path(video.filename).stem} (repost)")
-    return {"video_id": output_id, "status": "COMPLETED"}
+    job_id = str(uuid.uuid4())
+    storage.save_job(job_id, "ffmpeg", "spin", {"stage": "starting", "percent": 0})
+    asyncio.create_task(_run_spin(job_id, src, output_id, output_path, label))
+
+    return {"job_id": job_id, "status": "processing"}
+
+
+@router.get("/local-jobs/{job_id}")
+async def get_local_job(job_id: str):
+    job = storage.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    meta = job["meta"]
+    stage = meta.get("stage", "starting")
+
+    if stage == "failed":
+        return {"status": "FAILED", "stage": stage, "percent": meta.get("percent", 0),
+                "video_id": None, "error": meta.get("error")}
+    if stage == "completed":
+        return {"status": "COMPLETED", "stage": stage, "percent": 100,
+                "video_id": meta.get("video_id"), "error": None}
+    return {"status": "processing", "stage": stage,
+            "percent": meta.get("percent", 0), "video_id": None, "error": None}

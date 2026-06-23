@@ -2,6 +2,7 @@ import subprocess
 import random
 import os
 import json
+import tempfile
 from pathlib import Path
 
 import imageio_ffmpeg
@@ -20,6 +21,28 @@ def _run(args: list[str]):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-2000:] or "Falha no ffmpeg")
+
+
+def _run_with_progress(args: list[str], total_duration: float, on_progress=None):
+    """Executa o ffmpeg reportando progresso (0–99%) via callback on_progress(pct)."""
+    cmd = [_ffmpeg_bin(), "-y", *args, "-progress", "pipe:1", "-nostats"]
+    # stderr vai para arquivo temporário para não travar o pipe em encodes longos
+    with tempfile.TemporaryFile(mode="w+") as errf:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errf, text=True)
+        for line in proc.stdout:
+            line = line.strip()
+            if line.startswith("out_time_us=") and total_duration > 0 and on_progress:
+                try:
+                    us = int(line.split("=")[1])
+                    pct = min(99, int((us / 1_000_000) / total_duration * 100))
+                    on_progress(pct)
+                except ValueError:
+                    pass
+        proc.wait()
+        errf.seek(0)
+        stderr = errf.read()
+    if proc.returncode != 0:
+        raise RuntimeError(stderr[-2000:] or "Falha no ffmpeg")
 
 
 def probe_duration(path: str) -> float:
@@ -210,7 +233,14 @@ def _make_logo(size: int, tmp_dir: str) -> str:
     return logo_path
 
 
-def spin(input_path: str, output_path: str):
+def has_audio(path: str) -> bool:
+    """Verifica se o arquivo tem faixa de áudio."""
+    cmd = [_ffmpeg_bin(), "-i", path]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    return "Audio:" in proc.stderr
+
+
+def spin(input_path: str, output_path: str, on_progress=None):
     """Aplica transformações aleatórias leves para tornar o vídeo único nas plataformas.
 
     - Crop leve nas bordas (1–5%)
@@ -225,13 +255,20 @@ def spin(input_path: str, output_path: str):
     tmp_dir = str(Path(input_path).parent)
     logo_size = random.randint(20, 50)
     logo_path = _make_logo(logo_size, tmp_dir)
+    total_duration = probe_duration(input_path)
+    audio_present = has_audio(input_path)
 
     try:
         crop_l = random.uniform(0.01, 0.05)
         crop_r = random.uniform(0.01, 0.05)
         crop_t = random.uniform(0.01, 0.05)
         crop_b = random.uniform(0.01, 0.05)
-        crop = f"crop=iw*(1-{crop_l+crop_r:.4f}):ih*(1-{crop_t+crop_b:.4f}):iw*{crop_l:.4f}:ih*{crop_t:.4f}"
+        # floor para dimensões pares — exigência do H.265/H.264 (yuv420p)
+        crop = (
+            f"crop=w=floor(iw*(1-{crop_l+crop_r:.4f})/2)*2:"
+            f"h=floor(ih*(1-{crop_t+crop_b:.4f})/2)*2:"
+            f"x=iw*{crop_l:.4f}:y=ih*{crop_t:.4f}"
+        )
 
         hflip = ",hflip" if random.random() < 0.5 else ""
         speed = round(random.uniform(0.97, 1.03), 4)
@@ -254,29 +291,33 @@ def spin(input_path: str, output_path: str):
         logo_x = random.randint(10, 30)
         logo_y = random.randint(10, 30)
         crf = random.randint(23, 28)
-        audio_filters = f"atempo={speed:.4f}"
 
         # filter_complex explícito: video pipeline → overlay logo
         fc = (
             f"[0:v]{crop}{hflip},{setpts},{eq},{noise},{fps_filter}[base];"
             f"[1:v]scale={logo_size}:{logo_size}[logo];"
-            f"[base][logo]overlay=W-w-{logo_x}:H-h-{logo_y}[v];"
-            f"[0:a]{audio_filters}[a]"
+            f"[base][logo]overlay=W-w-{logo_x}:H-h-{logo_y}[v]"
         )
+        maps = ["-map", "[v]"]
+        if audio_present:
+            fc += f";[0:a]atempo={speed:.4f}[a]"
+            maps += ["-map", "[a]"]
 
-        _run([
+        args = [
+            "-nostdin",
             "-i", input_path,
             "-loop", "1", "-i", logo_path,
             "-filter_complex", fc,
-            "-map", "[v]",
-            "-map", "[a]",
+            *maps,
             "-c:v", "libx265",
             "-crf", str(crf),
-            "-preset", "medium",
+            "-preset", "fast",
             "-c:a", "aac",
             "-b:a", "128k",
             "-movflags", "+faststart",
+            "-shortest",
             output_path,
-        ])
+        ]
+        _run_with_progress(args, total_duration, on_progress)
     finally:
         Path(logo_path).unlink(missing_ok=True)

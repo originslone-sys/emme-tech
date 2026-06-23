@@ -9,26 +9,42 @@ const API = process.env.NEXT_PUBLIC_API_URL || ''
 export default function RepostarPage() {
   const [video, setVideo] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  const [percent, setPercent] = useState(0)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async () => {
     if (!video) return setError('Selecione um vídeo')
-    setError(''); setDone(false); setLoading(true)
+    setError(''); setDone(false); setLoading(true); setPercent(0)
 
     const form = new FormData()
     form.append('video', video)
 
     try {
       const res = await fetch(`${API}/api/editor/spin`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error()
-      setDone(true)
-      setVideo(null)
-    } catch {
-      setError('Erro ao processar. Tente novamente.')
-    } finally {
+      if (!res.ok) throw new Error(`Servidor retornou ${res.status}`)
+      const data = await res.json()
+      poll(data.job_id)
+    } catch (e) {
+      setError(`Erro ao enviar: ${e instanceof Error ? e.message : 'falha de conexão'}`)
       setLoading(false)
     }
+  }
+
+  const poll = (id: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/editor/local-jobs/${id}`)
+        const data = await res.json()
+        setPercent(data.percent || 0)
+        if (data.status === 'COMPLETED') {
+          clearInterval(interval); setLoading(false); setDone(true); setVideo(null)
+        } else if (data.status === 'FAILED') {
+          clearInterval(interval); setLoading(false)
+          setError(data.error || 'Processamento falhou.')
+        }
+      } catch { /* continua tentando */ }
+    }, 1500)
   }
 
   return (
@@ -66,12 +82,20 @@ export default function RepostarPage() {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm mb-4">{error}</div>
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 mb-4">
+          <p className="text-red-400 text-sm font-medium mb-1">Falha no processamento</p>
+          <pre className="text-red-300/70 text-xs whitespace-pre-wrap break-words max-h-40 overflow-auto font-mono">{error}</pre>
+        </div>
       )}
       {loading && (
-        <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 text-violet-400 text-sm flex items-center gap-3 mb-4">
-          <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
-          Processando... (pode levar alguns minutos em H.265)
+        <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 mb-4">
+          <div className="flex items-center gap-3 text-violet-400 text-sm mb-2">
+            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            {percent > 0 ? `Originalizando vídeo... ${percent}%` : 'Iniciando...'}
+          </div>
+          <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+            <div className="bg-violet-500 h-full transition-all duration-500" style={{ width: `${percent}%` }} />
+          </div>
         </div>
       )}
       {done && (
