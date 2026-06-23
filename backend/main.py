@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
 
 from routers import generate, animate, library
-from services.storage import init_storage
+from services.storage import init_storage, DIRS
 
 
 @asynccontextmanager
@@ -26,6 +27,11 @@ app.add_middleware(
 app.include_router(generate.router, prefix="/api/generate", tags=["generate"])
 app.include_router(animate.router, prefix="/api/animate", tags=["animate"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
+
+
+@app.on_event("startup")
+async def mount_static():
+    app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
 
 
 @app.get("/health")
