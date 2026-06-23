@@ -18,8 +18,10 @@ WORKDIR /app
 COPY runpod-workers/viral-tts/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pré-baixa o modelo XTTS-v2 para a imagem (evita download no primeiro job)
-RUN python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"
+# Pré-baixa os arquivos do modelo XTTS-v2 para a imagem (evita download no
+# primeiro job). Usa o ModelManager para só BAIXAR — não carrega/instancia o
+# modelo, que exigiria GPU (a máquina de build do RunPod não tem GPU).
+RUN python -c "from TTS.utils.manage import ModelManager; ModelManager().download_model('tts_models/multilingual/multi-dataset/xtts_v2')"
 
 COPY runpod-workers/viral-tts/handler.py .
 
