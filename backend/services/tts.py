@@ -92,16 +92,13 @@ async def _via_elevenlabs(narrations: list[str], voice: str) -> list[dict | None
                 "text": text,
                 "model_id": _EL_MODEL,
                 "voice_settings": {
-                    "stability": 0.40,          # mais expressiva, menos robótica
+                    "stability": 0.40,
                     "similarity_boost": 0.85,
-                    "style": 0.35,              # entonação dinâmica p/ social media
-                    "use_speaker_boost": True,  # mais clareza e presença
+                    "style": 0.35,
+                    "use_speaker_boost": True,
                 },
             }
-            resp = await client.post(
-                url, json=payload, headers=headers,
-                params={"output_format": "mp3_44100_128"},  # áudio em alta qualidade
-            )
+            resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             path = str(storage.DIRS["uploads"] / f"narr_{uuid.uuid4()}.mp3")
             with open(path, "wb") as f:
