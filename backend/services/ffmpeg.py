@@ -30,18 +30,24 @@ def probe_duration(path: str) -> float:
     return 0.0
 
 
-def trim(input_path: str, output_path: str, start: float, end: float):
-    """Corta o trecho entre start e end (segundos), recodificando para corte preciso."""
-    duration = max(0.0, end - start)
-    _run([
-        "-ss", str(start),
-        "-i", input_path,
-        "-t", str(duration),
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-c:a", "aac",
-        output_path,
-    ])
+def process(input_path: str, output_path: str, start: float = 0.0, end: float = 0.0,
+            brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0):
+    """Aplica corte + ajuste de iluminação num único passe de codificação.
+
+    start/end em segundos (end=0 significa até o fim do vídeo).
+    """
+    args = []
+    if start > 0:
+        args += ["-ss", str(start)]
+    args += ["-i", input_path]
+    if end > 0:
+        args += ["-t", str(max(0.0, end - start))]
+
+    if brightness != 0.0 or contrast != 1.0 or saturation != 1.0:
+        args += ["-vf", f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}"]
+
+    args += ["-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_path]
+    _run(args)
 
 
 def join(input_paths: list[str], output_path: str):
@@ -78,19 +84,6 @@ def join(input_paths: list[str], output_path: str):
         list_file.unlink(missing_ok=True)
         for p in normalized:
             Path(p).unlink(missing_ok=True)
-
-
-def adjust(input_path: str, output_path: str, brightness: float = 0.0,
-           contrast: float = 1.0, saturation: float = 1.0):
-    """Ajusta brilho (-1 a 1), contraste (0 a 3) e saturação (0 a 3)."""
-    _run([
-        "-i", input_path,
-        "-vf", f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}",
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-c:a", "copy",
-        output_path,
-    ])
 
 
 def thumbnail(input_path: str, output_path: str, at: float = 0.0):

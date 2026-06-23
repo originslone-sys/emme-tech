@@ -2,28 +2,16 @@ import Link from 'next/link'
 
 const cards = [
   {
-    href: '/melhorar',
-    icon: '✨',
-    title: 'Melhorar Qualidade',
-    description: 'Aumente a resolução, nitidez e reduza ruído de vídeos de baixa qualidade com IA.',
-  },
-  {
-    href: '/cortar',
-    icon: '✂️',
-    title: 'Cortar',
-    description: 'Remova as partes que você não quer, escolhendo o início e o fim do trecho.',
+    href: '/editar',
+    icon: '🎬',
+    title: 'Editar Vídeo',
+    description: 'Corte, ajuste a iluminação e melhore a qualidade — tudo de uma vez e exporte num clique.',
   },
   {
     href: '/juntar',
     icon: '🎞️',
     title: 'Juntar Vídeos',
     description: 'Monte uma linha do tempo unindo vários vídeos em sequência.',
-  },
-  {
-    href: '/ajustar',
-    icon: '💡',
-    title: 'Iluminação',
-    description: 'Ajuste brilho, contraste e saturação para melhorar a aparência do vídeo.',
   },
   {
     href: '/biblioteca',
