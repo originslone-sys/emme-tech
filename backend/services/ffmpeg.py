@@ -268,10 +268,24 @@ def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: st
     Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _drawtext_watermark(text: str, width: int, height: int) -> str:
+    """Retorna o filtro drawtext para a marca d'água centralizada."""
+    escaped = text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:").strip()
+    fontfile = FONTS_DIR / "DejaVuSans-Bold.ttf"
+    fontsize = max(28, round(height / 28))
+    ff = f"fontfile='{fontfile}':" if fontfile.exists() else ""
+    return (
+        f"drawtext={ff}text='{escaped}':fontsize={fontsize}:"
+        f"fontcolor=white@0.30:x=(w-text_w)/2:y=(h-text_h)/2:"
+        f"shadowcolor=black@0.25:shadowx=2:shadowy=2"
+    )
+
+
 def render_viral(scene_paths: list[str | None], scenes: list[dict],
                  width: int, height: int, music_path: str | None,
                  output_path: str, on_progress=None,
-                 narration_paths: list[str | None] | None = None):
+                 narration_paths: list[str | None] | None = None,
+                 channel_name: str | None = None):
     """Monta o vídeo viral: normaliza cada cena, concatena, queima legendas e
     mixa narração (volume cheio) + música (abafada). scene_paths[i]=None vira
     um fundo escuro; narration_paths[i]=None vira silêncio naquela cena."""
@@ -352,7 +366,10 @@ def render_viral(scene_paths: list[str | None], scenes: list[dict],
             music_idx = idx
             idx += 1
 
-        parts = [f"[0:v]{sub}[v]"]
+        video_filters = sub
+        if channel_name and channel_name.strip():
+            video_filters += "," + _drawtext_watermark(channel_name, width, height)
+        parts = [f"[0:v]{video_filters}[v]"]
         audio_label = None
         if narr_idx is not None and music_idx is not None:
             parts.append(f"[{narr_idx}:a]volume=1.0,aresample=44100[na]")
