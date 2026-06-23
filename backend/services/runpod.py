@@ -44,12 +44,14 @@ async def submit_animate_job(image_path: str, video_path: str) -> str:
 
 
 async def submit_generate_job(reference_paths: list[str], prompt: str) -> str:
-    images_b64 = [file_to_base64(p) for p in reference_paths]
+    image_b64 = file_to_base64(reference_paths[0])
     payload = {
-        "reference_images": images_b64,
         "prompt": prompt,
-        "num_inference_steps": 30,
-        "guidance_scale": 5.0,
+        "image_path": image_b64,
+        "seed": 42,
+        "guidance": 2.5,
+        "width": 512,
+        "height": 512,
     }
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -98,8 +100,11 @@ async def save_output(job_result: dict, output_path: str) -> bool:
         return True
 
     if "image" in output:
+        raw = output["image"]
+        if isinstance(raw, str) and raw.startswith("data:"):
+            raw = raw.split(",", 1)[1]
         with open(output_path, "wb") as f:
-            f.write(base64.b64decode(output["image"]))
+            f.write(base64.b64decode(raw))
         return True
 
     return False
