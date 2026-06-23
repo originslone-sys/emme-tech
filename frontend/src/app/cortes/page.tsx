@@ -20,6 +20,8 @@ export default function CortesPage() {
   const [url, setUrl] = useState('')
   const [numClips, setNumClips] = useState(3)
   const [banner, setBanner] = useState<File | null>(null)
+  const [showTitle, setShowTitle] = useState(true)
+  const [channelName, setChannelName] = useState('')
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
@@ -36,6 +38,8 @@ export default function CortesPage() {
     if (mode === 'upload' && video) form.append('video', video)
     if (mode === 'youtube') form.append('youtube_url', url.trim())
     form.append('num_clips', String(numClips))
+    form.append('show_title', showTitle ? '1' : '0')
+    if (channelName.trim()) form.append('channel_name', channelName.trim())
     if (banner) form.append('banner', banner)
 
     try {
@@ -110,6 +114,32 @@ export default function CortesPage() {
                 }`}>{n}</button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-sm font-medium text-white/60">Título no topo</label>
+            <button onClick={() => setShowTitle(!showTitle)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${showTitle ? 'bg-violet-600' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${showTitle ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          <p className="text-white/30 text-xs">Exibe o título do corte fixo no topo do vídeo.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">
+            Nome do canal
+            <span className="text-white/30 font-normal ml-1">(marca d'água no centro)</span>
+          </label>
+          <input
+            type="text"
+            value={channelName}
+            onChange={(e) => setChannelName(e.target.value)}
+            maxLength={40}
+            placeholder="Ex: @seucanal · deixe vazio para não exibir"
+            className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-2.5 text-white text-sm focus:border-violet-500/50 outline-none"
+          />
         </div>
 
         <div>
