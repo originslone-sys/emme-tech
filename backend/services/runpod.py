@@ -48,13 +48,12 @@ async def get_job_status(job_id: str, endpoint: str = "") -> dict:
 
 
 async def submit_transcribe_job(audio_path: str, language: str = "") -> str:
-    """Envia o áudio para o endpoint Whisper (faster-whisper) e retorna o job id."""
+    """Envia o áudio para o endpoint WhisperX (kodxana) e retorna o job id."""
     payload = {
         "input": {
-            "audio": file_to_url(audio_path),
-            "model": "base",
-            "word_timestamps": True,
-            "transcription": "plain_text",
+            "audio_file": file_to_url(audio_path),
+            "batch_size": 16,
+            "align_output": False,
         }
     }
     if language:
