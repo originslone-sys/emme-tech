@@ -8,6 +8,12 @@ const cards = [
     description: 'Transforme um vídeo longo (upload ou link do YouTube) em cortes verticais com legenda, prontos pra TikTok, Reels e Shorts — com título, descrição e tags gerados por IA.',
   },
   {
+    href: '/repostar',
+    icon: '♻️',
+    title: 'Repostar',
+    description: 'Torna seu vídeo único para o algoritmo: crop, flip, velocidade, cor e re-encode H.265 — pronto para monetizar em outra plataforma.',
+  },
+  {
     href: '/editar',
     icon: '🎬',
     title: 'Editar Vídeo',

@@ -107,3 +107,18 @@ async def join_videos(videos: List[UploadFile] = File(...)):
 
     storage.add_video(output_id, output_path, "Vídeos unidos")
     return {"video_id": output_id, "status": "COMPLETED"}
+
+
+# ---------- Originalizar (repostagem em outras redes) ----------
+
+@router.post("/spin")
+async def spin_video(video: UploadFile = File(...)):
+    src = await storage.save_upload_temp(video)
+    output_id, output_path = _new_video_path()
+    try:
+        await run_in_threadpool(ffmpeg.spin, src, output_path)
+    except Exception as e:
+        raise HTTPException(500, f"Falha ao originalizar: {e}")
+
+    storage.add_video(output_id, output_path, f"{Path(video.filename).stem} (repost)")
+    return {"video_id": output_id, "status": "COMPLETED"}

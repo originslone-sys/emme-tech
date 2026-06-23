@@ -1,8 +1,11 @@
 import subprocess
+import random
+import os
 import json
 from pathlib import Path
 
 import imageio_ffmpeg
+from PIL import Image, ImageDraw
 
 FONTS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 
@@ -194,3 +197,71 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
         "-shortest", output_path,
     ]
     _run(args)
+
+
+# ---------- Originalizar (spin) para repostagem em outras redes ----------
+
+def _make_logo(size: int, tmp_dir: str) -> str:
+    logo_path = os.path.join(tmp_dir, f"logo_{random.randint(1000, 9999)}.png")
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([0, 0, size, size], fill=(255, 255, 255, 180))
+    img.save(logo_path)
+    return logo_path
+
+
+def spin(input_path: str, output_path: str):
+    """Aplica transformações aleatórias leves para tornar o vídeo único nas plataformas.
+
+    - Crop leve nas bordas (1–5%)
+    - Espelhamento horizontal aleatório
+    - Variação de velocidade ±3%
+    - Ajuste sutil de brilho/contraste/saturação
+    - Logo mini no canto (muda o hash do vídeo)
+    - Re-encode H.265 com CRF aleatório
+    """
+    tmp_dir = str(Path(input_path).parent)
+    logo_path = _make_logo(random.randint(20, 50), tmp_dir)
+
+    try:
+        crop_l = random.uniform(0.01, 0.05)
+        crop_r = random.uniform(0.01, 0.05)
+        crop_t = random.uniform(0.01, 0.05)
+        crop_b = random.uniform(0.01, 0.05)
+        crop = f"crop=iw*(1-{crop_l+crop_r:.4f}):ih*(1-{crop_t+crop_b:.4f}):iw*{crop_l:.4f}:ih*{crop_t:.4f}"
+
+        hflip = ",hflip" if random.random() < 0.5 else ""
+        speed = round(random.uniform(0.97, 1.03), 4)
+        setpts = f"setpts={1/speed:.6f}*PTS"
+
+        brightness = round(random.uniform(-0.05, 0.05), 3)
+        contrast = round(random.uniform(0.95, 1.05), 3)
+        saturation = round(random.uniform(0.95, 1.05), 3)
+        eq = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}"
+
+        logo_x = random.randint(10, 30)
+        logo_y = random.randint(10, 30)
+        overlay = f"overlay=W-w-{logo_x}:H-h-{logo_y}"
+
+        crf = random.randint(23, 28)
+
+        video_filters = f"{crop}{hflip},{setpts},{eq},{overlay}"
+        audio_filters = f"atempo={speed:.4f}"
+
+        _run([
+            "-i", input_path,
+            "-loop", "1", "-i", logo_path,
+            "-filter_complex",
+            f"[0:v]{video_filters}[v];[0:a]{audio_filters}[a]",
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v", "libx265",
+            "-crf", str(crf),
+            "-preset", "medium",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ])
+    finally:
+        Path(logo_path).unlink(missing_ok=True)
