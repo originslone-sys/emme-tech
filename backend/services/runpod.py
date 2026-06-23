@@ -24,8 +24,13 @@ async def submit_animate_job(image_path: str, video_path: str) -> str:
         "image_url": file_to_url(image_path),
         "video_url": file_to_url(video_path),
         "prompt": "animate the character replicating the movements from the reference video, high quality, realistic motion",
-        "num_inference_steps": 30,
-        "guidance_scale": 7.5,
+        "steps": 20,
+        "fps": 10,
+        "seed": 42,
+        "cfg": 7,
+        "width": 512,
+        "height": 320,
+        "num_frames": 81,
     }
     async with httpx.AsyncClient() as client:
         response = await client.post(
