@@ -103,20 +103,23 @@ def _build_viral_prompt(topic: str, duration: int, language: str, fmt: str) -> s
         "(ex: 'Você está fazendo isso errado a vida toda', 'Ninguém te conta isso sobre...'). Nada de introdução.\n"
         "2. Cada cena tem um texto CURTO de tela (no máximo ~8 palavras), de altíssimo impacto, no idioma pedido. "
         "Sem frases longas — o olho precisa ler em 1 segundo.\n"
-        "3. Mantenha um loop de curiosidade: cada cena cria vontade de ver a próxima.\n"
-        "4. A ÚLTIMA cena é uma chamada pra ação (seguir, comentar, salvar, ou uma virada final).\n"
-        "5. Para cada cena, defina uma 'visual_query' EM INGLÊS, concreta e filmável, que exista como vídeo "
+        "3. Cada cena tem também uma 'narration': a frase FALADA pelo narrador (1 frase natural, fluida, "
+        "no idioma pedido), que expande o texto da tela e mantém o ritmo da fala. É o que será dito em voz alta.\n"
+        "4. Mantenha um loop de curiosidade: cada cena cria vontade de ver a próxima.\n"
+        "5. A ÚLTIMA cena é uma chamada pra ação (seguir, comentar, salvar, ou uma virada final).\n"
+        "6. Para cada cena, defina uma 'visual_query' EM INGLÊS, concreta e filmável, que exista como vídeo "
         "de banco de imagens (ex: 'slow motion ocean waves at sunset', 'person typing on laptop close up', "
         "'busy city street timelapse night'). Evite conceitos abstratos que não rendem vídeo.\n"
-        "6. Defina a duração de cada cena (entre 2 e 5 segundos) somando ~"
-        f"{duration} segundos no total.\n"
-        "7. Escolha um 'music_mood' para a trilha entre: energetic, upbeat, inspirational, calm, dramatic, epic.\n\n"
+        "7. Defina a duração de cada cena (entre 2 e 5 segundos) somando ~"
+        f"{duration} segundos no total. A narração de cada cena deve caber nesse tempo falando num ritmo natural.\n"
+        "8. Escolha um 'music_mood' para a trilha entre: energetic, upbeat, inspirational, calm, dramatic, epic.\n\n"
         "Responda APENAS em JSON válido neste formato exato:\n"
         '{"title": "título chamativo até 60 caracteres", '
         '"description": "legenda pronta pra postar com emojis e hashtags", '
         '"tags": ["tag1", "tag2", "tag3"], '
         '"music_mood": "energetic", '
         '"scenes": [{"text": "texto curto na tela", '
+        '"narration": "frase falada pelo narrador", '
         '"visual_query": "concrete english search query", '
         '"duration": número_segundos}]}'
     )
@@ -155,6 +158,7 @@ async def generate_viral_script(topic: str, duration: int = 30,
     scenes = []
     for s in raw_scenes:
         text = str(s.get("text", "")).strip()
+        narration = str(s.get("narration", "")).strip()
         query = str(s.get("visual_query", "")).strip()
         if not query:
             continue
@@ -163,7 +167,12 @@ async def generate_viral_script(topic: str, duration: int = 30,
         except (ValueError, TypeError):
             dur = 3.0
         dur = max(1.5, min(6.0, dur))
-        scenes.append({"text": text, "visual_query": query, "duration": dur})
+        scenes.append({
+            "text": text,
+            "narration": narration or text,
+            "visual_query": query,
+            "duration": dur,
+        })
 
     if not scenes:
         raise RuntimeError("A IA não conseguiu gerar um roteiro válido")

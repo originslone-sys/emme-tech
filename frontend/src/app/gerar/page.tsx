@@ -8,6 +8,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || ''
 const STAGES: Record<string, string> = {
   starting: 'Iniciando...',
   scripting: 'Criando o roteiro viral com IA...',
+  narrating: 'Gerando a narração por voz...',
   fetching: 'Buscando as cenas no Pexels...',
   rendering: 'Montando o vídeo...',
 }
@@ -25,6 +26,8 @@ export default function GerarPage() {
   const [fmt, setFmt] = useState('9:16')
   const [duration, setDuration] = useState(30)
   const [language, setLanguage] = useState('Português')
+  const [narration, setNarration] = useState(true)
+  const [voice, setVoice] = useState<'feminina' | 'masculina'>('feminina')
   const [music, setMusic] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [stage, setStage] = useState('')
@@ -43,6 +46,8 @@ export default function GerarPage() {
     form.append('fmt', fmt)
     form.append('duration', String(duration))
     form.append('language', language)
+    form.append('narration', narration ? '1' : '0')
+    form.append('voice', voice)
     if (music) form.append('music', music)
 
     try {
@@ -139,6 +144,28 @@ export default function GerarPage() {
                 }`}>{l}</button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-white/60">Narração por voz</label>
+            <button onClick={() => setNarration(!narration)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${narration ? 'bg-violet-600' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${narration ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          {narration ? (
+            <div className="flex gap-2">
+              {([['feminina', 'Feminina'], ['masculina', 'Masculina']] as const).map(([id, label]) => (
+                <button key={id} onClick={() => setVoice(id)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    voice === id ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                  }`}>{label}</button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/30 text-xs">Sem voz — só legendas e música.</p>
+          )}
         </div>
 
         <div>

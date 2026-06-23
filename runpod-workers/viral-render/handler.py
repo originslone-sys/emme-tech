@@ -90,9 +90,11 @@ def _build_ass(scenes, width, height, output_path):
     Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _render(scenes, scene_files, width, height, music_file, work, vcodec):
+def _render(scenes, scene_files, narr_files, width, height, music_file, work, vcodec):
     norm = []
+    narr_segs = []
     total = sum(float(s.get("duration", 3)) for s in scenes)
+    has_narr = any(narr_files)
     for i, (src, sc) in enumerate(zip(scene_files, scenes)):
         dur = float(sc.get("duration", 3))
         n = str(work / f"_vs_{i}.mp4")
@@ -110,27 +112,67 @@ def _render(scenes, scene_files, width, height, music_file, work, vcodec):
             ])
         norm.append(n)
 
+        if has_narr:
+            seg = str(work / f"_na_{i}.wav")
+            na = narr_files[i]
+            if na:
+                _run(["-i", na, "-af", "apad", "-t", f"{dur:.3f}",
+                      "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", seg])
+            else:
+                _run(["-f", "lavfi",
+                      "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                      "-t", f"{dur:.3f}", "-c:a", "pcm_s16le", seg])
+            narr_segs.append(seg)
+
     list_file = work / "_vcat.txt"
     list_file.write_text("".join(f"file '{p}'\n" for p in norm))
     silent = str(work / "_silent.mp4")
     _run(["-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", silent])
+
+    narr_wav = None
+    if has_narr:
+        nlist = work / "_nacat.txt"
+        nlist.write_text("".join(f"file '{p}'\n" for p in narr_segs))
+        narr_wav = str(work / "_narr.wav")
+        _run(["-f", "concat", "-safe", "0", "-i", str(nlist), "-c", "copy", narr_wav])
 
     ass = str(work / "_subs.ass")
     _build_ass(scenes, width, height, ass)
 
     out = str(work / "out.mp4")
     sub = f"subtitles=f='{ass}':fontsdir='{FONTS_DIR}'"
-    args = ["-i", silent]
+    fade_st = max(0.0, total - 2)
+
+    inputs = ["-i", silent]
+    idx = 1
+    narr_idx = music_idx = None
+    if narr_wav:
+        inputs += ["-i", narr_wav]
+        narr_idx = idx
+        idx += 1
     if music_file:
-        args += ["-stream_loop", "-1", "-i", music_file]
-    args += ["-vf", sub]
-    if music_file:
-        fade_st = max(0.0, total - 2)
-        args += ["-map", "0:v", "-map", "1:a",
-                 "-af", f"volume=0.28,afade=t=out:st={fade_st:.2f}:d=2",
-                 "-shortest", "-c:a", "aac", "-b:a", "128k"]
-    else:
-        args += ["-map", "0:v"]
+        inputs += ["-stream_loop", "-1", "-i", music_file]
+        music_idx = idx
+        idx += 1
+
+    parts = [f"[0:v]{sub}[v]"]
+    audio_label = None
+    if narr_idx is not None and music_idx is not None:
+        parts.append(f"[{narr_idx}:a]volume=1.0,aresample=44100[na]")
+        parts.append(f"[{music_idx}:a]volume=0.12,"
+                     f"afade=t=out:st={fade_st:.2f}:d=2,aresample=44100[ma]")
+        parts.append("[na][ma]amix=inputs=2:duration=first:dropout_transition=0[a]")
+        audio_label = "[a]"
+    elif narr_idx is not None:
+        parts.append(f"[{narr_idx}:a]volume=1.0[a]")
+        audio_label = "[a]"
+    elif music_idx is not None:
+        parts.append(f"[{music_idx}:a]volume=0.28,afade=t=out:st={fade_st:.2f}:d=2[a]")
+        audio_label = "[a]"
+
+    args = [*inputs, "-filter_complex", ";".join(parts), "-map", "[v]"]
+    if audio_label:
+        args += ["-map", audio_label, "-c:a", "aac", "-b:a", "128k", "-shortest"]
     args += ["-c:v", vcodec, "-pix_fmt", "yuv420p", "-movflags", "+faststart", out]
     _run(args)
     return out
@@ -150,17 +192,29 @@ def handler(job):
         work = Path(tmp)
 
         scene_files = []
+        narr_files = []
         for i, sc in enumerate(scenes):
             url = sc.get("video_url") or ""
             if not url:
                 scene_files.append(None)
-                continue
-            dest = str(work / f"src_{i}.mp4")
-            try:
-                _download(url, dest)
-                scene_files.append(dest)
-            except Exception:
-                scene_files.append(None)
+            else:
+                dest = str(work / f"src_{i}.mp4")
+                try:
+                    _download(url, dest)
+                    scene_files.append(dest)
+                except Exception:
+                    scene_files.append(None)
+
+            narr_url = sc.get("narration_url") or ""
+            if not narr_url:
+                narr_files.append(None)
+            else:
+                ndest = str(work / f"narr_{i}.wav")
+                try:
+                    _download(narr_url, ndest)
+                    narr_files.append(ndest)
+                except Exception:
+                    narr_files.append(None)
 
         music_file = None
         if music_url:
@@ -172,9 +226,9 @@ def handler(job):
 
         # GPU primeiro; se o NVENC não estiver disponível, cai pro libx264
         try:
-            out = _render(scenes, scene_files, width, height, music_file, work, "h264_nvenc")
+            out = _render(scenes, scene_files, narr_files, width, height, music_file, work, "h264_nvenc")
         except Exception:
-            out = _render(scenes, scene_files, width, height, music_file, work, "libx264")
+            out = _render(scenes, scene_files, narr_files, width, height, music_file, work, "libx264")
 
         with open(out, "rb") as f:
             data = base64.b64encode(f.read()).decode("utf-8")
