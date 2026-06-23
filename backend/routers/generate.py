@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List
 import uuid
 
-from services import storage, runpod
+from services import storage, fal
 
 router = APIRouter()
 
@@ -21,18 +21,20 @@ async def generate_image(
         _, path = await storage.save_upload(ref, "uploads")
         ref_paths.append(path)
 
-    job_id = await runpod.submit_generate_job(ref_paths, prompt)
+    job = await fal.submit_generate_job(ref_paths, prompt)
 
     output_id = str(uuid.uuid4())
     output_path = str(storage.DIRS["images"] / f"{output_id}.png")
 
-    storage.save_job(job_id, runpod.RUNPOD_IMAGE_ENDPOINT, "generate", {
+    storage.save_job(job["request_id"], fal.IMAGE_MODEL, "generate", {
         "output_id": output_id,
         "output_path": output_path,
         "prompt": prompt,
+        "status_url": job["status_url"],
+        "response_url": job["response_url"],
     })
 
-    return {"job_id": job_id, "status": "processing"}
+    return {"job_id": job["request_id"], "status": "processing"}
 
 
 @router.get("/jobs/{job_id}")
@@ -41,18 +43,25 @@ async def get_generate_status(job_id: str):
     if not job:
         raise HTTPException(404, "Job não encontrado")
 
-    result = await runpod.get_job_status(job["endpoint_id"], job_id)
-    status = result.get("status")
-    output_path = job["meta"]["output_path"]
+    meta = job["meta"]
+    output_path = meta["output_path"]
 
-    if status == "COMPLETED" and not Path(output_path).exists():
-        saved = await runpod.save_output(result, output_path)
-        if saved:
-            storage.add_image(job["meta"]["output_id"], output_path, job["meta"]["prompt"])
+    try:
+        status_data = await fal.get_job_status(meta["status_url"])
+    except Exception as e:
+        return {"job_id": job_id, "status": "FAILED", "image_id": None, "error": str(e)}
 
-    return {
-        "job_id": job_id,
-        "status": status,
-        "image_id": job["meta"]["output_id"] if status == "COMPLETED" else None,
-        "error": result.get("error"),
-    }
+    status = status_data.get("status")
+
+    if status == "COMPLETED":
+        try:
+            if not Path(output_path).exists():
+                result = await fal.get_result(meta["response_url"])
+                if await fal.save_output(result, output_path):
+                    storage.add_image(meta["output_id"], output_path, meta["prompt"])
+        except Exception as e:
+            return {"job_id": job_id, "status": "FAILED", "image_id": None, "error": str(e)}
+
+        return {"job_id": job_id, "status": "COMPLETED", "image_id": meta["output_id"], "error": None}
+
+    return {"job_id": job_id, "status": status, "image_id": None, "error": None}
