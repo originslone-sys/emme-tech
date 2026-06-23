@@ -6,7 +6,7 @@ RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 RUNPOD_ANIMATE_ENDPOINT = os.getenv("RUNPOD_ANIMATE_ENDPOINT", "")
 RUNPOD_IMAGE_ENDPOINT = os.getenv("RUNPOD_IMAGE_ENDPOINT", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
-BASE_URL = "https://api.runpod.io/v2"
+BASE_URL = "https://api.runpod.ai/v2"
 
 
 def file_to_base64(path: str) -> str:
