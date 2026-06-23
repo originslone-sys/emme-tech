@@ -61,7 +61,7 @@ export default function BibliotecaPage() {
           {videos.map((vid) => (
             <div key={vid.id} className="bg-[#111] border border-white/10 rounded-xl overflow-hidden">
               <video
-                src={`${API}/api/library/videos/${vid.id}/download`}
+                src={`${API}/files/videos/${vid.filename}`}
                 className={`w-full bg-black ${vid.kind === 'clip' || vid.kind === 'viral' ? 'aspect-[9/16] object-contain' : 'aspect-video object-cover'}`}
                 controls
                 preload="none"

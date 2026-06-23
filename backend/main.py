@@ -27,6 +27,10 @@ app.include_router(library.router, prefix="/api/library", tags=["library"])
 
 # Serve os uploads para o RunPod baixar via URL pública
 app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
+# Serve os vídeos como estáticos: o StaticFiles do Starlette faz streaming
+# assíncrono com suporte nativo a Range, bem mais eficiente que servir o
+# arquivo por uma rota Python (usado para o player da Biblioteca).
+app.mount("/files/videos", StaticFiles(directory=str(DIRS["videos"])), name="videos")
 
 
 @app.get("/health")
