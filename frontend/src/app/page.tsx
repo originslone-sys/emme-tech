@@ -2,6 +2,12 @@ import Link from 'next/link'
 
 const cards = [
   {
+    href: '/gerar',
+    icon: '✨',
+    title: 'Gerar Vídeo Viral',
+    description: 'Só descreva um tema: a IA escreve o roteiro com gancho, escolhe as cenas no Pexels, adiciona legendas grandes e trilha — pronto pra TikTok, Reels e Shorts.',
+  },
+  {
     href: '/cortes',
     icon: '🔥',
     title: 'Cortes Virais',

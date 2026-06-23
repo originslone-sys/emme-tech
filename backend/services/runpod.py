@@ -5,6 +5,7 @@ import base64
 RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 ENHANCE_ENDPOINT = os.getenv("RUNPOD_ENHANCE_ENDPOINT", "")
 WHISPER_ENDPOINT = os.getenv("RUNPOD_WHISPER_ENDPOINT", "")
+RENDER_ENDPOINT = os.getenv("RUNPOD_RENDER_ENDPOINT", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
 BASE_URL = "https://api.runpod.ai/v2"
 
@@ -27,6 +28,32 @@ async def submit_enhance_job(video_path: str, scale: int = 2) -> str:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{BASE_URL}/{ENHANCE_ENDPOINT}/run",
+            json=payload,
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
+
+
+async def submit_render_job(scenes: list[dict], width: int, height: int,
+                            music_url: str = "") -> str:
+    """Envia a montagem do vídeo viral para o worker de render na GPU.
+
+    scenes: [{video_url, duration, text}] — o worker baixa, corta, concatena,
+    legenda e mixa a música, devolvendo o vídeo final.
+    """
+    payload = {
+        "input": {
+            "scenes": scenes,
+            "width": width,
+            "height": height,
+            "music_url": music_url,
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{BASE_URL}/{RENDER_ENDPOINT}/run",
             json=payload,
             headers={**_HEADERS, "Content-Type": "application/json"},
             timeout=60,
