@@ -58,23 +58,39 @@ Se você não vai usar upscaling, pode deixar essa variável vazia.
 
 ---
 
+## ⚠️ Importante: os workers 3 e 4 NÃO estão no RunPod Hub
+
+`viral-render` e `viral-tts` são **workers próprios deste repositório** — não
+adianta procurar no Hub, eles não aparecem lá. Você faz o deploy do código que
+está em `runpod-workers/`. Há duas formas:
+
+- **Forma A — Deploy pelo GitHub (recomendada, sem Docker no seu PC):** o RunPod
+  faz o build do Dockerfile direto do repositório.
+- **Forma B — Build manual:** você builda a imagem Docker e dá push num registry.
+
+---
+
 ## 3) Render viral na GPU (opcional — recomendado p/ velocidade)
 
 Monta o vídeo viral na GPU (corta, concatena, legenda, mixa narração+música).
 Sem ele, o backend monta na CPU (mais lento).
 
+**Forma A — Deploy pelo GitHub (sem Docker local):**
+1. No RunPod: **Serverless → New Endpoint → Import Git Repository**
+   (conecte sua conta GitHub e autorize o repositório `originslone-sys/emme-tech`).
+2. Branch: a sua branch de deploy.
+3. **Dockerfile Path:** `runpod-workers/viral-render/Dockerfile`
+4. **Build Context:** `runpod-workers/viral-render`
+5. GPU com NVENC (ex: RTX A4000/4090), disco ~10 GB → Deploy.
+6. Copie o **Endpoint ID** → backend: `RUNPOD_RENDER_ENDPOINT`.
+
+**Forma B — Build manual:**
 ```bash
 cd runpod-workers/viral-render
-
 docker build -t SEU_USUARIO/emme-viral-render:latest .
 docker push SEU_USUARIO/emme-viral-render:latest
 ```
-
-No RunPod: **Serverless → New Endpoint**
-- Container Image: `SEU_USUARIO/emme-viral-render:latest`
-- GPU: qualquer com NVENC (ex: RTX A4000/4090)
-- Container Disk: ~10 GB
-- Copie o **Endpoint ID** → backend: `RUNPOD_RENDER_ENDPOINT`
+Depois: **New Endpoint** → Container Image `SEU_USUARIO/emme-viral-render:latest`.
 
 Detalhes e contrato: `runpod-workers/viral-render/README.md`.
 
@@ -85,20 +101,26 @@ Detalhes e contrato: `runpod-workers/viral-render/README.md`.
 Gera a narração com **XTTS-v2** (voz natural, pt/en/es). Sem ele, o backend usa
 **gTTS** (mais robótico, mas funciona sem deploy).
 
+**Forma A — Deploy pelo GitHub (sem Docker local):**
+1. **Serverless → New Endpoint → Import Git Repository** (repo `originslone-sys/emme-tech`).
+2. **Dockerfile Path:** `runpod-workers/viral-tts/Dockerfile`
+3. **Build Context:** `runpod-workers/viral-tts`
+4. GPU ~8–12 GB, disco ~15 GB (o modelo XTTS-v2 é embutido na imagem) → Deploy.
+5. Copie o **Endpoint ID** → backend: `RUNPOD_TTS_ENDPOINT`.
+
+**Forma B — Build manual:**
 ```bash
 cd runpod-workers/viral-tts
-
 docker build -t SEU_USUARIO/emme-viral-tts:latest .
 docker push SEU_USUARIO/emme-viral-tts:latest
 ```
 
-No RunPod: **Serverless → New Endpoint**
-- Container Image: `SEU_USUARIO/emme-viral-tts:latest`
-- GPU: ~8–12 GB (ex: RTX A4000/4090)
-- Container Disk: ~15 GB (o modelo XTTS-v2 é embutido na imagem)
-- Copie o **Endpoint ID** → backend: `RUNPOD_TTS_ENDPOINT`
-
 Detalhes e contrato: `runpod-workers/viral-tts/README.md`.
+
+> Alternativa pronta no Hub: o **Chatterbox TTS** (que apareceu na sua busca)
+> é um TTS com clonagem de voz. Dá pra usar no lugar do nosso worker, mas o
+> contrato de input/output é diferente — eu precisaria adaptar o `services/tts.py`
+> do backend pra ele. Me avise se preferir esse caminho.
 
 ---
 
