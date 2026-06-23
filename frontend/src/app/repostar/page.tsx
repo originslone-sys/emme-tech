@@ -48,7 +48,9 @@ export default function RepostarPage() {
             'Espelhamento horizontal aleatório',
             'Variação de velocidade ±3% — indetectável ao olho',
             'Ajuste sutil de brilho, contraste e saturação',
-            'Logo micro invisível no canto — altera o hash do vídeo',
+            'Ruído granular 1–2% em cada frame — diferencia o fingerprint visual',
+            'Mudança de framerate (ex: 30fps → 29.97fps)',
+            'Logo micro invisível no canto — altera o hash binário',
             'Re-encode em H.265 com parâmetros aleatórios',
           ].map((item, i) => (
             <li key={i} className="flex items-start gap-2 text-white/40 text-xs">
