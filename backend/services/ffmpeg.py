@@ -229,15 +229,34 @@ def render_clip(input_path: str, output_path: str, start: float, end: float,
 
 # ---------- Vídeo viral gerado do zero (cenas + legenda + música) ----------
 
-def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: str):
-    """Gera um .ass com o texto de cada cena no rodapé (influencer style), com fade.
+def _chunk_caption(text: str, max_chars: int = 32) -> list[str]:
+    """Quebra a fala em pedaços curtos (algumas palavras) para legenda dinâmica."""
+    words = text.split()
+    chunks: list[str] = []
+    cur = ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > max_chars:
+            chunks.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        chunks.append(cur)
+    return chunks or [text]
 
-    scenes: lista de {text, duration} na ordem da timeline.
+
+def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: str):
+    """Gera um .ass com a fala do narrador como legenda, sincronizada por cena.
+
+    A narração de cada cena é quebrada em pedaços curtos distribuídos ao longo
+    da duração da cena (estilo auto-legenda). Se não houver narração, usa o
+    'text' curto da cena. scenes: lista de {text, narration, duration}.
     """
-    fontsize = max(36, round(height / 18))  # ligeiramente menor que antes
+    fontsize = max(34, round(height / 20))
     outline = max(2, round(fontsize / 18))
     margin_h = round(width * 0.07)
     margin_v = round(height * 0.08)  # distância do rodapé
+    max_chars = max(18, round(width / 34))
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -257,14 +276,28 @@ def build_viral_ass(scenes: list[dict], width: int, height: int, output_path: st
     t = 0.0
     for sc in scenes:
         dur = float(sc.get("duration", 3))
-        st, en = t, t + dur
-        t = en
-        text = _ass_escape(sc.get("text", ""))
-        if not text:
+        scene_start, scene_end = t, t + dur
+        t = scene_end
+
+        source = (sc.get("narration") or sc.get("text") or "").strip()
+        if not source:
             continue
-        lines.append(
-            f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Viral,,0,0,0,,{{\\fad(150,150)}}{text}"
-        )
+
+        chunks = _chunk_caption(source, max_chars)
+        # distribui a duração da cena proporcional ao tamanho de cada pedaço
+        weights = [max(1, len(c)) for c in chunks]
+        total_w = sum(weights)
+        ct = scene_start
+        for chunk, w in zip(chunks, weights):
+            seg = dur * (w / total_w)
+            st, en = ct, min(scene_end, ct + seg)
+            ct = en
+            text = _ass_escape(chunk)
+            if not text or en <= st:
+                continue
+            lines.append(
+                f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Viral,,0,0,0,,{{\\fad(120,120)}}{text}"
+            )
     Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
 
