@@ -4,6 +4,7 @@ import base64
 
 RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 ENHANCE_ENDPOINT = os.getenv("RUNPOD_ENHANCE_ENDPOINT", "")
+WHISPER_ENDPOINT = os.getenv("RUNPOD_WHISPER_ENDPOINT", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
 BASE_URL = "https://api.runpod.ai/v2"
 
@@ -34,15 +35,60 @@ async def submit_enhance_job(video_path: str, scale: int = 2) -> str:
         return resp.json()["id"]
 
 
-async def get_job_status(job_id: str) -> dict:
+async def get_job_status(job_id: str, endpoint: str = "") -> dict:
+    ep = endpoint or ENHANCE_ENDPOINT
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{BASE_URL}/{ENHANCE_ENDPOINT}/status/{job_id}",
+            f"{BASE_URL}/{ep}/status/{job_id}",
             headers=_HEADERS,
             timeout=30,
         )
         resp.raise_for_status()
         return resp.json()
+
+
+async def submit_transcribe_job(audio_path: str, language: str = "") -> str:
+    """Envia o áudio para o endpoint Whisper (faster-whisper) e retorna o job id."""
+    payload = {
+        "input": {
+            "audio": file_to_url(audio_path),
+            "model": "base",
+            "word_timestamps": True,
+            "transcription": "plain_text",
+        }
+    }
+    if language:
+        payload["input"]["language"] = language
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{BASE_URL}/{WHISPER_ENDPOINT}/run",
+            json=payload,
+            headers={**_HEADERS, "Content-Type": "application/json"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
+
+
+def extract_segments(status_data: dict) -> list[dict]:
+    """Normaliza a saída do worker Whisper para uma lista de {start, end, text}."""
+    output = status_data.get("output") or {}
+    if isinstance(output, list):
+        output = output[0] if output else {}
+
+    segments = output.get("segments") or output.get("transcription_segments") or []
+    result = []
+    for s in segments:
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        result.append({
+            "start": float(s.get("start", 0)),
+            "end": float(s.get("end", 0)),
+            "text": text,
+        })
+    return result
 
 
 async def save_output(status_data: dict, output_path: str) -> bool:
