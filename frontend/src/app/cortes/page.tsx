@@ -58,7 +58,7 @@ export default function CortesPage() {
       if (mode === 'upload' && video) {
         setUploadPct(0)
         uploadId = crypto.randomUUID()
-        const CHUNK = 8 * 1024 * 1024
+        const CHUNK = 4 * 1024 * 1024
         const totalChunks = Math.ceil(video.size / CHUNK)
         for (let i = 0; i < totalChunks; i++) {
           const blob = video.slice(i * CHUNK, (i + 1) * CHUNK)
