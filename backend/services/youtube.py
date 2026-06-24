@@ -113,38 +113,26 @@ def _is_geo_error(msg: str) -> bool:
 def download(url: str) -> str:
     """Baixa um vídeo do YouTube e retorna o caminho local.
 
-    Ordem de tentativas:
-    1. geo_bypass nativo do yt-dlp (X-Forwarded-For aleatório do Brasil)
-    2. Múltiplos clients (android/ios/web) + IPs brasileiros explícitos no header
-    3. Se configurado, usa proxy via YOUTUBE_PROXY env var
-
-    Se o vídeo for geo-restrito e o servidor estiver fora do Brasil, apenas um
-    proxy/VPN brasileiro real vai resolver (YOUTUBE_PROXY env var).
+    Quando cookies estão configurados usa o client "web" (único que aceita
+    cookies de navegador). Sem cookies tenta android/ios/web com geo_bypass.
     """
     vid = str(uuid.uuid4())
     out_tmpl = str(storage.DIRS["uploads"] / f"{vid}.%(ext)s")
 
-    def _try(clients: list[str], xff: str | None = None) -> str | None:
-        try:
-            with yt_dlp.YoutubeDL(_base_opts(out_tmpl, clients, xff)) as ydl:
-                ydl.extract_info(url, download=True)
-            matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
-            return str(matches[0]) if matches else None
-        except Exception:  # noqa: BLE001
-            for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
-                p.unlink(missing_ok=True)
-            return None
+    # Cookies de navegador só funcionam com o client web.
+    # android/ios usam OAuth — misturar com cookies de browser causa rejeição.
+    if _COOKIES_RESOLVED:
+        attempts = [(["web"], None)]
+    else:
+        attempts = [(clients, ip)
+                    for clients in _CLIENT_ATTEMPTS
+                    for ip in ([None] + _BR_IPS)]
 
-    # Coleta todos os erros para diagnóstico
     errors: list[str] = []
     bot_blocked = False
     geo_blocked = False
 
-    all_attempts = [(clients, ip)
-                    for clients in _CLIENT_ATTEMPTS
-                    for ip in ([None] + _BR_IPS)]
-
-    for clients, xff in all_attempts:
+    for clients, xff in attempts:
         try:
             with yt_dlp.YoutubeDL(_base_opts(out_tmpl, clients, xff)) as ydl:
                 ydl.extract_info(url, download=True)
