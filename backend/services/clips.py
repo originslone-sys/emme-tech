@@ -45,14 +45,18 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
         if not segments:
             raise RuntimeError("Não foi possível transcrever o áudio do vídeo")
 
-        # 2. DeepSeek escolhe os melhores trechos
-        storage.update_job(job_id, {"stage": "analyzing"})
-        clips = await deepseek.select_clips(segments, num_clips)
+        # 2. DeepSeek escolhe os melhores trechos (em blocos p/ vídeos longos)
+        storage.update_job(job_id, {"stage": "analyzing", "done": 0, "total": 0})
+
+        def _on_analyze(done: int, total: int):
+            storage.update_job(job_id, {"done": done, "total": total})
+
+        clips = await deepseek.select_clips(segments, num_clips, on_progress=_on_analyze)
         if not clips:
             raise RuntimeError("A IA não encontrou bons trechos para cortes")
 
         # 3. Renderiza cada corte em vertical com legenda
-        storage.update_job(job_id, {"stage": "rendering", "total": len(clips)})
+        storage.update_job(job_id, {"stage": "rendering", "done": 0, "total": len(clips)})
         # Banner vai no rodapé; sobe a legenda para ficar acima dele.
         sub_margin_v = 120
         if banner_path:

@@ -75,6 +75,8 @@ export default function CortesPage() {
 
   const stageLabel = stage === 'rendering' && progress.total
     ? `Renderizando cortes (${progress.done}/${progress.total})...`
+    : stage === 'analyzing' && progress.total > 1
+    ? `Analisando o vídeo (bloco ${progress.done}/${progress.total})...`
     : STAGES[stage] || 'Processando...'
 
   return (
