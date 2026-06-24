@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Header, Request, UploadFile, File, Form, HTTPException
 from typing import Optional
 import asyncio
 import logging
@@ -25,22 +25,23 @@ def _part_path(upload_id: str):
 
 @router.post("/upload-chunk")
 async def upload_chunk(
-    upload_id: str = Form(...),
-    index: int = Form(...),
-    chunk: UploadFile = File(...),
+    request: Request,
+    upload_id: str = Header(..., alias="X-Upload-Id"),
+    chunk_index: int = Header(..., alias="X-Chunk-Index"),
 ):
-    """Recebe um pedaço de um upload grande e anexa ao arquivo .part.
+    """Recebe um pedaço de vídeo como corpo binário puro (application/octet-stream).
 
-    O cliente envia os pedaços em ordem (index 0, 1, 2, ...). Isso contorna
-    o limite de tamanho de requisição do proxy/load balancer para vídeos
-    grandes (filmes), que falhariam num upload de requisição única.
+    Usa headers em vez de multipart para evitar limites de proxy em form-data.
+    Chunks são anexados em ordem ao arquivo .part correspondente.
     """
     path = _part_path(upload_id)
-    content = await chunk.read()
-    mode = "wb" if index == 0 else "ab"
+    content = await request.body()
+    if not content:
+        raise HTTPException(400, "Chunk vazio")
+    mode = "wb" if chunk_index == 0 else "ab"
     async with aiofiles.open(path, mode) as f:
         await f.write(content)
-    logger.info("chunk upload_id=%s index=%d size=%d path=%s", upload_id, index, len(content), path)
+    logger.info("chunk upload_id=%s index=%d size=%d", upload_id, chunk_index, len(content))
     return {"ok": True, "size": len(content)}
 
 
