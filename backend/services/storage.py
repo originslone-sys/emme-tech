@@ -21,6 +21,26 @@ def init_storage():
         dir_path.mkdir(parents=True, exist_ok=True)
     if not DB_FILE.exists():
         DB_FILE.write_text(json.dumps({"images": [], "videos": [], "jobs": {}}))
+    cleanup_uploads()
+
+
+def cleanup_uploads():
+    """Esvazia a pasta de uploads.
+
+    Tudo em uploads/ é intermediário (vídeo de origem, áudio extraído,
+    chunks .part, legendas .ass). Os cortes finais ficam em videos/ e as
+    imagens em images/, que não tocamos aqui. Chamado no boot para liberar
+    espaço — um restart já invalida qualquer upload em andamento.
+    """
+    up = DIRS["uploads"]
+    if not up.exists():
+        return
+    for p in up.iterdir():
+        try:
+            if p.is_file():
+                p.unlink()
+        except OSError:
+            pass
 
 
 def read_db() -> dict:
