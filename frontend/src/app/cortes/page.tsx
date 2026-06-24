@@ -58,24 +58,33 @@ export default function CortesPage() {
       if (mode === 'upload' && video) {
         setUploadPct(0)
         uploadId = crypto.randomUUID()
-        const CHUNK = 4 * 1024 * 1024
+        const CHUNK = 2 * 1024 * 1024  // 2 MB — bem abaixo de qualquer limite de proxy
         const totalChunks = Math.ceil(video.size / CHUNK)
         for (let i = 0; i < totalChunks; i++) {
           const blob = video.slice(i * CHUNK, (i + 1) * CHUNK)
-          const cf = new FormData()
-          cf.append('upload_id', uploadId)
-          cf.append('index', String(i))
-          cf.append('chunk', blob)
 
           let ok = false
-          for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          for (let attempt = 0; attempt < 4 && !ok; attempt++) {
             try {
-              const r = await fetch(`${API}/api/clips/upload-chunk`, { method: 'POST', body: cf })
-              if (!r.ok) throw new Error(`Erro ${r.status}`)
+              // Envia como binário puro (sem multipart) para evitar limites de proxy
+              const r = await fetch(`${API}/api/clips/upload-chunk`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'X-Upload-Id': uploadId,
+                  'X-Chunk-Index': String(i),
+                },
+                body: blob,
+              })
+              if (!r.ok) {
+                let detail = `Erro ${r.status}`
+                try { const j = await r.json(); if (j.detail) detail = j.detail } catch {}
+                throw new Error(detail)
+              }
               ok = true
             } catch (err) {
-              if (attempt === 2) throw err
-              await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)))
+              if (attempt === 3) throw err
+              await new Promise((res) => setTimeout(res, 800 * Math.pow(2, attempt)))
             }
           }
           setUploadPct(Math.round(((i + 1) / totalChunks) * 100))
