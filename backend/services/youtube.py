@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -162,17 +163,36 @@ def _download_generic(url: str, vid: str, out_tmpl: str) -> str:
     # extractor_args do youtube não atrapalham outros extractors, mas removemos
     # por clareza já que não se aplicam aqui.
     opts.pop("extractor_args", None)
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.extract_info(url, download=True)
-        matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
-        if matches:
-            return str(matches[0])
-        raise RuntimeError("Download não produziu arquivo")
-    except yt_dlp.utils.DownloadError as e:
-        for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
-            p.unlink(missing_ok=True)
-        raise RuntimeError(f"Não foi possível baixar o vídeo: {e}")
+    # Mais tentativas no extractor (metadados) ajudam com 429 do Google Drive.
+    opts["extractor_retries"] = 5
+
+    # Retry com espera crescente para 429 (rate limit), comum no Drive.
+    last_err = None
+    for attempt, wait in enumerate([0, 10, 30, 60]):
+        if wait:
+            time.sleep(wait)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.extract_info(url, download=True)
+            matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
+            if matches:
+                return str(matches[0])
+            raise RuntimeError("Download não produziu arquivo")
+        except yt_dlp.utils.DownloadError as e:
+            last_err = e
+            for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
+                p.unlink(missing_ok=True)
+            if "429" not in str(e) and "too many requests" not in str(e).lower():
+                break  # erro não relacionado a rate limit: não adianta repetir
+
+    msg = str(last_err) if last_err else "erro desconhecido"
+    if "429" in msg or "too many requests" in msg.lower():
+        raise RuntimeError(
+            "O servidor de origem está limitando os downloads no momento (429 — "
+            "muitas requisições). Isso costuma ser temporário: tente de novo em "
+            "alguns minutos, ou envie o arquivo direto pelo upload."
+        )
+    raise RuntimeError(f"Não foi possível baixar o vídeo: {msg}")
 
 
 def download(url: str) -> str:
