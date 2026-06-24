@@ -108,14 +108,14 @@ export default function CortesPage() {
       setVideo(null); setUrl(''); setBanner(null)
     } catch (e: unknown) {
       setUploadPct(null)
-      const isNetwork = e instanceof Error && /rede|network|fetch|Erro 4|Erro 5/i.test(e.message)
-      if (mode === 'upload' && isNetwork) {
+      const msg = e instanceof Error ? e.message : ''
+      if (mode === 'upload') {
         setError(
-          'Falha ao enviar o vídeo. Verifique sua conexão e tente novamente — ' +
-          'o envio é feito em partes, então pode retomar. Se persistir, tente um arquivo menor.'
+          `Falha ao enviar o vídeo${msg ? ` (${msg})` : ''}. Verifique sua conexão e tente novamente. ` +
+          'O envio é feito em partes; se persistir, tente um arquivo menor.'
         )
       } else {
-        setError(e instanceof Error ? e.message : 'Erro ao enviar. Tente novamente.')
+        setError(msg || 'Erro ao enviar. Tente novamente.')
       }
     }
   }
