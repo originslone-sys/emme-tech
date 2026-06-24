@@ -53,6 +53,10 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
 
         # 3. Renderiza cada corte em vertical com legenda
         storage.update_job(job_id, {"stage": "rendering", "total": len(clips)})
+        # Banner vai no rodapé; sobe a legenda para ficar acima dele.
+        sub_margin_v = 120
+        if banner_path:
+            sub_margin_v = 120 + ffmpeg.banner_overlay_height(banner_path)
         produced = []
         for i, clip in enumerate(clips):
             out_id = str(uuid.uuid4())
@@ -61,7 +65,8 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
 
             clip_title = clip["title"] if show_title else None
             await asyncio.to_thread(
-                ffmpeg.build_ass, segments, clip["start"], clip["end"], ass_path, clip_title,
+                ffmpeg.build_ass, segments, clip["start"], clip["end"], ass_path,
+                clip_title, sub_margin_v,
             )
             await asyncio.to_thread(
                 ffmpeg.render_clip, video_path, out_path,

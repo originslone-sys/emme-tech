@@ -155,7 +155,7 @@ export default function CortesPage() {
           ) : (
             <button onClick={() => bannerInput.current?.click()}
               className="w-full border-2 border-dashed border-white/15 hover:border-violet-500/40 rounded-lg py-3 text-white/30 text-xs transition-colors">
-              Clique para adicionar uma imagem fixa no topo dos cortes
+              Clique para adicionar uma imagem fixa no rodapé dos cortes
             </button>
           )}
         </div>
