@@ -11,11 +11,14 @@ init_storage()
 
 app = FastAPI(title="Emme Video Editor API")
 
-_frontend_url = os.getenv("FRONTEND_URL", "")
+# Libera CORS para qualquer origem. O app não usa autenticação por cookie,
+# então não precisamos de credenciais — e com allow_credentials=False o
+# wildcard "*" é válido para origem, métodos e headers (inclusive nos
+# preflights OPTIONS dos uploads em chunks).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[_frontend_url] if _frontend_url else ["*"],
-    allow_credentials=bool(_frontend_url),
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
