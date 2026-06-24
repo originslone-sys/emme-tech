@@ -4,7 +4,7 @@ from pathlib import Path
 
 from services import storage, runpod, deepseek, ffmpeg, youtube
 
-_WHISPER_TIMEOUT = 60 * 30  # 30 min
+_WHISPER_TIMEOUT = 60 * 60  # 60 min (vídeos longos, ex: filmes)
 _POLL_INTERVAL = 5
 
 

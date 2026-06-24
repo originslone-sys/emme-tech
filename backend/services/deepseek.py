@@ -2,11 +2,17 @@ import httpx
 import os
 import json
 import re
+import math
+import asyncio
 
 _SYMBOL_RE = re.compile(r"[^\w\sÀ-ɏ]")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 BASE_URL = "https://api.deepseek.com/chat/completions"
+
+# Análise de vídeos longos em blocos para não estourar o contexto da IA.
+_BLOCK_CHAR_BUDGET = 14000   # ~ tamanho seguro de transcrição por chamada
+_MAX_CONCURRENCY = 4         # chamadas simultâneas à API
 
 _SYSTEM = (
     "Você é um editor especialista em conteúdo viral para TikTok, Reels e Shorts. "
@@ -36,7 +42,27 @@ def _build_prompt(segments: list[dict], num_clips: int) -> str:
     )
 
 
-async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
+def _split_segments(segments: list[dict],
+                    char_budget: int = _BLOCK_CHAR_BUDGET) -> list[list[dict]]:
+    """Divide a transcrição em blocos sequenciais que cabem no contexto da IA."""
+    blocks: list[list[dict]] = []
+    cur: list[dict] = []
+    cur_len = 0
+    for s in segments:
+        line_len = len(str(s.get("text", ""))) + 20  # texto + timestamp aprox.
+        if cur and cur_len + line_len > char_budget:
+            blocks.append(cur)
+            cur = []
+            cur_len = 0
+        cur.append(s)
+        cur_len += line_len
+    if cur:
+        blocks.append(cur)
+    return blocks
+
+
+async def _select_from_segments(segments: list[dict], num_clips: int) -> list[dict]:
+    """Uma única chamada à IA para um conjunto de segmentos."""
     payload = {
         "model": "deepseek-chat",
         "messages": [
@@ -81,6 +107,49 @@ async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
         })
     valid.sort(key=lambda x: x["score"], reverse=True)
     return valid
+
+
+async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
+    if not segments:
+        return []
+
+    blocks = _split_segments(segments)
+
+    # Vídeo curto: uma única análise resolve.
+    if len(blocks) <= 1:
+        clips = await _select_from_segments(segments, num_clips)
+        return clips[:num_clips]
+
+    # Vídeo longo (filme, podcast, aula): analisa cada bloco em paralelo e
+    # depois junta os candidatos, distribuindo os cortes ao longo de todo o vídeo.
+    per_block = max(2, math.ceil(num_clips / len(blocks)) + 1)
+    sem = asyncio.Semaphore(_MAX_CONCURRENCY)
+
+    async def _run(block: list[dict]) -> list[dict]:
+        async with sem:
+            try:
+                return await _select_from_segments(block, per_block)
+            except Exception:
+                return []
+
+    results = await asyncio.gather(*[_run(b) for b in blocks])
+    for r in results:
+        r.sort(key=lambda x: x["score"], reverse=True)
+
+    # Round-robin entre os blocos: garante cortes espalhados do começo ao fim,
+    # pegando primeiro o melhor de cada bloco, depois o segundo melhor, etc.
+    merged: list[dict] = []
+    idx = 0
+    while len(merged) < num_clips and any(idx < len(r) for r in results):
+        for r in results:
+            if idx < len(r):
+                merged.append(r[idx])
+                if len(merged) >= num_clips:
+                    break
+        idx += 1
+
+    merged.sort(key=lambda x: x["score"], reverse=True)
+    return merged[:num_clips]
 
 
 # ---------- Roteiro de vídeo viral (do zero) ----------
