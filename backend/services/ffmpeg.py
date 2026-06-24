@@ -194,9 +194,9 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
         # Alignment=2 = bottom-center
         f"Style: Sub,DejaVu Sans,52,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,"
         f"-1,0,0,0,100,100,0,0,1,4,2,2,80,80,{sub_margin_v},1\n"
-        # Alignment=8 = top-center; fonte maior, mais abaixo do topo
+        # Alignment=8 = top-center; MarginV empurra para baixo (30% da altura = 576px)
         "Style: Title,DejaVu Sans,56,&H00FFFFFF,&H000000FF,&H00000000,&HB4000000,"
-        "-1,0,0,0,100,100,0,0,1,5,2,8,80,80,140,1\n\n"
+        "-1,0,0,0,100,100,0,0,1,5,2,8,80,80,576,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
