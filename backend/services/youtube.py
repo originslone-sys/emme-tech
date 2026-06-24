@@ -6,25 +6,33 @@ import yt_dlp
 
 from services import storage
 
-# Em servidores de datacenter (fora do Brasil), o YouTube costuma exigir
-# verificação anti-bot. Estas estratégias ajudam a contornar:
-#  - tentar diferentes "player clients" (android/ios costumam ser menos
-#    bloqueados que o web em IPs de nuvem);
-#  - usar cookies se fornecidos via env (YOUTUBE_COOKIES_FILE);
-#  - tentar de novo automaticamente.
 _COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
 _PROXY = os.getenv("YOUTUBE_PROXY", "").strip()
 
-# Ordem de tentativa dos clients do YouTube. android/ios passam por checagens
-# anti-bot que bloqueiam o client "web" em IPs de datacenter.
+# Clientes do YouTube a tentar em ordem (android/ios são menos bloqueados em
+# IPs de datacenter do que o client "web").
 _CLIENT_ATTEMPTS = [
     ["android", "ios", "web"],
     ["ios"],
     ["web"],
 ]
 
+# IPs públicos brasileiros usados no X-Forwarded-For para tentar contornar
+# restrição geográfica a nível de header (não funciona quando o YouTube
+# verifica o IP real da conexão — nesse caso só proxy/VPN resolve).
+_BR_IPS = ["189.40.0.1", "177.71.0.1", "200.160.0.1", "186.192.0.1"]
 
-def _base_opts(out_tmpl: str, clients: list[str]) -> dict:
+
+def _base_opts(out_tmpl: str, clients: list[str], xff_ip: str | None = None) -> dict:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+    if xff_ip:
+        headers["X-Forwarded-For"] = xff_ip
+
     opts = {
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
         "outtmpl": out_tmpl,
@@ -39,13 +47,7 @@ def _base_opts(out_tmpl: str, clients: list[str]) -> dict:
         "concurrent_fragment_downloads": 4,
         "socket_timeout": 30,
         "extractor_args": {"youtube": {"player_client": clients}},
-        # Finge ser um navegador real para reduzir bloqueios.
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ),
-        },
+        "http_headers": headers,
     }
     if _COOKIES_FILE and Path(_COOKIES_FILE).exists():
         opts["cookiefile"] = _COOKIES_FILE
@@ -60,45 +62,96 @@ def _is_bot_error(msg: str) -> bool:
         "sign in to confirm" in m
         or "not a bot" in m
         or "confirm you're not a bot" in m
-        or "cookies" in m and "bot" in m
+        or ("cookies" in m and "bot" in m)
+    )
+
+
+def _is_geo_error(msg: str) -> bool:
+    m = msg.lower()
+    return (
+        "not available in your country" in m
+        or "uploader has not made this video available" in m
+        or "geo" in m and ("restrict" in m or "block" in m)
     )
 
 
 def download(url: str) -> str:
-    """Baixa um vídeo do YouTube (ou outra fonte suportada) e retorna o caminho.
+    """Baixa um vídeo do YouTube e retorna o caminho local.
 
-    Tenta múltiplos clients do YouTube para contornar a verificação anti-bot
-    comum em servidores de nuvem fora do Brasil.
+    Ordem de tentativas:
+    1. geo_bypass nativo do yt-dlp (X-Forwarded-For aleatório do Brasil)
+    2. Múltiplos clients (android/ios/web) + IPs brasileiros explícitos no header
+    3. Se configurado, usa proxy via YOUTUBE_PROXY env var
+
+    Se o vídeo for geo-restrito e o servidor estiver fora do Brasil, apenas um
+    proxy/VPN brasileiro real vai resolver (YOUTUBE_PROXY env var).
     """
     vid = str(uuid.uuid4())
     out_tmpl = str(storage.DIRS["uploads"] / f"{vid}.%(ext)s")
 
-    last_err: Exception | None = None
-    bot_blocked = False
-    for clients in _CLIENT_ATTEMPTS:
+    def _try(clients: list[str], xff: str | None = None) -> str | None:
         try:
-            with yt_dlp.YoutubeDL(_base_opts(out_tmpl, clients)) as ydl:
+            with yt_dlp.YoutubeDL(_base_opts(out_tmpl, clients, xff)) as ydl:
+                ydl.extract_info(url, download=True)
+            matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
+            return str(matches[0]) if matches else None
+        except Exception:  # noqa: BLE001
+            for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
+                p.unlink(missing_ok=True)
+            return None
+
+    # Coleta todos os erros para diagnóstico
+    errors: list[str] = []
+    bot_blocked = False
+    geo_blocked = False
+
+    all_attempts = [(clients, ip)
+                    for clients in _CLIENT_ATTEMPTS
+                    for ip in ([None] + _BR_IPS)]
+
+    for clients, xff in all_attempts:
+        try:
+            with yt_dlp.YoutubeDL(_base_opts(out_tmpl, clients, xff)) as ydl:
                 ydl.extract_info(url, download=True)
             matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
             if matches:
                 return str(matches[0])
-            last_err = RuntimeError("Falha ao baixar o vídeo")
         except yt_dlp.utils.DownloadError as e:
-            last_err = e
-            if _is_bot_error(str(e)):
+            msg = str(e)
+            errors.append(msg)
+            if _is_bot_error(msg):
                 bot_blocked = True
-            # limpa qualquer arquivo parcial antes da próxima tentativa
+            if _is_geo_error(msg):
+                geo_blocked = True
+                # Restrição geográfica real — X-Forwarded-For não vai resolver,
+                # não adianta continuar tentando com outros IPs.
+                break
             for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
                 p.unlink(missing_ok=True)
-            continue
         except Exception as e:  # noqa: BLE001
-            last_err = e
-            continue
+            errors.append(str(e))
+            for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
+                p.unlink(missing_ok=True)
+
+    if geo_blocked:
+        proxy_hint = (
+            " Configure a variável YOUTUBE_PROXY no Railway com um proxy brasileiro "
+            "(ex: socks5://user:pass@host:port) para baixar este vídeo."
+            if not _PROXY else
+            " O proxy configurado (YOUTUBE_PROXY) também não está funcionando — "
+            "verifique se é um proxy com IP do Brasil."
+        )
+        raise RuntimeError(
+            "Este vídeo está bloqueado para o país onde o servidor está hospedado. "
+            "O YouTube restringe o acesso com base no IP real do servidor, e "
+            "contornar com X-Forwarded-For não funciona aqui." + proxy_hint
+        )
 
     if bot_blocked:
         raise RuntimeError(
-            "O YouTube bloqueou o download neste servidor (verificação anti-bot). "
-            "Configure a variável YOUTUBE_COOKIES_FILE com um arquivo de cookies "
-            "exportado do navegador para liberar."
+            "O YouTube exigiu verificação anti-bot. Configure YOUTUBE_COOKIES_FILE "
+            "com um arquivo de cookies exportado do seu navegador (logado no YouTube)."
         )
-    raise RuntimeError(f"Não foi possível baixar o vídeo do YouTube: {last_err}")
+
+    last = errors[-1] if errors else "erro desconhecido"
+    raise RuntimeError(f"Não foi possível baixar o vídeo do YouTube: {last}")
