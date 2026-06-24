@@ -57,7 +57,7 @@ export default function BibliotecaPage() {
       ) : videos.length === 0 ? (
         <div className="text-white/20 text-center py-20 text-sm">Nenhum vídeo processado ainda</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {videos.map((vid) => (
             <div key={vid.id} className="bg-[#111] border border-white/10 rounded-xl overflow-hidden">
               <video
@@ -66,25 +66,25 @@ export default function BibliotecaPage() {
                 controls
                 preload="none"
               />
-              <div className="p-3">
+              <div className="p-2 sm:p-3">
                 {vid.kind === 'clip' || vid.kind === 'viral' ? (
                   <>
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-white/80 text-sm font-semibold">{vid.title}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="text-white/80 text-xs sm:text-sm font-semibold line-clamp-2">{vid.title}</p>
                       {typeof vid.score === 'number' && vid.score > 0 && (
-                        <span className="shrink-0 bg-violet-500/20 text-violet-300 text-xs px-2 py-0.5 rounded-full">🔥 {vid.score}</span>
+                        <span className="shrink-0 bg-violet-500/20 text-violet-300 text-[10px] px-1.5 py-0.5 rounded-full">🔥 {vid.score}</span>
                       )}
                     </div>
                     {vid.description && (
-                      <div className="mt-2">
-                        <p className="text-white/50 text-xs whitespace-pre-wrap line-clamp-4">{vid.description}</p>
-                        <button onClick={() => copy(vid.description!)} className="text-violet-400 hover:text-violet-300 text-xs mt-1">
+                      <div className="mt-1.5">
+                        <p className="text-white/50 text-[10px] sm:text-xs whitespace-pre-wrap line-clamp-3">{vid.description}</p>
+                        <button onClick={() => copy(vid.description!)} className="text-violet-400 hover:text-violet-300 text-[10px] sm:text-xs mt-1">
                           copiar legenda
                         </button>
                       </div>
                     )}
                     {vid.tags && vid.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
+                      <div className="hidden sm:flex flex-wrap gap-1 mt-1.5">
                         {vid.tags.map((t, i) => (
                           <span key={i} className="bg-white/5 text-white/40 text-[10px] px-1.5 py-0.5 rounded">#{t.replace(/^#/, '')}</span>
                         ))}
@@ -92,20 +92,20 @@ export default function BibliotecaPage() {
                     )}
                   </>
                 ) : (
-                  vid.label && <p className="text-white/70 text-sm font-medium truncate">{vid.label}</p>
+                  vid.label && <p className="text-white/70 text-xs sm:text-sm font-medium truncate">{vid.label}</p>
                 )}
-                <p className="text-white/30 text-xs mt-2">{formatDate(vid.created_at)}</p>
-                <div className="flex gap-2 mt-3">
+                <p className="text-white/30 text-[10px] sm:text-xs mt-1.5">{formatDate(vid.created_at)}</p>
+                <div className="flex gap-1.5 mt-2">
                   <a
                     href={`${API}/api/library/videos/${vid.id}/download`}
                     download
-                    className="flex-1 bg-white/5 hover:bg-white/10 text-white/60 text-xs py-1.5 rounded-lg text-center transition-colors"
+                    className="flex-1 bg-white/5 hover:bg-white/10 text-white/60 text-[10px] sm:text-xs py-1.5 rounded-lg text-center transition-colors"
                   >
                     Baixar
                   </a>
                   <button
                     onClick={() => deleteVideo(vid.id)}
-                    className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs py-1.5 rounded-lg transition-colors"
+                    className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] sm:text-xs py-1.5 rounded-lg transition-colors"
                   >
                     Excluir
                   </button>
