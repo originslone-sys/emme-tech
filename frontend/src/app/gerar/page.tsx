@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import ChannelNameInput, { rememberChannelName } from '@/components/ChannelNameInput'
+import { useJobs } from '@/lib/jobs'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -36,18 +37,30 @@ export default function GerarPage() {
   const [musicSource, setMusicSource] = useState<MusicSource>('generate')
   const [channelName, setChannelName] = useState('')
   const [introTitle, setIntroTitle] = useState(true)
-  const [loading, setLoading] = useState(false)
-  const [stage, setStage] = useState('')
-  const [progress, setProgress] = useState({ done: 0, total: 0, percent: 0 })
-  const [done, setDone] = useState(false)
-  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [trackedId, setTrackedId] = useState<string | null>(null)
   const musicInput = useRef<HTMLInputElement>(null)
+  const { jobs, addJob } = useJobs()
+
+  // Recupera um job em andamento ao abrir/voltar à página
+  useEffect(() => {
+    if (!trackedId) {
+      const active = jobs.find((j) => j.type === 'viral' && j.status === 'processing')
+      if (active) setTrackedId(active.id)
+    }
+  }, [jobs, trackedId])
+
+  const job = jobs.find((j) => j.id === trackedId)
+  const loading = job?.status === 'processing'
+  const done = job?.status === 'COMPLETED'
+  const stage = job?.stage || ''
+  const progress = { done: job?.done || 0, total: job?.total || 0, percent: job?.percent || 0 }
+  const warnings = job?.warnings || []
+  const jobError = job?.status === 'FAILED' ? (job.error || 'Processamento falhou.') : ''
 
   const submit = async () => {
     if (!topic.trim()) return setError('Descreva o tema do vídeo')
-    setError(''); setDone(false); setWarnings([]); setLoading(true); setStage('starting')
-    setProgress({ done: 0, total: 0, percent: 0 })
+    setError('')
 
     const form = new FormData()
     form.append('topic', topic.trim())
@@ -68,30 +81,12 @@ export default function GerarPage() {
       const res = await fetch(`${API}/api/viral/generate`, { method: 'POST', body: form })
       if (!res.ok) throw new Error(`Servidor retornou ${res.status}`)
       const data = await res.json()
-      poll(data.job_id)
+      addJob(data.job_id, 'viral', topic.trim())
+      setTrackedId(data.job_id)
+      setMusic(null)
     } catch (e) {
       setError(`Erro ao enviar: ${e instanceof Error ? e.message : 'falha de conexão'}`)
-      setLoading(false)
     }
-  }
-
-  const poll = (id: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API}/api/viral/jobs/${id}`)
-        const data = await res.json()
-        setStage(data.stage)
-        setProgress({ done: data.done || 0, total: data.total || 0, percent: data.percent || 0 })
-        if (data.status === 'COMPLETED') {
-          clearInterval(interval); setLoading(false); setDone(true)
-          setWarnings(data.warnings || [])
-          setTopic(''); setMusic(null)
-        } else if (data.status === 'FAILED') {
-          clearInterval(interval); setLoading(false)
-          setError(data.error || 'Processamento falhou.'); setStage('')
-        }
-      } catch { /* continua tentando */ }
-    }, 2500)
   }
 
   let stageLabel = STAGES[stage] || 'Processando...'
@@ -114,7 +109,7 @@ export default function GerarPage() {
         <label className="block text-sm font-medium text-white/60 mb-2">Tema do vídeo</label>
         <textarea
           value={topic}
-          onChange={(e) => { setTopic(e.target.value); setDone(false) }}
+          onChange={(e) => setTopic(e.target.value)}
           rows={3}
           placeholder="Ex: 3 hábitos que mudam sua vida financeira / a história secreta do café / por que você acorda cansado"
           className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-3 text-white text-sm focus:border-violet-500/50 outline-none resize-none"
@@ -242,10 +237,10 @@ export default function GerarPage() {
         </div>
       </div>
 
-      {error && (
+      {(error || jobError) && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 mb-4">
           <p className="text-red-400 text-sm font-medium mb-1">Falha no processamento</p>
-          <pre className="text-red-300/70 text-xs whitespace-pre-wrap break-words max-h-40 overflow-auto font-mono">{error}</pre>
+          <pre className="text-red-300/70 text-xs whitespace-pre-wrap break-words max-h-40 overflow-auto font-mono">{error || jobError}</pre>
         </div>
       )}
       {loading && (
