@@ -87,7 +87,15 @@ export default function CortesPage() {
       setVideo(null); setUrl(''); setBanner(null)
     } catch (e: unknown) {
       setUploadPct(null)
-      setError(e instanceof Error ? e.message : 'Erro ao enviar. Tente novamente.')
+      const isNetwork = e instanceof Error && /rede|network|Erro 4|Erro 5/i.test(e.message)
+      if (mode === 'upload' && isNetwork) {
+        setError(
+          'Falha ao enviar o vídeo. Arquivos muito grandes (acima de ~1 GB) costumam falhar no upload. ' +
+          'Dica: cole o link do YouTube na aba acima — o servidor baixa direto, sem depender da sua conexão de envio.'
+        )
+      } else {
+        setError(e instanceof Error ? e.message : 'Erro ao enviar. Tente novamente.')
+      }
     }
   }
 
@@ -118,7 +126,16 @@ export default function CortesPage() {
       </div>
 
       {mode === 'upload' ? (
-        <div className="mb-6"><VideoDrop file={video} onChange={(f) => setVideo(f)} /></div>
+        <div className="mb-6">
+          <VideoDrop file={video} onChange={(f) => setVideo(f)} />
+          {video && video.size > 1024 * 1024 * 1024 && (
+            <div className="mt-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-300/90 text-xs">
+              Este arquivo tem {(video.size / 1024 / 1024 / 1024).toFixed(1)} GB. Arquivos grandes
+              podem falhar no envio. Se der erro, use a aba <strong>Link do YouTube</strong> — o
+              servidor baixa o vídeo direto, sem depender da sua conexão de upload.
+            </div>
+          )}
+        </div>
       ) : (
         <input
           type="url" value={url} onChange={(e) => setUrl(e.target.value)}
