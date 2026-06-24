@@ -174,8 +174,11 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
               clip_title: str | None = None, sub_margin_v: int = 120):
     """Gera um arquivo .ass com legenda no rodapé e título fixo opcional no topo.
 
-    sub_margin_v: distância da legenda até o rodapé (px) — sobe a legenda quando
-    há um banner embaixo, para não sobrepor.
+    Cada segmento Whisper é quebrado em chunks de ≤5 palavras distribuídos pelo
+    tempo do segmento — a legenda acompanha o ritmo da fala em vez de jogar tudo
+    de uma vez na tela.
+
+    sub_margin_v: distância da legenda até o rodapé (px) — sobe quando há banner.
     """
     dur = clip_end - clip_start
     header = (
@@ -188,12 +191,12 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        # Alignment=2 = bottom-center; MarginV do rodapé
-        f"Style: Sub,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&H96000000,"
+        # Alignment=2 = bottom-center
+        f"Style: Sub,DejaVu Sans,52,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,"
         f"-1,0,0,0,100,100,0,0,1,4,2,2,80,80,{sub_margin_v},1\n"
-        # Alignment=8 = top-center; MarginV do topo
-        "Style: Title,DejaVu Sans,48,&H00FFFFFF,&H000000FF,&H00000000,&HB4000000,"
-        "-1,0,0,0,100,100,0,0,1,4,2,8,80,80,100,1\n\n"
+        # Alignment=8 = top-center; fonte maior, mais abaixo do topo
+        "Style: Title,DejaVu Sans,56,&H00FFFFFF,&H000000FF,&H00000000,&HB4000000,"
+        "-1,0,0,0,100,100,0,0,1,5,2,8,80,80,140,1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -206,14 +209,24 @@ def build_ass(segments: list[dict], clip_start: float, clip_end: float, output_p
     for s in segments:
         if s["end"] <= clip_start or s["start"] >= clip_end:
             continue
-        st = max(0.0, s["start"] - clip_start)
-        en = min(dur, s["end"] - clip_start)
-        if en <= st:
+        seg_st = max(0.0, s["start"] - clip_start)
+        seg_en = min(dur, s["end"] - clip_start)
+        if seg_en <= seg_st:
             continue
-        text = _ass_escape(s["text"])
-        if not text:
-            continue
-        lines.append(f"Dialogue: 0,{_ass_time(st)},{_ass_time(en)},Sub,,0,0,0,,{text}")
+
+        # Quebra o segmento em chunks de ≤5 palavras para sincronia da legenda
+        chunks = _chunk_caption(s["text"], max_chars=28)
+        weights = [max(1, len(c)) for c in chunks]
+        total_w = sum(weights)
+        ct = seg_st
+        for chunk, w in zip(chunks, weights):
+            ch_dur = (seg_en - seg_st) * (w / total_w)
+            ch_st, ch_en = ct, min(seg_en, ct + ch_dur)
+            ct = ch_en
+            text = _ass_escape(chunk)
+            if not text or ch_en <= ch_st:
+                continue
+            lines.append(f"Dialogue: 0,{_ass_time(ch_st)},{_ass_time(ch_en)},Sub,,0,0,0,,{text}")
 
     Path(output_path).write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
 
