@@ -29,6 +29,7 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
                        show_title: bool = True,
                        channel_name: str | None = None,
                        min_duration: int = 15):
+    audio_path: str | None = None
     try:
         # 0. Baixa do YouTube se for o caso
         if youtube_url:
@@ -93,3 +94,10 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
         storage.update_job(job_id, {"stage": "completed", "clip_ids": produced})
     except Exception as e:
         storage.update_job(job_id, {"stage": "failed", "error": str(e)})
+    finally:
+        # Remove arquivos intermediários (vídeo de origem e áudio extraído).
+        # Os cortes finais já estão salvos em videos/.
+        if audio_path:
+            Path(audio_path).unlink(missing_ok=True)
+        if video_path:
+            Path(video_path).unlink(missing_ok=True)
