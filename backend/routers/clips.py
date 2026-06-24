@@ -1,12 +1,15 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Optional
 import asyncio
+import logging
 import re
 import uuid
 
 import aiofiles
 
 from services import storage, runpod, clips
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -37,7 +40,8 @@ async def upload_chunk(
     mode = "wb" if index == 0 else "ab"
     async with aiofiles.open(path, mode) as f:
         await f.write(content)
-    return {"ok": True}
+    logger.info("chunk upload_id=%s index=%d size=%d path=%s", upload_id, index, len(content), path)
+    return {"ok": True, "size": len(content)}
 
 
 @router.post("/generate")
@@ -63,12 +67,14 @@ async def generate_clips(
     if upload_id:
         # Vídeo enviado em pedaços: finaliza o arquivo .part montado.
         part = _part_path(upload_id)
+        logger.info("generate: upload_id=%s part=%s exists=%s", upload_id, part, part.exists())
         if not part.exists():
-            raise HTTPException(400, "Upload não encontrado ou incompleto")
+            raise HTTPException(400, f"Upload não encontrado (esperado em {part}). Tente novamente.")
         ext = video_ext if (video_ext or "").startswith(".") else ".mp4"
         final = storage.DIRS["uploads"] / f"{upload_id}{ext}"
         part.rename(final)
         video_path = str(final)
+        logger.info("generate: video assembled at %s size=%d", video_path, final.stat().st_size)
     elif video:
         video_path = await storage.save_upload_temp(video)
 

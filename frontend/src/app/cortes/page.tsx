@@ -100,7 +100,11 @@ export default function CortesPage() {
 
       const res = await fetch(`${API}/api/clips/generate`, { method: 'POST', body: form })
       setUploadPct(null)
-      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      if (!res.ok) {
+        let detail = `Erro ${res.status}`
+        try { const j = await res.json(); if (j.detail) detail = j.detail } catch {}
+        throw new Error(detail)
+      }
       const data = await res.json()
       const label = mode === 'youtube' ? url.trim() : (video?.name || 'Cortes')
       addJob(data.job_id, 'clips', label)
@@ -108,15 +112,8 @@ export default function CortesPage() {
       setVideo(null); setUrl(''); setBanner(null)
     } catch (e: unknown) {
       setUploadPct(null)
-      const msg = e instanceof Error ? e.message : ''
-      if (mode === 'upload') {
-        setError(
-          `Falha ao enviar o vídeo${msg ? ` (${msg})` : ''}. Verifique sua conexão e tente novamente. ` +
-          'O envio é feito em partes; se persistir, tente um arquivo menor.'
-        )
-      } else {
-        setError(msg || 'Erro ao enviar. Tente novamente.')
-      }
+      const msg = e instanceof Error ? e.message : 'Erro desconhecido'
+      setError(msg)
     }
   }
 
