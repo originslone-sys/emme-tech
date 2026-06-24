@@ -16,6 +16,19 @@ def list_all():
     }
 
 
+@router.get("/storage")
+def list_storage():
+    """Lista os arquivos brutos no disco por diretório, com tamanhos."""
+    return storage.list_storage()
+
+
+@router.delete("/storage/{category}/{name}")
+def delete_storage_file(category: str, name: str):
+    if not storage.delete_storage_file(category, name):
+        raise HTTPException(404, "Arquivo não encontrado")
+    return {"deleted": True}
+
+
 @router.get("/images/{image_id}/download")
 def download_image(image_id: str):
     db = storage.read_db()
