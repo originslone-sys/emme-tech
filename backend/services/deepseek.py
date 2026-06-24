@@ -21,16 +21,19 @@ _SYSTEM = (
 )
 
 
-def _build_prompt(segments: list[dict], num_clips: int) -> str:
+def _build_prompt(segments: list[dict], num_clips: int, min_dur: int = 15) -> str:
     lines = [f"[{s['start']:.1f}-{s['end']:.1f}] {s['text']}" for s in segments]
     transcript = "\n".join(lines)
     total_dur = segments[-1]["end"] if segments else 0
+    max_dur = max(min_dur + 30, 90)
     return (
         f"Transcrição do vídeo (em segundos, duração total ~{total_dur:.0f}s):\n\n{transcript}\n\n"
         f"Selecione os {num_clips} melhores trechos para cortes virais. "
-        "Cada corte deve ter entre 15 e 60 segundos, ser autocontido (começo, meio e fim), "
+        f"Cada corte deve ter NO MÍNIMO {min_dur} segundos e no máximo {max_dur} segundos, "
+        "ser autocontido (começo, meio e fim), "
         "e ter alto potencial de engajamento (gancho forte, emoção, curiosidade ou valor).\n"
-        f"IMPORTANTE: se o vídeo for longo (ex: um filme ou episódio), distribua os {num_clips} "
+        f"IMPORTANTE: respeite a duração mínima de {min_dur} segundos por corte. "
+        f"Se o vídeo for longo (ex: um filme ou episódio), distribua os {num_clips} "
         "cortes ao longo de TODO o vídeo (começo, meio e fim) — não concentre tudo num só ponto. "
         "Os trechos NÃO podem se sobrepor.\n\n"
         "Responda APENAS em JSON válido neste formato:\n"
@@ -61,13 +64,15 @@ def _split_segments(segments: list[dict],
     return blocks
 
 
-async def _select_from_segments(segments: list[dict], num_clips: int) -> list[dict]:
+async def _select_from_segments(segments: list[dict], num_clips: int,
+                                min_dur: int = 15) -> list[dict]:
     """Uma única chamada à IA para um conjunto de segmentos."""
+    block_end = segments[-1]["end"] if segments else 0
     payload = {
         "model": "deepseek-chat",
         "messages": [
             {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": _build_prompt(segments, num_clips)},
+            {"role": "user", "content": _build_prompt(segments, num_clips, min_dur)},
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.7,
@@ -97,6 +102,12 @@ async def _select_from_segments(segments: list[dict], num_clips: int) -> list[di
             continue
         if end <= start:
             continue
+        # Garante a duração mínima: estende o fim (sem ultrapassar o fim do bloco)
+        # e, se faltar, recua o início.
+        if end - start < min_dur:
+            end = min(start + min_dur, block_end) if block_end else start + min_dur
+            if end - start < min_dur:
+                start = max(0.0, end - min_dur)
         valid.append({
             "start": start,
             "end": end,
@@ -110,11 +121,12 @@ async def _select_from_segments(segments: list[dict], num_clips: int) -> list[di
 
 
 async def select_clips(segments: list[dict], num_clips: int = 3,
-                       on_progress=None) -> list[dict]:
+                       on_progress=None, min_dur: int = 15) -> list[dict]:
     """Seleciona os melhores cortes.
 
     on_progress(done, total): callback opcional chamado conforme os blocos
     de análise são concluídos (para mostrar progresso ao usuário).
+    min_dur: duração mínima (em segundos) que cada corte deve ter.
     """
     if not segments:
         return []
@@ -126,7 +138,7 @@ async def select_clips(segments: list[dict], num_clips: int = 3,
     if total <= 1:
         if on_progress:
             on_progress(0, 1)
-        clips = await _select_from_segments(segments, num_clips)
+        clips = await _select_from_segments(segments, num_clips, min_dur)
         if on_progress:
             on_progress(1, 1)
         return clips[:num_clips]
@@ -144,7 +156,7 @@ async def select_clips(segments: list[dict], num_clips: int = 3,
         nonlocal done_count
         async with sem:
             try:
-                res = await _select_from_segments(block, per_block)
+                res = await _select_from_segments(block, per_block, min_dur)
             except Exception:
                 res = []
         async with lock:

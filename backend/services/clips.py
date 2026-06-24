@@ -27,7 +27,8 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
                        language: str, video_path: str | None = None,
                        youtube_url: str | None = None,
                        show_title: bool = True,
-                       channel_name: str | None = None):
+                       channel_name: str | None = None,
+                       min_duration: int = 15):
     try:
         # 0. Baixa do YouTube se for o caso
         if youtube_url:
@@ -51,7 +52,8 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
         def _on_analyze(done: int, total: int):
             storage.update_job(job_id, {"done": done, "total": total})
 
-        clips = await deepseek.select_clips(segments, num_clips, on_progress=_on_analyze)
+        clips = await deepseek.select_clips(segments, num_clips,
+                                            on_progress=_on_analyze, min_dur=min_duration)
         if not clips:
             raise RuntimeError("A IA não encontrou bons trechos para cortes")
 

@@ -21,6 +21,7 @@ export default function CortesPage() {
   const [video, setVideo] = useState<File | null>(null)
   const [url, setUrl] = useState('')
   const [numClips, setNumClips] = useState(3)
+  const [minDuration, setMinDuration] = useState(15)
   const [banner, setBanner] = useState<File | null>(null)
   const [showTitle, setShowTitle] = useState(true)
   const [channelName, setChannelName] = useState('')
@@ -54,6 +55,7 @@ export default function CortesPage() {
     if (mode === 'upload' && video) form.append('video', video)
     if (mode === 'youtube') form.append('youtube_url', url.trim())
     form.append('num_clips', String(numClips))
+    form.append('min_duration', String(minDuration))
     form.append('show_title', showTitle ? '1' : '0')
     if (channelName.trim()) {
       form.append('channel_name', channelName.trim())
@@ -163,6 +165,27 @@ export default function CortesPage() {
           </div>
           <p className="text-white/30 text-xs mt-2">
             Para vídeos longos (filmes, podcasts, aulas) você pode gerar até 30 cortes de uma vez. Quanto mais cortes, mais tempo leva.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">Duração mínima de cada corte</label>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {[15, 30, 45, 60, 90].map((s) => (
+              <button key={s} onClick={() => setMinDuration(s)}
+                className={`py-2 rounded-lg text-sm font-medium transition-colors ${
+                  minDuration === s ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                }`}>{s}s</button>
+            ))}
+            <input
+              type="number" min={5} max={120} value={minDuration}
+              onChange={(e) => setMinDuration(Math.max(5, Math.min(120, Number(e.target.value) || 5)))}
+              className="py-2 px-2 rounded-lg text-sm font-medium text-center bg-white/5 text-white/80 border border-white/10 focus:border-violet-500/50 outline-none w-full"
+              aria-label="Duração mínima personalizada (segundos)"
+            />
+          </div>
+          <p className="text-white/30 text-xs mt-2">
+            Cada corte terá pelo menos esse tempo. Ideal: 15-30s para Shorts/Reels, 60s+ para cortes mais longos.
           </p>
         </div>
 
