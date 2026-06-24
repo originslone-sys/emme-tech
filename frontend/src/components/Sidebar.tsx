@@ -11,6 +11,7 @@ const nav = [
   { href: '/editar', label: 'Editar', icon: '🎬' },
   { href: '/juntar', label: 'Juntar', icon: '🎞️' },
   { href: '/biblioteca', label: 'Biblioteca', icon: '📁' },
+  { href: '/arquivos', label: 'Arquivos', icon: '🗄️' },
 ]
 
 // No mobile mostra só as 5 mais usadas no bottom nav; as demais ficam na sidebar desktop

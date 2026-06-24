@@ -56,6 +56,51 @@ def write_db(data: dict):
     tmp.replace(DB_FILE)
 
 
+def list_storage() -> dict:
+    """Lista os arquivos em cada diretório de storage com tamanho em bytes.
+
+    Útil para administração manual do disco (ver o que ocupa espaço e
+    apagar sem esperar deploy).
+    """
+    result = {}
+    total = 0
+    for category, dir_path in DIRS.items():
+        files = []
+        if dir_path.exists():
+            for p in sorted(dir_path.iterdir()):
+                if not p.is_file():
+                    continue
+                try:
+                    size = p.stat().st_size
+                except OSError:
+                    size = 0
+                files.append({"name": p.name, "size": size})
+                total += size
+        result[category] = files
+    return {"dirs": result, "total": total}
+
+
+def delete_storage_file(category: str, name: str) -> bool:
+    """Apaga um arquivo bruto de um diretório de storage.
+
+    Valida category e name para evitar path traversal.
+    """
+    if category not in DIRS:
+        return False
+    if "/" in name or "\\" in name or ".." in name:
+        return False
+    path = DIRS[category] / name
+    if not path.exists() or not path.is_file():
+        return False
+    # Garante que o caminho resolvido continua dentro do diretório esperado.
+    try:
+        path.resolve().relative_to(DIRS[category].resolve())
+    except ValueError:
+        return False
+    path.unlink()
+    return True
+
+
 async def save_upload(file, category: str) -> tuple[str, str]:
     file_id = str(uuid.uuid4())
     ext = Path(file.filename).suffix.lower()
