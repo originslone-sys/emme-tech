@@ -18,11 +18,15 @@ _SYSTEM = (
 def _build_prompt(segments: list[dict], num_clips: int) -> str:
     lines = [f"[{s['start']:.1f}-{s['end']:.1f}] {s['text']}" for s in segments]
     transcript = "\n".join(lines)
+    total_dur = segments[-1]["end"] if segments else 0
     return (
-        f"Transcrição do vídeo (em segundos):\n\n{transcript}\n\n"
+        f"Transcrição do vídeo (em segundos, duração total ~{total_dur:.0f}s):\n\n{transcript}\n\n"
         f"Selecione os {num_clips} melhores trechos para cortes virais. "
         "Cada corte deve ter entre 15 e 60 segundos, ser autocontido (começo, meio e fim), "
-        "e ter alto potencial de engajamento (gancho forte, emoção, curiosidade ou valor).\n\n"
+        "e ter alto potencial de engajamento (gancho forte, emoção, curiosidade ou valor).\n"
+        f"IMPORTANTE: se o vídeo for longo (ex: um filme ou episódio), distribua os {num_clips} "
+        "cortes ao longo de TODO o vídeo (começo, meio e fim) — não concentre tudo num só ponto. "
+        "Os trechos NÃO podem se sobrepor.\n\n"
         "Responda APENAS em JSON válido neste formato:\n"
         '{"clips": [{"start": número_segundos, "end": número_segundos, '
         '"title": "título chamativo até 60 caracteres", '

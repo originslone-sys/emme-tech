@@ -108,14 +108,23 @@ export default function CortesPage() {
       <div className="bg-[#111] border border-white/10 rounded-xl p-5 mb-6 space-y-5">
         <div>
           <label className="block text-sm font-medium text-white/60 mb-2">Quantos cortes gerar</label>
-          <div className="flex gap-2">
-            {[2, 3, 5].map((n) => (
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {[3, 5, 10, 15, 20].map((n) => (
               <button key={n} onClick={() => setNumClips(n)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`py-2 rounded-lg text-sm font-medium transition-colors ${
                   numClips === n ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
                 }`}>{n}</button>
             ))}
+            <input
+              type="number" min={1} max={30} value={numClips}
+              onChange={(e) => setNumClips(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+              className="py-2 px-2 rounded-lg text-sm font-medium text-center bg-white/5 text-white/80 border border-white/10 focus:border-violet-500/50 outline-none w-full"
+              aria-label="Quantidade personalizada"
+            />
           </div>
+          <p className="text-white/30 text-xs mt-2">
+            Para vídeos longos (filmes, podcasts, aulas) você pode gerar até 30 cortes de uma vez. Quanto mais cortes, mais tempo leva.
+          </p>
         </div>
 
         <div>

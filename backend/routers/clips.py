@@ -21,7 +21,7 @@ async def generate_clips(
     if not video and not youtube_url:
         raise HTTPException(400, "Envie um vídeo ou um link do YouTube")
 
-    num_clips = max(1, min(num_clips, 10))
+    num_clips = max(1, min(num_clips, 30))
 
     video_path = None
     if video:
