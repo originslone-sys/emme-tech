@@ -24,11 +24,16 @@ def init_storage():
 
 
 def read_db() -> dict:
-    return json.loads(DB_FILE.read_text())
+    try:
+        return json.loads(DB_FILE.read_text())
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
+        return {"images": [], "videos": [], "jobs": {}}
 
 
 def write_db(data: dict):
-    DB_FILE.write_text(json.dumps(data, indent=2, default=str))
+    tmp = DB_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str))
+    tmp.replace(DB_FILE)
 
 
 async def save_upload(file, category: str) -> tuple[str, str]:
