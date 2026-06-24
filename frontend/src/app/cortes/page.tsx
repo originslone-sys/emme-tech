@@ -1,9 +1,10 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import VideoDrop from '@/components/VideoDrop'
 import ChannelNameInput, { rememberChannelName } from '@/components/ChannelNameInput'
+import { useJobs } from '@/lib/jobs'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -23,17 +24,30 @@ export default function CortesPage() {
   const [banner, setBanner] = useState<File | null>(null)
   const [showTitle, setShowTitle] = useState(true)
   const [channelName, setChannelName] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [stage, setStage] = useState('')
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
-  const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [trackedId, setTrackedId] = useState<string | null>(null)
   const bannerInput = useRef<HTMLInputElement>(null)
+  const { jobs, addJob } = useJobs()
+
+  // Recupera um job em andamento ao abrir/voltar à página
+  useEffect(() => {
+    if (!trackedId) {
+      const active = jobs.find((j) => j.type === 'clips' && j.status === 'processing')
+      if (active) setTrackedId(active.id)
+    }
+  }, [jobs, trackedId])
+
+  const job = jobs.find((j) => j.id === trackedId)
+  const loading = job?.status === 'processing'
+  const done = job?.status === 'COMPLETED'
+  const stage = job?.stage || ''
+  const progress = { done: job?.done || 0, total: job?.total || 0 }
+  const jobError = job?.status === 'FAILED' ? (job.error || 'Processamento falhou.') : ''
 
   const submit = async () => {
     if (mode === 'upload' && !video) return setError('Selecione um vídeo')
     if (mode === 'youtube' && !url.trim()) return setError('Cole o link do YouTube')
-    setError(''); setDone(false); setLoading(true); setStage('starting'); setProgress({ done: 0, total: 0 })
+    setError('')
 
     const form = new FormData()
     if (mode === 'upload' && video) form.append('video', video)
@@ -50,29 +64,13 @@ export default function CortesPage() {
       const res = await fetch(`${API}/api/clips/generate`, { method: 'POST', body: form })
       if (!res.ok) throw new Error()
       const data = await res.json()
-      poll(data.job_id)
+      const label = mode === 'youtube' ? url.trim() : (video?.name || 'Cortes')
+      addJob(data.job_id, 'clips', label)
+      setTrackedId(data.job_id)
+      setVideo(null); setUrl(''); setBanner(null)
     } catch {
       setError('Erro ao enviar. Tente novamente.')
-      setLoading(false)
     }
-  }
-
-  const poll = (id: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API}/api/clips/jobs/${id}`)
-        const data = await res.json()
-        setStage(data.stage)
-        setProgress({ done: data.done || 0, total: data.total || 0 })
-        if (data.status === 'COMPLETED') {
-          clearInterval(interval); setLoading(false); setDone(true)
-          setVideo(null); setUrl(''); setBanner(null)
-        } else if (data.status === 'FAILED') {
-          clearInterval(interval); setLoading(false)
-          setError(data.error || 'Processamento falhou.'); setStage('')
-        }
-      } catch { /* continua tentando */ }
-    }, 3000)
   }
 
   const stageLabel = stage === 'rendering' && progress.total
@@ -98,7 +96,7 @@ export default function CortesPage() {
       </div>
 
       {mode === 'upload' ? (
-        <div className="mb-6"><VideoDrop file={video} onChange={(f) => { setVideo(f); setDone(false) }} /></div>
+        <div className="mb-6"><VideoDrop file={video} onChange={(f) => setVideo(f)} /></div>
       ) : (
         <input
           type="url" value={url} onChange={(e) => setUrl(e.target.value)}
@@ -152,8 +150,8 @@ export default function CortesPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm mb-4">{error}</div>
+      {(error || jobError) && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm mb-4">{error || jobError}</div>
       )}
       {loading && (
         <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 text-violet-400 text-sm flex items-center gap-3 mb-4">
