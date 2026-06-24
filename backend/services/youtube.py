@@ -147,14 +147,46 @@ def _is_geo_error(msg: str) -> bool:
     )
 
 
-def download(url: str) -> str:
-    """Baixa um vídeo do YouTube e retorna o caminho local.
+def _is_youtube(url: str) -> bool:
+    return bool(re.search(r"(?:youtube\.com|youtu\.be)", url, re.I))
 
-    Quando cookies estão configurados usa o client "web" (único que aceita
-    cookies de navegador). Sem cookies tenta android/ios/web com geo_bypass.
+
+def _download_generic(url: str, vid: str, out_tmpl: str) -> str:
+    """Baixa de qualquer site suportado pelo yt-dlp que NÃO seja YouTube.
+
+    Sites como Vimeo, Dailymotion, TikTok, Twitter/X e links diretos de
+    vídeo costumam baixar sem bloqueio anti-bot a partir de datacenter, então
+    não precisam da ginástica de clients/IPs específica do YouTube.
+    """
+    opts = _base_opts(out_tmpl, clients=[], xff=None)
+    # extractor_args do youtube não atrapalham outros extractors, mas removemos
+    # por clareza já que não se aplicam aqui.
+    opts.pop("extractor_args", None)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=True)
+        matches = list(storage.DIRS["uploads"].glob(f"{vid}.*"))
+        if matches:
+            return str(matches[0])
+        raise RuntimeError("Download não produziu arquivo")
+    except yt_dlp.utils.DownloadError as e:
+        for p in storage.DIRS["uploads"].glob(f"{vid}.*"):
+            p.unlink(missing_ok=True)
+        raise RuntimeError(f"Não foi possível baixar o vídeo: {e}")
+
+
+def download(url: str) -> str:
+    """Baixa um vídeo e retorna o caminho local.
+
+    YouTube recebe tratamento especial (clients/cookies/geo). Qualquer outro
+    site suportado pelo yt-dlp (Vimeo, Dailymotion, TikTok, X, link direto)
+    usa um caminho genérico simples.
     """
     vid = str(uuid.uuid4())
     out_tmpl = str(storage.DIRS["uploads"] / f"{vid}.%(ext)s")
+
+    if not _is_youtube(url):
+        return _download_generic(url, vid, out_tmpl)
 
     # Cookies de navegador funcionam com os clients baseados em web.
     # android/ios usam OAuth e ignoram cookies de browser. O web puro às vezes

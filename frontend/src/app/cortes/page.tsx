@@ -10,7 +10,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || ''
 
 const STAGES: Record<string, string> = {
   starting: 'Iniciando...',
-  downloading: 'Baixando o vídeo do YouTube...',
+  downloading: 'Baixando o vídeo...',
   transcribing: 'Transcrevendo o áudio...',
   analyzing: 'Analisando os melhores momentos com IA...',
   rendering: 'Renderizando os cortes...',
@@ -48,7 +48,7 @@ export default function CortesPage() {
 
   const submit = async () => {
     if (mode === 'upload' && !video) return setError('Selecione um vídeo')
-    if (mode === 'youtube' && !url.trim()) return setError('Cole o link do YouTube')
+    if (mode === 'youtube' && !url.trim()) return setError('Cole o link do vídeo')
     setError('')
 
     try {
@@ -147,7 +147,7 @@ export default function CortesPage() {
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
               mode === m ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
             }`}>
-            {m === 'upload' ? 'Enviar vídeo' : 'Link do YouTube'}
+            {m === 'upload' ? 'Enviar vídeo' : 'Link de vídeo'}
           </button>
         ))}
       </div>
@@ -164,11 +164,17 @@ export default function CortesPage() {
           )}
         </div>
       ) : (
-        <input
-          type="url" value={url} onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://youtube.com/watch?v=..."
-          className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-3 text-white text-sm mb-6 focus:border-violet-500/50 outline-none"
-        />
+        <div className="mb-6">
+          <input
+            type="url" value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://vimeo.com/... · YouTube, TikTok, X, ou link direto .mp4"
+            className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-3 text-white text-sm focus:border-violet-500/50 outline-none"
+          />
+          <p className="text-white/40 text-xs mt-2">
+            Funciona com Vimeo, Dailymotion, TikTok, X e links diretos. O YouTube
+            costuma exigir verificação anti-bot — se falhar, use outro link ou envie o arquivo.
+          </p>
+        </div>
       )}
 
       <div className="bg-[#111] border border-white/10 rounded-xl p-5 mb-6 space-y-5">
