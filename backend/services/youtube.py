@@ -158,7 +158,7 @@ def _download_generic(url: str, vid: str, out_tmpl: str) -> str:
     vídeo costumam baixar sem bloqueio anti-bot a partir de datacenter, então
     não precisam da ginástica de clients/IPs específica do YouTube.
     """
-    opts = _base_opts(out_tmpl, clients=[], xff=None)
+    opts = _base_opts(out_tmpl, clients=[], xff_ip=None)
     # extractor_args do youtube não atrapalham outros extractors, mas removemos
     # por clareza já que não se aplicam aqui.
     opts.pop("extractor_args", None)
