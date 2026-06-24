@@ -1,4 +1,6 @@
+import logging
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -7,8 +9,41 @@ import yt_dlp
 
 from services import storage
 
+logger = logging.getLogger(__name__)
+
 _COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
 _PROXY = os.getenv("YOUTUBE_PROXY", "").strip()
+
+
+def _normalize_cookie_content(raw: str) -> str:
+    """Normaliza o conteúdo de um cookies.txt no formato Netscape.
+
+    O formato exige TAB entre os 7 campos (domínio, flag, caminho, secure,
+    expiração, nome, valor). Ao colar numa variável de ambiente os TABs
+    viram espaços com frequência, e aí o yt-dlp não consegue ler o arquivo.
+    Aqui reconstruímos os TABs quando a linha tem 7 campos separados por
+    espaço mas nenhum TAB.
+    """
+    content = raw.replace("\\n", "\n").replace("\r\n", "\n")
+    out_lines = []
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            out_lines.append(line)
+            continue
+        if "\t" in line:
+            out_lines.append(line)
+            continue
+        # Sem TAB: tenta reconstruir a partir de 6+ campos por espaço.
+        # Os 6 primeiros campos não contêm espaços; o 7º (valor) pode, então
+        # juntamos o resto. split com maxsplit=6 -> 7 partes.
+        parts = re.split(r"\s+", stripped)
+        if len(parts) >= 7:
+            fields = parts[:6] + [" ".join(parts[6:])]
+            out_lines.append("\t".join(fields))
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
 
 
 def _resolve_cookies_file() -> str:
@@ -25,10 +60,12 @@ def _resolve_cookies_file() -> str:
 
     raw = os.getenv("YOUTUBE_COOKIES", "")
     if raw.strip():
-        # \n literais coladas no painel viram quebras de linha reais
-        content = raw.replace("\\n", "\n")
+        content = _normalize_cookie_content(raw)
         path = Path(tempfile.gettempdir()) / "yt_cookies.txt"
         path.write_text(content)
+        n = sum(1 for ln in content.split("\n")
+                if ln.strip() and not ln.strip().startswith("#"))
+        logger.info("cookies carregados de YOUTUBE_COOKIES: %d entradas", n)
         return str(path)
 
     return ""
@@ -119,10 +156,11 @@ def download(url: str) -> str:
     vid = str(uuid.uuid4())
     out_tmpl = str(storage.DIRS["uploads"] / f"{vid}.%(ext)s")
 
-    # Cookies de navegador só funcionam com o client web.
-    # android/ios usam OAuth — misturar com cookies de browser causa rejeição.
+    # Cookies de navegador funcionam com os clients baseados em web.
+    # android/ios usam OAuth e ignoram cookies de browser. O web puro às vezes
+    # exige PO token em IP de datacenter; tv/mweb costumam aceitar só cookies.
     if _COOKIES_RESOLVED:
-        attempts = [(["web"], None)]
+        attempts = [(["web"], None), (["mweb"], None), (["tv"], None)]
     else:
         attempts = [(clients, ip)
                     for clients in _CLIENT_ATTEMPTS
