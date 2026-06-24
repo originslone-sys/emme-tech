@@ -109,28 +109,49 @@ async def _select_from_segments(segments: list[dict], num_clips: int) -> list[di
     return valid
 
 
-async def select_clips(segments: list[dict], num_clips: int = 3) -> list[dict]:
+async def select_clips(segments: list[dict], num_clips: int = 3,
+                       on_progress=None) -> list[dict]:
+    """Seleciona os melhores cortes.
+
+    on_progress(done, total): callback opcional chamado conforme os blocos
+    de análise são concluídos (para mostrar progresso ao usuário).
+    """
     if not segments:
         return []
 
     blocks = _split_segments(segments)
+    total = len(blocks)
 
     # Vídeo curto: uma única análise resolve.
-    if len(blocks) <= 1:
+    if total <= 1:
+        if on_progress:
+            on_progress(0, 1)
         clips = await _select_from_segments(segments, num_clips)
+        if on_progress:
+            on_progress(1, 1)
         return clips[:num_clips]
 
     # Vídeo longo (filme, podcast, aula): analisa cada bloco em paralelo e
     # depois junta os candidatos, distribuindo os cortes ao longo de todo o vídeo.
-    per_block = max(2, math.ceil(num_clips / len(blocks)) + 1)
+    per_block = max(2, math.ceil(num_clips / total) + 1)
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
+    lock = asyncio.Lock()
+    done_count = 0
+    if on_progress:
+        on_progress(0, total)
 
     async def _run(block: list[dict]) -> list[dict]:
+        nonlocal done_count
         async with sem:
             try:
-                return await _select_from_segments(block, per_block)
+                res = await _select_from_segments(block, per_block)
             except Exception:
-                return []
+                res = []
+        async with lock:
+            done_count += 1
+            if on_progress:
+                on_progress(done_count, total)
+        return res
 
     results = await asyncio.gather(*[_run(b) for b in blocks])
     for r in results:

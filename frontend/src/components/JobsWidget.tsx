@@ -20,6 +20,7 @@ function statusLine(j: Job): string {
   if (j.status === 'FAILED') return j.error || 'Falhou'
   const base = STAGE_LABEL[j.stage || ''] || 'Processando'
   if (j.stage === 'rendering' && j.percent) return `${base} ${j.percent}%`
+  if (j.stage === 'analyzing' && (j.total || 0) > 1) return `${base} (bloco ${j.done || 0}/${j.total})`
   if (j.total) return `${base} (${j.done || 0}/${j.total})`
   return `${base}...`
 }
