@@ -1,4 +1,5 @@
 import os
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -8,6 +9,33 @@ from services import storage
 
 _COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE", "").strip()
 _PROXY = os.getenv("YOUTUBE_PROXY", "").strip()
+
+
+def _resolve_cookies_file() -> str:
+    """Resolve o arquivo de cookies a ser usado pelo yt-dlp.
+
+    Prioridade:
+    1. YOUTUBE_COOKIES_FILE — caminho de um arquivo já existente no disco.
+    2. YOUTUBE_COOKIES — conteúdo do cookies.txt colado direto na env var
+       (prático no Railway, que tem disco efêmero). Gravamos num arquivo
+       temporário no boot e usamos ele.
+    """
+    if _COOKIES_FILE and Path(_COOKIES_FILE).exists():
+        return _COOKIES_FILE
+
+    raw = os.getenv("YOUTUBE_COOKIES", "")
+    if raw.strip():
+        # \n literais coladas no painel viram quebras de linha reais
+        content = raw.replace("\\n", "\n")
+        path = Path(tempfile.gettempdir()) / "yt_cookies.txt"
+        path.write_text(content)
+        return str(path)
+
+    return ""
+
+
+# Resolvido uma vez no import (env vars não mudam em runtime).
+_COOKIES_RESOLVED = _resolve_cookies_file()
 
 # Clientes do YouTube a tentar em ordem (android/ios são menos bloqueados em
 # IPs de datacenter do que o client "web").
@@ -49,8 +77,8 @@ def _base_opts(out_tmpl: str, clients: list[str], xff_ip: str | None = None) -> 
         "extractor_args": {"youtube": {"player_client": clients}},
         "http_headers": headers,
     }
-    if _COOKIES_FILE and Path(_COOKIES_FILE).exists():
-        opts["cookiefile"] = _COOKIES_FILE
+    if _COOKIES_RESOLVED:
+        opts["cookiefile"] = _COOKIES_RESOLVED
     if _PROXY:
         opts["proxy"] = _PROXY
     return opts
@@ -148,9 +176,15 @@ def download(url: str) -> str:
         )
 
     if bot_blocked:
+        hint = (
+            " Cole o conteúdo do cookies.txt na variável YOUTUBE_COOKIES no Railway "
+            "(exporte com a extensão 'Get cookies.txt' do seu navegador logado no YouTube)."
+            if not _COOKIES_RESOLVED else
+            " Os cookies configurados não foram aceitos — exporte cookies novos "
+            "(logado no YouTube) e atualize a variável YOUTUBE_COOKIES."
+        )
         raise RuntimeError(
-            "O YouTube exigiu verificação anti-bot. Configure YOUTUBE_COOKIES_FILE "
-            "com um arquivo de cookies exportado do seu navegador (logado no YouTube)."
+            "O YouTube exigiu verificação anti-bot." + hint
         )
 
     last = errors[-1] if errors else "erro desconhecido"
