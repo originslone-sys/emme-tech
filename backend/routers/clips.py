@@ -17,11 +17,13 @@ async def generate_clips(
     banner: Optional[UploadFile] = File(None),
     show_title: int = Form(1),
     channel_name: Optional[str] = Form(None),
+    min_duration: int = Form(15),
 ):
     if not video and not youtube_url:
         raise HTTPException(400, "Envie um vídeo ou um link do YouTube")
 
     num_clips = max(1, min(num_clips, 30))
+    min_duration = max(5, min(min_duration, 120))
 
     video_path = None
     if video:
@@ -38,6 +40,7 @@ async def generate_clips(
         job_id, num_clips, banner_path, language,
         video_path=video_path, youtube_url=youtube_url,
         show_title=bool(show_title), channel_name=channel_name or None,
+        min_duration=min_duration,
     ))
 
     return {"job_id": job_id, "status": "processing"}
