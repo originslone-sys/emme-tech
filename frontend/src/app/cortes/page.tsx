@@ -26,6 +26,7 @@ export default function CortesPage() {
   const [channelName, setChannelName] = useState('')
   const [error, setError] = useState('')
   const [trackedId, setTrackedId] = useState<string | null>(null)
+  const [uploadPct, setUploadPct] = useState<number | null>(null)
   const bannerInput = useRef<HTMLInputElement>(null)
   const { jobs, addJob } = useJobs()
 
@@ -61,17 +62,36 @@ export default function CortesPage() {
     if (banner) form.append('banner', banner)
 
     try {
-      const res = await fetch(`${API}/api/clips/generate`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error()
-      const data = await res.json()
+      const data = await new Promise<{ job_id: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', `${API}/api/clips/generate`)
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100))
+        }
+        xhr.onload = () => {
+          setUploadPct(null)
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)) }
+            catch { reject(new Error('Resposta inválida')) }
+          } else {
+            reject(new Error(`Erro ${xhr.status}`))
+          }
+        }
+        xhr.onerror = () => { setUploadPct(null); reject(new Error('Falha de rede')) }
+        xhr.send(form)
+        setUploadPct(0)
+      })
       const label = mode === 'youtube' ? url.trim() : (video?.name || 'Cortes')
       addJob(data.job_id, 'clips', label)
       setTrackedId(data.job_id)
       setVideo(null); setUrl(''); setBanner(null)
-    } catch {
-      setError('Erro ao enviar. Tente novamente.')
+    } catch (e: unknown) {
+      setUploadPct(null)
+      setError(e instanceof Error ? e.message : 'Erro ao enviar. Tente novamente.')
     }
   }
+
+  const busy = uploadPct !== null || loading
 
   const stageLabel = stage === 'rendering' && progress.total
     ? `Renderizando cortes (${progress.done}/${progress.total})...`
@@ -164,6 +184,17 @@ export default function CortesPage() {
       {(error || jobError) && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm mb-4">{error || jobError}</div>
       )}
+      {uploadPct !== null && (
+        <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 text-violet-400 text-sm mb-4">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            Enviando vídeo... {uploadPct}%
+          </div>
+          <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+            <div className="bg-violet-500 h-full transition-all duration-300" style={{ width: `${uploadPct}%` }} />
+          </div>
+        </div>
+      )}
       {loading && (
         <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg px-4 py-3 text-violet-400 text-sm flex items-center gap-3 mb-4">
           <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
@@ -176,9 +207,9 @@ export default function CortesPage() {
         </div>
       )}
 
-      <button onClick={submit} disabled={loading}
+      <button onClick={submit} disabled={busy}
         className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-colors text-sm">
-        {loading ? 'Processando...' : 'Gerar Cortes'}
+        {uploadPct !== null ? `Enviando... ${uploadPct}%` : loading ? 'Processando...' : 'Gerar Cortes'}
       </button>
 
       <p className="text-white/25 text-xs text-center mt-4">
