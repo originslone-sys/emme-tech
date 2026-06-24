@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import VideoDrop from '@/components/VideoDrop'
+import ChannelNameInput, { rememberChannelName } from '@/components/ChannelNameInput'
 
 const API = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -39,7 +40,10 @@ export default function CortesPage() {
     if (mode === 'youtube') form.append('youtube_url', url.trim())
     form.append('num_clips', String(numClips))
     form.append('show_title', showTitle ? '1' : '0')
-    if (channelName.trim()) form.append('channel_name', channelName.trim())
+    if (channelName.trim()) {
+      form.append('channel_name', channelName.trim())
+      rememberChannelName(channelName)
+    }
     if (banner) form.append('banner', banner)
 
     try {
@@ -127,20 +131,7 @@ export default function CortesPage() {
           <p className="text-white/30 text-xs">Exibe o título do corte fixo no topo do vídeo.</p>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-white/60 mb-2">
-            Nome do canal
-            <span className="text-white/30 font-normal ml-1">(marca d'água no centro)</span>
-          </label>
-          <input
-            type="text"
-            value={channelName}
-            onChange={(e) => setChannelName(e.target.value)}
-            maxLength={40}
-            placeholder="Ex: @seucanal · deixe vazio para não exibir"
-            className="w-full bg-[#111] border border-white/15 rounded-xl px-4 py-2.5 text-white text-sm focus:border-violet-500/50 outline-none"
-          />
-        </div>
+        <ChannelNameInput value={channelName} onChange={setChannelName} />
 
         <div>
           <label className="block text-sm font-medium text-white/60 mb-2">Banner (opcional)</label>
