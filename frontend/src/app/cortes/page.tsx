@@ -51,49 +51,68 @@ export default function CortesPage() {
     if (mode === 'youtube' && !url.trim()) return setError('Cole o link do YouTube')
     setError('')
 
-    const form = new FormData()
-    if (mode === 'upload' && video) form.append('video', video)
-    if (mode === 'youtube') form.append('youtube_url', url.trim())
-    form.append('num_clips', String(numClips))
-    form.append('min_duration', String(minDuration))
-    form.append('show_title', showTitle ? '1' : '0')
-    if (channelName.trim()) {
-      form.append('channel_name', channelName.trim())
-      rememberChannelName(channelName)
-    }
-    if (banner) form.append('banner', banner)
-
     try {
-      const data = await new Promise<{ job_id: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', `${API}/api/clips/generate`)
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100))
-        }
-        xhr.onload = () => {
-          setUploadPct(null)
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try { resolve(JSON.parse(xhr.responseText)) }
-            catch { reject(new Error('Resposta inválida')) }
-          } else {
-            reject(new Error(`Erro ${xhr.status}`))
-          }
-        }
-        xhr.onerror = () => { setUploadPct(null); reject(new Error('Falha de rede')) }
-        xhr.send(form)
+      // Vídeo grande: envia em pedaços (chunks) para não estourar o limite de
+      // tamanho de requisição do servidor. Pedaços de 8 MB enviados em ordem.
+      let uploadId: string | null = null
+      if (mode === 'upload' && video) {
         setUploadPct(0)
-      })
+        uploadId = crypto.randomUUID()
+        const CHUNK = 8 * 1024 * 1024
+        const totalChunks = Math.ceil(video.size / CHUNK)
+        for (let i = 0; i < totalChunks; i++) {
+          const blob = video.slice(i * CHUNK, (i + 1) * CHUNK)
+          const cf = new FormData()
+          cf.append('upload_id', uploadId)
+          cf.append('index', String(i))
+          cf.append('chunk', blob)
+
+          let ok = false
+          for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+            try {
+              const r = await fetch(`${API}/api/clips/upload-chunk`, { method: 'POST', body: cf })
+              if (!r.ok) throw new Error(`Erro ${r.status}`)
+              ok = true
+            } catch (err) {
+              if (attempt === 2) throw err
+              await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)))
+            }
+          }
+          setUploadPct(Math.round(((i + 1) / totalChunks) * 100))
+        }
+      }
+
+      const form = new FormData()
+      if (uploadId && video) {
+        form.append('upload_id', uploadId)
+        const dot = video.name.lastIndexOf('.')
+        form.append('video_ext', dot >= 0 ? video.name.slice(dot).toLowerCase() : '.mp4')
+      }
+      if (mode === 'youtube') form.append('youtube_url', url.trim())
+      form.append('num_clips', String(numClips))
+      form.append('min_duration', String(minDuration))
+      form.append('show_title', showTitle ? '1' : '0')
+      if (channelName.trim()) {
+        form.append('channel_name', channelName.trim())
+        rememberChannelName(channelName)
+      }
+      if (banner) form.append('banner', banner)
+
+      const res = await fetch(`${API}/api/clips/generate`, { method: 'POST', body: form })
+      setUploadPct(null)
+      if (!res.ok) throw new Error(`Erro ${res.status}`)
+      const data = await res.json()
       const label = mode === 'youtube' ? url.trim() : (video?.name || 'Cortes')
       addJob(data.job_id, 'clips', label)
       setTrackedId(data.job_id)
       setVideo(null); setUrl(''); setBanner(null)
     } catch (e: unknown) {
       setUploadPct(null)
-      const isNetwork = e instanceof Error && /rede|network|Erro 4|Erro 5/i.test(e.message)
+      const isNetwork = e instanceof Error && /rede|network|fetch|Erro 4|Erro 5/i.test(e.message)
       if (mode === 'upload' && isNetwork) {
         setError(
-          'Falha ao enviar o vídeo. Arquivos muito grandes (acima de ~1 GB) costumam falhar no upload. ' +
-          'Dica: cole o link do YouTube na aba acima — o servidor baixa direto, sem depender da sua conexão de envio.'
+          'Falha ao enviar o vídeo. Verifique sua conexão e tente novamente — ' +
+          'o envio é feito em partes, então pode retomar. Se persistir, tente um arquivo menor.'
         )
       } else {
         setError(e instanceof Error ? e.message : 'Erro ao enviar. Tente novamente.')
@@ -132,9 +151,9 @@ export default function CortesPage() {
           <VideoDrop file={video} onChange={(f) => setVideo(f)} />
           {video && video.size > 1024 * 1024 * 1024 && (
             <div className="mt-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-amber-300/90 text-xs">
-              Este arquivo tem {(video.size / 1024 / 1024 / 1024).toFixed(1)} GB. Arquivos grandes
-              podem falhar no envio. Se der erro, use a aba <strong>Link do YouTube</strong> — o
-              servidor baixa o vídeo direto, sem depender da sua conexão de upload.
+              Este arquivo tem {(video.size / 1024 / 1024 / 1024).toFixed(1)} GB. O envio é feito
+              em partes, então arquivos grandes funcionam — mas o upload pode demorar dependendo
+              da sua conexão. Não feche a aba até o envio chegar a 100%.
             </div>
           )}
         </div>
