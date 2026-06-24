@@ -62,7 +62,14 @@ def _base_opts(out_tmpl: str, clients: list[str], xff_ip: str | None = None) -> 
         headers["X-Forwarded-For"] = xff_ip
 
     opts = {
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+        # Seletor tolerante: tenta vídeo+áudio até 1080p, mas cai para
+        # qualquer combinação ou formato único disponível. O último "/b"
+        # garante que sempre pega algo, mesmo quando o client expõe poucos
+        # formatos (evita "Requested format is not available").
+        "format": (
+            "bv*[height<=1080]+ba/b[height<=1080]/"
+            "bv*+ba/b/bestvideo+bestaudio/best"
+        ),
         "outtmpl": out_tmpl,
         "merge_output_format": "mp4",
         "quiet": True,
