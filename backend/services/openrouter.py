@@ -19,7 +19,7 @@ _CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 # FLUX.2 Pro: black-forest-labs/flux.2-pro  ($0.03/mp, consistência multi-referência)
 # FLUX.2 Flex: black-forest-labs/flux.2-flex ($0.06/mp, multi-reference editing)
 # Gemini fallback: google/gemini-3-pro-image
-_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "google/gemini-3-pro-image")
+_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "black-forest-labs/flux.2-pro")
 
 
 def _headers() -> dict:
