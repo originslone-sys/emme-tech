@@ -69,7 +69,7 @@ async def create_character(fields: CharacterFields):
         prompt=foundation_prompt,
         count=6,
         reference_url=None,
-        aspect_ratio="1:1",
+        aspect_ratio="4:5",
         image_size="1K",
     )
     if not images:
