@@ -43,13 +43,27 @@ _NEGATIVE_PROMPT = (
 )
 
 
+# Mapeia aspect_ratio -> (width, height) em múltiplos de 32 (exigência do FLUX).
+# Mantém ~1.3 megapixels para boa qualidade sem custo excessivo.
+_ASPECT_DIMS = {
+    "1:1": (1024, 1024),
+    "4:5": (1024, 1280),   # retrato — fotos de rosto/fundação
+    "9:16": (896, 1600),   # vertical — cenas de corpo inteiro (Reels/TikTok)
+    "16:9": (1600, 896),
+    "2:3": (1024, 1536),
+    "3:4": (1024, 1344),
+}
+
+
 async def _generate_flux(
     prompt: str,
     reference_url: str | None,
+    aspect_ratio: str,
     seed: int | None,
     client: httpx.AsyncClient,
 ) -> bytes | None:
     """Gera imagem via /api/v1/images (endpoint dedicado FLUX)."""
+    width, height = _ASPECT_DIMS.get(aspect_ratio, (1024, 1280))
     body: dict = {
         "model": _IMAGE_MODEL,
         "prompt": prompt,
@@ -58,8 +72,8 @@ async def _generate_flux(
         "output_format": "png",
         "guidance": 3.5,
         "steps": 30,
-        "width": 1024,
-        "height": 1280,
+        "width": width,
+        "height": height,
     }
     if seed is not None:
         body["seed"] = seed
@@ -143,7 +157,7 @@ async def _generate_one(
 ) -> bytes | None:
     async with httpx.AsyncClient(timeout=120) as client:
         if _is_flux(_IMAGE_MODEL):
-            return await _generate_flux(prompt, reference_url, seed, client)
+            return await _generate_flux(prompt, reference_url, aspect_ratio, seed, client)
         else:
             return await _generate_gemini(
                 prompt, reference_url, aspect_ratio, image_size, seed, client
