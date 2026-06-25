@@ -10,16 +10,19 @@ from services import storage
 
 logger = logging.getLogger(__name__)
 
+# Endpoint dedicado de imagens (FLUX e similares)
+_IMAGES_URL = "https://openrouter.ai/api/v1/images"
+# Endpoint chat/completions (Gemini image models)
 _CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-_IMAGES_URL = "https://openrouter.ai/api/v1/images/generations"
 
-# Modelo padrão — pode ser sobrescrito com OPENROUTER_IMAGE_MODEL no Railway.
-# Confirmado disponível nesta conta: google/gemini-3-pro-image, google/gemini-3.1-flash-image
+# Configurável via OPENROUTER_IMAGE_MODEL no Railway.
+# FLUX.2 Pro: black-forest-labs/flux.2-pro  ($0.03/mp, consistência multi-referência)
+# FLUX.2 Flex: black-forest-labs/flux.2-flex ($0.06/mp, multi-reference editing)
+# Gemini fallback: google/gemini-3-pro-image
 _IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "google/gemini-3-pro-image")
 
 
 def _headers() -> dict:
-    """Constrói headers com a API key lida em tempo de execução."""
     key = os.getenv("OPENROUTER_API_KEY", "")
     return {
         "Authorization": f"Bearer {key}",
@@ -29,18 +32,49 @@ def _headers() -> dict:
     }
 
 
-def _build_messages(prompt: str, reference_url: str | None) -> list[dict]:
+def _is_flux(model: str) -> bool:
+    return "flux" in model.lower()
+
+
+async def _generate_flux(
+    prompt: str,
+    reference_url: str | None,
+    seed: int | None,
+    client: httpx.AsyncClient,
+) -> bytes | None:
+    """Gera imagem via /api/v1/images (endpoint dedicado FLUX)."""
+    body: dict = {
+        "model": _IMAGE_MODEL,
+        "prompt": prompt,
+        "n": 1,
+        "output_format": "png",
+    }
+    if seed is not None:
+        body["seed"] = seed
     if reference_url:
-        content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": reference_url}},
-        ]
-    else:
-        content = [{"type": "text", "text": prompt}]
-    return [{"role": "user", "content": content}]
+        body["input_references"] = [reference_url]
+
+    resp = await client.post(_IMAGES_URL, json=body, headers=_headers())
+    if not resp.is_success:
+        logger.error("FLUX /images falhou %d: %s", resp.status_code, resp.text[:400])
+        return None
+
+    data = resp.json()
+    try:
+        item = data["data"][0]
+        if item.get("b64_json"):
+            return base64.b64decode(item["b64_json"])
+        if item.get("url"):
+            async with httpx.AsyncClient(timeout=60) as dl:
+                r = await dl.get(item["url"])
+                r.raise_for_status()
+                return r.content
+    except (KeyError, IndexError, Exception) as e:
+        logger.error("Extração FLUX falhou: %s | resp: %s", e, str(data)[:300])
+    return None
 
 
-async def _generate_via_chat(
+async def _generate_gemini(
     prompt: str,
     reference_url: str | None,
     aspect_ratio: str,
@@ -48,10 +82,18 @@ async def _generate_via_chat(
     seed: int | None,
     client: httpx.AsyncClient,
 ) -> bytes | None:
-    """Tenta gerar imagem via /chat/completions com modalities."""
+    """Gera imagem via /api/v1/chat/completions com modalities (Gemini)."""
+    if reference_url:
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": reference_url}},
+        ]
+    else:
+        content = [{"type": "text", "text": prompt}]
+
     body: dict = {
         "model": _IMAGE_MODEL,
-        "messages": _build_messages(prompt, reference_url),
+        "messages": [{"role": "user", "content": content}],
         "modalities": ["image", "text"],
         "image_config": {
             "aspect_ratio": aspect_ratio,
@@ -63,7 +105,7 @@ async def _generate_via_chat(
 
     resp = await client.post(_CHAT_URL, json=body, headers=_headers())
     if not resp.is_success:
-        logger.warning("chat/completions falhou %d: %s", resp.status_code, resp.text[:300])
+        logger.error("Gemini chat/completions falhou %d: %s", resp.status_code, resp.text[:400])
         return None
 
     data = resp.json()
@@ -76,48 +118,7 @@ async def _generate_via_chat(
             r.raise_for_status()
             return r.content
     except (KeyError, IndexError, Exception) as e:
-        logger.warning("Extração de imagem (chat) falhou: %s | resp: %s", e, str(data)[:300])
-        return None
-
-
-async def _generate_via_images(
-    prompt: str,
-    aspect_ratio: str,
-    image_size: str,
-    seed: int | None,
-    client: httpx.AsyncClient,
-) -> bytes | None:
-    """Tenta gerar imagem via /images/generations (endpoint OpenAI-style)."""
-    body: dict = {
-        "model": _IMAGE_MODEL,
-        "prompt": prompt,
-        "n": 1,
-        "response_format": "b64_json",
-        "image_config": {
-            "aspect_ratio": aspect_ratio,
-            "image_size": image_size,
-        },
-    }
-    if seed is not None:
-        body["seed"] = seed
-
-    resp = await client.post(_IMAGES_URL, json=body, headers=_headers())
-    if not resp.is_success:
-        logger.error("images/generations falhou %d: %s", resp.status_code, resp.text[:300])
-        return None
-
-    data = resp.json()
-    try:
-        item = data["data"][0]
-        if "b64_json" in item and item["b64_json"]:
-            return base64.b64decode(item["b64_json"])
-        if "url" in item:
-            async with httpx.AsyncClient(timeout=60) as dl:
-                r = await dl.get(item["url"])
-                r.raise_for_status()
-                return r.content
-    except (KeyError, IndexError, Exception) as e:
-        logger.error("Extração de imagem (images) falhou: %s | resp: %s", e, str(data)[:300])
+        logger.error("Extração Gemini falhou: %s | resp: %s", e, str(data)[:300])
     return None
 
 
@@ -128,21 +129,13 @@ async def _generate_one(
     image_size: str,
     seed: int | None = None,
 ) -> bytes | None:
-    """Gera uma única imagem: tenta chat/completions, depois images/generations."""
     async with httpx.AsyncClient(timeout=120) as client:
-        # Primeira tentativa: chat/completions com modalities
-        result = await _generate_via_chat(
-            prompt, reference_url, aspect_ratio, image_size, seed, client
-        )
-        if result:
-            return result
-
-        # Fallback: images/generations (OpenAI-style, sem referência visual)
-        logger.info("Tentando fallback images/generations para seed=%s", seed)
-        result = await _generate_via_images(
-            prompt, aspect_ratio, image_size, seed, client
-        )
-        return result
+        if _is_flux(_IMAGE_MODEL):
+            return await _generate_flux(prompt, reference_url, seed, client)
+        else:
+            return await _generate_gemini(
+                prompt, reference_url, aspect_ratio, image_size, seed, client
+            )
 
 
 async def generate_images(
