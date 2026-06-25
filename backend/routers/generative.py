@@ -66,8 +66,8 @@ async def create_character(fields: CharacterFields):
         prompt=foundation_prompt,
         count=6,
         reference_url=None,
-        width=1024,
-        height=1024,
+        aspect_ratio="1:1",
+        image_size="1K",
     )
     if not images:
         raise HTTPException(500, "A geração de imagens falhou. Verifique a chave OPENROUTER_API_KEY.")
@@ -158,8 +158,8 @@ async def generate_scene(fields: SceneFields):
         prompt=prompt,
         count=4,
         reference_url=ref_url,
-        width=1080,
-        height=1920,
+        aspect_ratio="9:16",
+        image_size="1K",
     )
     if not images:
         raise HTTPException(500, "A geração de imagens falhou.")
