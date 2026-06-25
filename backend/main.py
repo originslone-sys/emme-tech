@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from routers import editor, library, clips, viral
+from routers import editor, library, clips, viral, generative
 from services.storage import init_storage, DIRS
 
 # Garante que os diretórios existem antes de montar os estáticos
@@ -27,6 +27,7 @@ app.include_router(editor.router, prefix="/api/editor", tags=["editor"])
 app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(viral.router, prefix="/api/viral", tags=["viral"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
+app.include_router(generative.router, prefix="/api/generative", tags=["generative"])
 
 # Serve os uploads para o RunPod baixar via URL pública
 app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
@@ -34,6 +35,7 @@ app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="u
 # assíncrono com suporte nativo a Range, bem mais eficiente que servir o
 # arquivo por uma rota Python (usado para o player da Biblioteca).
 app.mount("/files/videos", StaticFiles(directory=str(DIRS["videos"])), name="videos")
+app.mount("/files/images", StaticFiles(directory=str(DIRS["images"])), name="images")
 
 
 @app.get("/health")

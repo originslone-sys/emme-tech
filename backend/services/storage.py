@@ -20,7 +20,7 @@ def init_storage():
     for dir_path in DIRS.values():
         dir_path.mkdir(parents=True, exist_ok=True)
     if not DB_FILE.exists():
-        DB_FILE.write_text(json.dumps({"images": [], "videos": [], "jobs": {}}))
+        DB_FILE.write_text(json.dumps({"images": [], "videos": [], "jobs": {}, "character": None}))
     cleanup_uploads()
 
 
@@ -184,3 +184,34 @@ def update_job(job_id: str, meta_updates: dict):
 def get_job(job_id: str) -> Optional[dict]:
     db = read_db()
     return db["jobs"].get(job_id)
+
+
+# ---------- Personagem de IA generativa (único por instância) ----------
+
+def get_character() -> Optional[dict]:
+    db = read_db()
+    return db.get("character")
+
+
+def save_character(data: dict):
+    db = read_db()
+    db["character"] = data
+    write_db(db)
+
+
+def delete_character():
+    db = read_db()
+    char = db.get("character")
+    if char:
+        # Apaga a imagem de referência do disco
+        ref = char.get("reference_image")
+        if ref:
+            p = Path(ref)
+            if p.exists():
+                p.unlink(missing_ok=True)
+        # Apaga imagens geradas associadas
+        for img_id in char.get("generated_image_ids", []):
+            for f in DIRS["images"].glob(f"{img_id}.*"):
+                f.unlink(missing_ok=True)
+    db["character"] = None
+    write_db(db)

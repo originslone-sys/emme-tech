@@ -9,7 +9,7 @@ const nav = [
   { href: '/cortes', label: 'Cortes', icon: '🔥' },
   { href: '/repostar', label: 'Repostar', icon: '♻️' },
   { href: '/editar', label: 'Editar', icon: '🎬' },
-  { href: '/juntar', label: 'Juntar', icon: '🎞️' },
+  { href: '/juntar', label: 'Criar', icon: '🎨' },
   { href: '/biblioteca', label: 'Biblioteca', icon: '📁' },
   { href: '/arquivos', label: 'Arquivos', icon: '🗄️' },
 ]
