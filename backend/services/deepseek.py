@@ -215,11 +215,13 @@ def _build_character_prompt(fields: dict) -> str:
         "Use precise descriptors like 'almond-shaped dark brown eyes', "
         "'heart-shaped face with high cheekbones', 'straight black hair cut at collarbone'.\n"
         "3. End the anchor_prompt with quality tags: "
-        "'photorealistic, 8K resolution, sharp focus, natural skin texture, "
-        "Canon EOS R5, 85mm portrait lens, f/1.8, studio lighting'.\n"
-        "4. Also write a short foundation_scene: neutral portrait setup for generating "
-        "the 6 reference photos (front-facing, neutral expression, white background, "
-        "soft even lighting). This is appended to anchor_prompt only for the initial batch.\n\n"
+        "'RAW photo, photorealistic, hyperrealistic, skin pores visible, subsurface scattering, "
+        "fine hair strands, 8K ultra HD, Sony A7R IV 85mm f/1.4, shallow depth of field, "
+        "natural color grading, cinematic, no CGI, no illustration, no painting'.\n"
+        "4. Also write a short foundation_scene: natural portrait setup for the 6 reference photos. "
+        "Use: front-facing, neutral relaxed expression, soft diffused natural light, "
+        "slightly blurred neutral background (NOT white), eye-level shot, 3/4 lighting. "
+        "This is appended to anchor_prompt only for the initial batch.\n\n"
         "Respond ONLY in valid JSON:\n"
         '{"anchor_prompt": "...", "foundation_scene": "...", "display_summary": "one sentence describing the character in Portuguese"}'
     )
@@ -258,6 +260,13 @@ async def generate_character_sheet(fields: dict) -> dict:
     return {"anchor_prompt": anchor, "foundation_scene": foundation, "display_summary": summary}
 
 
+_QUALITY_SUFFIX = (
+    "RAW photo, photorealistic, hyperrealistic, skin pores visible, subsurface scattering, "
+    "8K ultra HD, Sony A7R IV 85mm f/1.4, shallow depth of field, natural color grading, "
+    "cinematic, no CGI, no illustration"
+)
+
+
 def build_scene_prompt(anchor_prompt: str, scene_fields: dict) -> str:
     """Monta o prompt final para geração de uma cena com o personagem."""
     parts = [anchor_prompt]
@@ -271,6 +280,9 @@ def build_scene_prompt(anchor_prompt: str, scene_fields: dict) -> str:
         parts.append(f"{scene_fields['expression']} expression")
     if scene_fields.get("lighting"):
         parts.append(f"{scene_fields['lighting']} lighting")
+    # Garante tags de qualidade mesmo que o anchor_prompt não as inclua
+    if "photorealistic" not in anchor_prompt.lower():
+        parts.append(_QUALITY_SUFFIX)
     return ", ".join(parts)
 
 
