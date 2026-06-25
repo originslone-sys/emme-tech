@@ -1,3 +1,6 @@
+import httpx
+import os
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
@@ -130,6 +133,40 @@ def reset_character():
     """Remove o personagem atual e apaga as imagens geradas."""
     storage.delete_character()
     return {"deleted": True}
+
+
+@router.get("/debug")
+async def debug_openrouter():
+    """Testa conexão com OpenRouter e lista modelos de imagem disponíveis."""
+    key = os.getenv("OPENROUTER_API_KEY", "")
+    if not key:
+        return {"error": "OPENROUTER_API_KEY não configurada"}
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("https://openrouter.ai/api/v1/models", headers=headers)
+            if not resp.is_success:
+                return {"error": f"OpenRouter retornou {resp.status_code}", "body": resp.text[:500]}
+            data = resp.json()
+            image_models = [
+                m["id"] for m in data.get("data", [])
+                if "image" in str(m.get("architecture", {}).get("modality", ""))
+                or "flux" in m["id"].lower()
+                or "imagen" in m["id"].lower()
+                or "gemini" in m["id"].lower() and "image" in m["id"].lower()
+            ]
+            return {
+                "current_model": openrouter._IMAGE_MODEL,
+                "key_prefix": key[:8] + "...",
+                "image_models": image_models[:30],
+                "total_models": len(data.get("data", [])),
+            }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.post("/scene")

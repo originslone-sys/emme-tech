@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 _CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 _IMAGES_URL = "https://openrouter.ai/api/v1/images/generations"
 
-# FLUX.2 [flex] — modelo principal
-_IMAGE_MODEL = "black-forest-labs/flux.2-flex"
+# Modelo padrão — pode ser sobrescrito com OPENROUTER_IMAGE_MODEL no Railway.
+# Opções testadas: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-pro,
+#                  black-forest-labs/flux-1-schnell, black-forest-labs/flux.2-flex
+_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "black-forest-labs/flux-1.1-pro")
 
 
 def _headers() -> dict:
