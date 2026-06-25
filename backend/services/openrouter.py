@@ -36,6 +36,13 @@ def _is_flux(model: str) -> bool:
     return "flux" in model.lower()
 
 
+_NEGATIVE_PROMPT = (
+    "plastic skin, smooth skin, airbrushed, instagram filter, beauty mode, porcelain skin, "
+    "anime, illustration, cartoon, 3D render, CGI, painting, hyper-smooth, overexposed, "
+    "glowing skin, perfectly symmetrical face, beauty retouch, studio makeup, fake"
+)
+
+
 async def _generate_flux(
     prompt: str,
     reference_url: str | None,
@@ -46,8 +53,11 @@ async def _generate_flux(
     body: dict = {
         "model": _IMAGE_MODEL,
         "prompt": prompt,
+        "negative_prompt": _NEGATIVE_PROMPT,
         "n": 1,
         "output_format": "png",
+        "guidance": 4.0,
+        "steps": 35,
     }
     if seed is not None:
         body["seed"] = seed
