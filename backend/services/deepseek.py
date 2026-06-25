@@ -189,10 +189,11 @@ async def select_clips(segments: list[dict], num_clips: int = 3,
 # ---------- Character Sheet para personagem de IA generativa ----------
 
 _SYSTEM_CHARACTER = (
-    "You are an expert at writing precise, detailed prompts for photorealistic "
-    "AI image generation models (FLUX). Your character sheets must be extremely "
-    "specific about physical features so the model generates the exact same face "
-    "consistently across all scenes. Write only in English."
+    "You are an expert at writing precise, detailed prompts for AI image generation models (FLUX). "
+    "You specialize in creating captivating, stunningly beautiful characters for editorial and "
+    "fashion photography. Your prompts must be specific enough that the model generates the exact "
+    "same face consistently across all scenes, while maximizing visual impact and beauty. "
+    "Write only in English."
 )
 
 
@@ -208,24 +209,24 @@ def _build_character_prompt(fields: dict) -> str:
         f"- Distinctive traits: {fields.get('traits', '')}\n"
         f"- Visual personality tone: {fields.get('tone', '')}\n\n"
         "Rules:\n"
-        "1. The anchor_prompt MUST start with: 'A hyperrealistic portrait photograph of a [sex], [age] years old,' "
-        "then describe ONLY permanent physical features: face shape, skin texture, eyes, nose, lips, jawline, hair. "
+        "1. The anchor_prompt MUST start with: 'Hyperrealistic professional portrait of a stunningly beautiful [sex], [age] years old,' "
+        "then describe ONLY permanent physical features: face shape, skin, eyes, lips, jawline, hair. "
         "No clothing, no background, no pose.\n"
-        "2. Be hyper-specific: avoid vague words like 'beautiful' or 'attractive'. "
-        "Use precise descriptors like 'almond-shaped dark brown eyes with realistic iris texture and subtle limbal ring', "
-        "'heart-shaped face with high cheekbones', 'straight black hair with fine baby hairs around hairline, strands out of place'.\n"
-        "3. ALWAYS include natural imperfection descriptors to avoid AI perfect-symmetry look: "
-        "'slight asymmetry in the face, one eyebrow slightly higher than the other, "
-        "natural uneven lip shape, subtle dark circles under the eyes, faint skin imperfections, pores visible'.\n"
+        "2. Use captivating beauty descriptors: 'captivating symmetrical face', 'high cheekbones', 'full lips', "
+        "'perfectly arched eyebrows', 'long lashes', 'mesmerizing eyes with striking iris detail and natural catchlight reflection', "
+        "'voluminous shiny hair with natural highlights'. "
+        "Use precise physical descriptors but frame them as beauty assets.\n"
+        "3. Include luminosity and glow: 'luminescent skin with subtle natural texture, healthy glow, satin finish, "
+        "refined visible pores, subsurface scattering, natural radiance, no powder texture, not plastic'.\n"
         "4. End the anchor_prompt with: "
-        "'RAW photo, photorealistic, hyperrealistic, skin pores and subsurface scattering visible, "
-        "fine hair strands, no artificial blur, natural color temperature, 8K ultra HD, "
-        "Sony A7R IV 85mm f/1.4 at f/2.8, shallow depth of field, natural color grading, "
-        "documentary style, candid, raw photo aesthetic, no airbrushing, no plastic look, no CGI, no illustration'.\n"
+        "'RAW photo, hyperrealistic, photorealistic, editorial quality, professional fashion photography, "
+        "8K ultra HD, Sony A7R IV 85mm f/1.8, shallow depth of field, creamy bokeh, "
+        "warm natural color grading, no plastic look, no airbrushing artifacts, no CGI, no illustration'.\n"
         "5. Write a foundation_scene for the 6 initial reference photos: "
-        "front-facing, eyes looking very slightly away from camera, genuine neutral expression with a subtle half-smile, "
-        "soft natural window light from the left creating subtle shadows under chin and cheekbones, "
-        "slightly blurred neutral background (NOT white studio), no makeup or barely any makeup, eye-level shot. "
+        "front-facing, direct eye contact with camera, confident slight half-smile, intense captivating gaze, "
+        "soft glamour makeup with natural tones glossy lips subtle mascara, "
+        "studio beauty lighting with beauty dish and soft fill light, "
+        "creamy neutral bokeh background, eye-level shot. "
         "This is appended to anchor_prompt only for the initial batch.\n\n"
         "Respond ONLY in valid JSON:\n"
         '{"anchor_prompt": "...", "foundation_scene": "...", "display_summary": "one sentence describing the character in Portuguese"}'
@@ -266,10 +267,10 @@ async def generate_character_sheet(fields: dict) -> dict:
 
 
 _QUALITY_SUFFIX = (
-    "RAW photo, photorealistic, hyperrealistic, skin pores visible, subsurface scattering, "
-    "slight natural facial asymmetry, fine hair strands, realistic iris texture, "
-    "8K ultra HD, Sony A7R IV 85mm f/1.4, shallow depth of field, natural color grading, "
-    "documentary style, candid, no airbrushing, no CGI, no illustration"
+    "RAW photo, hyperrealistic, photorealistic, editorial quality, professional fashion photography, "
+    "luminescent skin with natural texture, healthy glow, subsurface scattering, "
+    "8K ultra HD, Sony A7R IV 85mm f/1.8, shallow depth of field, creamy bokeh, "
+    "warm natural color grading, no plastic look, no airbrushing artifacts, no CGI, no illustration"
 )
 
 
