@@ -78,7 +78,11 @@ async def _generate_flux(
     if seed is not None:
         body["seed"] = seed
     if reference_url:
-        body["input_references"] = [reference_url]
+        # input_references espera objetos no formato multimodal do OpenRouter,
+        # não strings simples (Zod rejeita string com "expected object").
+        body["input_references"] = [
+            {"type": "image_url", "image_url": {"url": reference_url}}
+        ]
 
     resp = await client.post(_IMAGES_URL, json=body, headers=_headers())
     if not resp.is_success:
