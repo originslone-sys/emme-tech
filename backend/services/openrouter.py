@@ -37,9 +37,9 @@ def _is_flux(model: str) -> bool:
 
 
 _NEGATIVE_PROMPT = (
-    "pimples, acne, scars, blemishes, dull skin, tired look, ugly, distorted face, "
-    "unnatural expression, plastic skin, airbrushed, overly smooth, waxy skin, "
-    "anime, illustration, cartoon, 3D render, CGI, painting, overexposed, fake"
+    "plastic skin, airbrushed, beauty filter, instagram filter, retouched, overly smooth, waxy skin, "
+    "studio lighting, beauty dish, heavy makeup, glamour filter, "
+    "anime, illustration, cartoon, 3D render, CGI, painting, overexposed, fake, ugly, distorted"
 )
 
 
@@ -70,8 +70,8 @@ async def _generate_flux(
         "negative_prompt": _NEGATIVE_PROMPT,
         "n": 1,
         "output_format": "png",
-        "guidance": 3.5,
-        "steps": 30,
+        "guidance": 4.0,
+        "steps": 32,
         "width": width,
         "height": height,
     }

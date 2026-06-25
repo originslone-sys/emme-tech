@@ -190,10 +190,9 @@ async def select_clips(segments: list[dict], num_clips: int = 3,
 
 _SYSTEM_CHARACTER = (
     "You are an expert at writing precise, detailed prompts for AI image generation models (FLUX). "
-    "You specialize in creating captivating, stunningly beautiful characters for editorial and "
-    "fashion photography. Your prompts must be specific enough that the model generates the exact "
-    "same face consistently across all scenes, while maximizing visual impact and beauty. "
-    "Write only in English."
+    "You create stunningly beautiful but completely real-looking characters — the goal is a photo "
+    "that looks taken on a high-end smartphone, capturing genuine beauty without filters or retouching. "
+    "The person must look real enough to be walking on the street. Write only in English."
 )
 
 
@@ -209,24 +208,25 @@ def _build_character_prompt(fields: dict) -> str:
         f"- Distinctive traits: {fields.get('traits', '')}\n"
         f"- Visual personality tone: {fields.get('tone', '')}\n\n"
         "Rules:\n"
-        "1. The anchor_prompt MUST start with: 'Hyperrealistic professional portrait of a stunningly beautiful [sex], [age] years old,' "
+        "1. The anchor_prompt MUST start with: 'Candid portrait of a stunningly beautiful [sex], [age] years old,' "
         "then describe ONLY permanent physical features: face shape, skin, eyes, lips, jawline, hair. "
         "No clothing, no background, no pose.\n"
-        "2. Use captivating beauty descriptors: 'captivating symmetrical face', 'high cheekbones', 'full lips', "
-        "'perfectly arched eyebrows', 'long lashes', 'mesmerizing eyes with striking iris detail and natural catchlight reflection', "
-        "'voluminous shiny hair with natural highlights'. "
-        "Use precise physical descriptors but frame them as beauty assets.\n"
-        "3. Include luminosity and glow: 'luminescent skin with subtle natural texture, healthy glow, satin finish, "
-        "refined visible pores, subsurface scattering, natural radiance, no powder texture, not plastic'.\n"
+        "2. Describe beauty naturally — she is genuinely beautiful but real: "
+        "'high cheekbones', 'full natural lips', 'well-defined eyebrows', 'long natural lashes', "
+        "'striking [color] eyes with detailed iris texture and natural catchlight', "
+        "'natural shiny hair'. Avoid words like 'perfect', 'flawless', 'symmetrical'.\n"
+        "3. Include real skin texture: 'natural skin with visible pores, subtle skin texture, "
+        "slight natural imperfections, subsurface scattering, no filter, no retouching, "
+        "slight natural facial asymmetry, one eyebrow slightly higher, natural lip asymmetry'.\n"
         "4. End the anchor_prompt with: "
-        "'RAW photo, hyperrealistic, photorealistic, editorial quality, professional fashion photography, "
-        "8K ultra HD, Sony A7R IV 85mm f/1.8, shallow depth of field, creamy bokeh, "
-        "warm natural color grading, no plastic look, no airbrushing artifacts, no CGI, no illustration'.\n"
+        "'shot on iPhone 15 Pro, RAW photo, photorealistic, hyperrealistic, "
+        "natural skin texture, visible pores, slight film grain, "
+        "85mm equivalent lens, f/1.8, shallow depth of field, "
+        "natural warm color grading, no beauty filter, no airbrushing, no plastic look, no CGI, no illustration'.\n"
         "5. Write a foundation_scene for the 6 initial reference photos: "
-        "front-facing, direct eye contact with camera, confident slight half-smile, intense captivating gaze, "
-        "soft glamour makeup with natural tones glossy lips subtle mascara, "
-        "studio beauty lighting with beauty dish and soft fill light, "
-        "creamy neutral bokeh background, eye-level shot. "
+        "front-facing, direct eye contact, genuine confident expression with natural slight smile, "
+        "no makeup or barely-there makeup, soft natural window light from the side, "
+        "slightly blurred real-world background (cafe, room, street — not studio), eye-level shot. "
         "This is appended to anchor_prompt only for the initial batch.\n\n"
         "Respond ONLY in valid JSON:\n"
         '{"anchor_prompt": "...", "foundation_scene": "...", "display_summary": "one sentence describing the character in Portuguese"}'
@@ -267,10 +267,10 @@ async def generate_character_sheet(fields: dict) -> dict:
 
 
 _QUALITY_SUFFIX = (
-    "RAW photo, hyperrealistic, photorealistic, editorial quality, professional fashion photography, "
-    "luminescent skin with natural texture, healthy glow, subsurface scattering, "
-    "8K ultra HD, Sony A7R IV 85mm f/1.8, shallow depth of field, creamy bokeh, "
-    "warm natural color grading, no plastic look, no airbrushing artifacts, no CGI, no illustration"
+    "shot on iPhone 15 Pro, RAW photo, photorealistic, hyperrealistic, "
+    "natural skin texture, visible pores, subsurface scattering, slight film grain, "
+    "85mm equivalent f/1.8, shallow depth of field, natural warm color grading, "
+    "no beauty filter, no airbrushing, no plastic look, no CGI, no illustration"
 )
 
 
