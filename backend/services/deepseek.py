@@ -185,7 +185,94 @@ async def select_clips(segments: list[dict], num_clips: int = 3,
     return merged[:num_clips]
 
 
-# ---------- Roteiro de vídeo viral (do zero) ----------
+
+# ---------- Character Sheet para personagem de IA generativa ----------
+
+_SYSTEM_CHARACTER = (
+    "You are an expert at writing precise, detailed prompts for photorealistic "
+    "AI image generation models (FLUX). Your character sheets must be extremely "
+    "specific about physical features so the model generates the exact same face "
+    "consistently across all scenes. Write only in English."
+)
+
+
+def _build_character_prompt(fields: dict) -> str:
+    return (
+        "Create a character sheet prompt for a photorealistic AI image generation model.\n\n"
+        f"Character details provided by the user:\n"
+        f"- Sex: {fields.get('sex', '')}\n"
+        f"- Age: {fields.get('age', '')}\n"
+        f"- Ethnicity/skin tone: {fields.get('ethnicity', '')}\n"
+        f"- Hair (color + style): {fields.get('hair', '')}\n"
+        f"- Eyes (color + shape): {fields.get('eyes', '')}\n"
+        f"- Distinctive traits: {fields.get('traits', '')}\n"
+        f"- Visual personality tone: {fields.get('tone', '')}\n\n"
+        "Rules:\n"
+        "1. The anchor_prompt must be a single dense paragraph in English describing ONLY "
+        "the person's permanent physical features (face shape, skin, eyes, nose, lips, "
+        "jawline, hair). No clothing, no background, no pose.\n"
+        "2. Be hyper-specific: avoid vague words like 'beautiful' or 'attractive'. "
+        "Use precise descriptors like 'almond-shaped dark brown eyes', "
+        "'heart-shaped face with high cheekbones', 'straight black hair cut at collarbone'.\n"
+        "3. End the anchor_prompt with quality tags: "
+        "'photorealistic, 8K resolution, sharp focus, natural skin texture, "
+        "Canon EOS R5, 85mm portrait lens, f/1.8, studio lighting'.\n"
+        "4. Also write a short foundation_scene: neutral portrait setup for generating "
+        "the 6 reference photos (front-facing, neutral expression, white background, "
+        "soft even lighting). This is appended to anchor_prompt only for the initial batch.\n\n"
+        "Respond ONLY in valid JSON:\n"
+        '{"anchor_prompt": "...", "foundation_scene": "...", "display_summary": "one sentence describing the character in Portuguese"}'
+    )
+
+
+async def generate_character_sheet(fields: dict) -> dict:
+    """Gera o prompt-âncora do personagem a partir dos campos do usuário."""
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": _SYSTEM_CHARACTER},
+            {"role": "user", "content": _build_character_prompt(fields)},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.3,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            BASE_URL,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+
+    data = json.loads(content, strict=False)
+    anchor = str(data.get("anchor_prompt", "")).strip()
+    foundation = str(data.get("foundation_scene", "")).strip()
+    summary = str(data.get("display_summary", "")).strip()
+    if not anchor:
+        raise RuntimeError("A IA não conseguiu gerar o prompt do personagem")
+    return {"anchor_prompt": anchor, "foundation_scene": foundation, "display_summary": summary}
+
+
+def build_scene_prompt(anchor_prompt: str, scene_fields: dict) -> str:
+    """Monta o prompt final para geração de uma cena com o personagem."""
+    parts = [anchor_prompt]
+    if scene_fields.get("scenario"):
+        parts.append(scene_fields["scenario"])
+    if scene_fields.get("outfit"):
+        parts.append(f"wearing {scene_fields['outfit']}")
+    if scene_fields.get("pose"):
+        parts.append(scene_fields["pose"])
+    if scene_fields.get("expression"):
+        parts.append(f"{scene_fields['expression']} expression")
+    if scene_fields.get("lighting"):
+        parts.append(f"{scene_fields['lighting']} lighting")
+    return ", ".join(parts)
+
 
 _SYSTEM_VIRAL = (
     "Você é um roteirista de vídeos virais para TikTok, Reels e YouTube Shorts. "
