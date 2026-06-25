@@ -14,9 +14,8 @@ _CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 _IMAGES_URL = "https://openrouter.ai/api/v1/images/generations"
 
 # Modelo padrão — pode ser sobrescrito com OPENROUTER_IMAGE_MODEL no Railway.
-# Opções testadas: black-forest-labs/flux-1.1-pro, black-forest-labs/flux-pro,
-#                  black-forest-labs/flux-1-schnell, black-forest-labs/flux.2-flex
-_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "black-forest-labs/flux-1.1-pro")
+# Confirmado disponível nesta conta: google/gemini-3-pro-image, google/gemini-3.1-flash-image
+_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "google/gemini-3-pro-image")
 
 
 def _headers() -> dict:
