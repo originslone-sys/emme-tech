@@ -13,6 +13,7 @@ class AutomationConfig(BaseModel):
     voice: str = "feminina"
     tiktok_account_id: str = ""
     auto_publish: bool = False
+    watermark: str = ""
 
 
 @router.get("/config")

@@ -11,6 +11,7 @@ interface Config {
   voice: 'feminina' | 'masculina'
   tiktok_account_id: string
   auto_publish: boolean
+  watermark: string
 }
 
 interface Status {
@@ -50,6 +51,7 @@ export default function AutomacaoPage() {
     voice: 'feminina',
     tiktok_account_id: '',
     auto_publish: false,
+    watermark: '',
   })
   const [status, setStatus] = useState<Status>({ running: false, scheduler_active: false, next_run: null })
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -206,6 +208,22 @@ export default function AutomacaoPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">
+            Marca d&apos;água <span className="text-white/30 font-normal">(opcional)</span>
+          </label>
+          <input
+            value={config.watermark}
+            onChange={(e) => setConfig(c => ({ ...c, watermark: e.target.value }))}
+            placeholder="Ex: @miau_flix"
+            maxLength={30}
+            className="w-full bg-[#0a0a0a] border border-white/15 rounded-lg px-3 py-2 text-white text-sm focus:border-violet-500/50 outline-none"
+          />
+          <p className="text-xs text-white/30 mt-1.5">
+            Texto discreto exibido no centro do vídeo. Deixe vazio para não usar.
+          </p>
         </div>
 
         <div>
