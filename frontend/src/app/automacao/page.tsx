@@ -58,14 +58,13 @@ export default function AutomacaoPage() {
   const [saveMsg, setSaveMsg] = useState('')
   const [error, setError] = useState('')
 
-  const fetchAll = useCallback(async () => {
+  // Status e histórico mudam no servidor — pode atualizar em loop sem problema.
+  const fetchLive = useCallback(async () => {
     try {
-      const [cfgRes, statusRes, histRes] = await Promise.all([
-        fetch(`${API}/api/automation/config`),
+      const [statusRes, histRes] = await Promise.all([
         fetch(`${API}/api/automation/status`),
         fetch(`${API}/api/automation/history`),
       ])
-      if (cfgRes.ok) setConfig(await cfgRes.json())
       if (statusRes.ok) setStatus(await statusRes.json())
       if (histRes.ok) {
         const d = await histRes.json()
@@ -76,11 +75,20 @@ export default function AutomacaoPage() {
     }
   }, [])
 
+  // A config carrega UMA vez ao abrir. Não pode ser sobrescrita pelo polling,
+  // senão apaga as alterações que o usuário fez antes de salvar.
   useEffect(() => {
-    fetchAll()
-    const id = setInterval(fetchAll, 10000)
+    fetch(`${API}/api/automation/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => { if (cfg) setConfig(cfg) })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchLive()
+    const id = setInterval(fetchLive, 10000)
     return () => clearInterval(id)
-  }, [fetchAll])
+  }, [fetchLive])
 
   const saveConfig = async () => {
     setSaving(true)
@@ -94,7 +102,7 @@ export default function AutomacaoPage() {
       })
       if (!res.ok) throw new Error(`Erro ${res.status}`)
       setSaveMsg('Configuração salva!')
-      await fetchAll()
+      await fetchLive()
       setTimeout(() => setSaveMsg(''), 3000)
     } catch (e) {
       setError(`Falha ao salvar: ${e instanceof Error ? e.message : 'erro'}`)
@@ -110,7 +118,7 @@ export default function AutomacaoPage() {
       const res = await fetch(`${API}/api/automation/run`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || `Erro ${res.status}`)
-      await fetchAll()
+      await fetchLive()
     } catch (e) {
       setError(`${e instanceof Error ? e.message : 'erro'}`)
     } finally {
