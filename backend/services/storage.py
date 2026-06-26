@@ -199,6 +199,46 @@ def save_character(data: dict):
     write_db(db)
 
 
+# ---------- Automação TikTok ----------
+
+def get_automation_config() -> dict:
+    db = read_db()
+    return db.get("automation", {})
+
+
+def save_automation_config(config: dict):
+    db = read_db()
+    db["automation"] = config
+    write_db(db)
+
+
+def get_used_fact_keys() -> list[str]:
+    db = read_db()
+    return db.get("used_fact_keys", [])
+
+
+def add_used_fact_key(key: str):
+    db = read_db()
+    keys = db.get("used_fact_keys", [])
+    if key not in keys:
+        keys.append(key)
+    db["used_fact_keys"] = keys[-200:]
+    write_db(db)
+
+
+def get_automation_history() -> list[dict]:
+    db = read_db()
+    return db.get("automation_history", [])
+
+
+def add_automation_history(entry: dict):
+    db = read_db()
+    hist = db.get("automation_history", [])
+    hist.insert(0, entry)
+    db["automation_history"] = hist[:50]
+    write_db(db)
+
+
 def delete_character():
     db = read_db()
     char = db.get("character")

@@ -14,12 +14,21 @@ logger = logging.getLogger(__name__)
 _IMAGES_URL = "https://openrouter.ai/api/v1/images"
 # Endpoint chat/completions (Gemini image models)
 _CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Endpoint de vídeo assíncrono
+_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
 
 # Configurável via OPENROUTER_IMAGE_MODEL no Railway.
 # FLUX.2 Pro: black-forest-labs/flux.2-pro  ($0.03/mp, consistência multi-referência)
 # FLUX.2 Flex: black-forest-labs/flux.2-flex ($0.06/mp, multi-reference editing)
 # Gemini fallback: google/gemini-3-pro-image
 _IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "black-forest-labs/flux.2-pro")
+
+# Modelo de geração de vídeo (fallback quando stock não encontrado)
+# kuaishou/kling-v3-pro — premium, ideal para TikTok vertical
+_VIDEO_MODEL = os.getenv("OPENROUTER_VIDEO_MODEL", "kuaishou/kling-v3-pro")
+
+_VIDEO_POLL_TIMEOUT = 300   # 5 min
+_VIDEO_POLL_INTERVAL = 10   # segundos entre polls
 
 
 def _headers() -> dict:
@@ -199,3 +208,51 @@ async def generate_images(
 
     logger.info("Geradas %d/%d imagens com sucesso", len(results), count)
     return results
+
+
+async def generate_video_clip(
+    prompt: str,
+    duration: int = 5,
+    aspect_ratio: str = "9:16",
+) -> str | None:
+    """Gera um clipe de vídeo via OpenRouter (Kling ou similar). Retorna URL pública."""
+    body = {
+        "model": _VIDEO_MODEL,
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(_VIDEOS_URL, json=body, headers=_headers())
+        if not resp.is_success:
+            logger.error("Video gen falhou %d: %s", resp.status_code, resp.text[:400])
+            return None
+        data = resp.json()
+        gen_id = data.get("id")
+        if not gen_id:
+            logger.error("Video gen sem ID: %s", str(data)[:300])
+            return None
+
+    # Poll até concluir
+    waited = 0
+    async with httpx.AsyncClient(timeout=60) as client:
+        while waited < _VIDEO_POLL_TIMEOUT:
+            await asyncio.sleep(_VIDEO_POLL_INTERVAL)
+            waited += _VIDEO_POLL_INTERVAL
+            try:
+                r = await client.get(f"{_VIDEOS_URL}/{gen_id}", headers=_headers())
+                if not r.is_success:
+                    continue
+                result = r.json()
+                status = result.get("status", "")
+                if status in ("completed", "succeeded"):
+                    video = result.get("video") or {}
+                    return video.get("url")
+                if status in ("failed", "cancelled", "error"):
+                    logger.error("Video gen %s falhou: %s", gen_id, str(result)[:300])
+                    return None
+            except Exception as e:
+                logger.warning("Poll video %s erro: %s", gen_id, e)
+
+    logger.error("Timeout na geração de vídeo %s", gen_id)
+    return None

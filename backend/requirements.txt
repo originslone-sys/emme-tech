@@ -8,3 +8,4 @@ imageio-ffmpeg==0.5.1
 Pillow==12.2.0
 yt-dlp==2026.6.9
 gTTS==2.5.4
+APScheduler==3.10.4
