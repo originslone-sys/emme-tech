@@ -12,6 +12,7 @@ interface Config {
   tiktok_account_id: string
   auto_publish: boolean
   watermark: string
+  music_source: 'generate' | 'library' | 'none'
 }
 
 interface Status {
@@ -52,6 +53,7 @@ export default function AutomacaoPage() {
     tiktok_account_id: '',
     auto_publish: false,
     watermark: '',
+    music_source: 'generate',
   })
   const [status, setStatus] = useState<Status>({ running: false, scheduler_active: false, next_run: null })
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -224,6 +226,38 @@ export default function AutomacaoPage() {
           <p className="text-xs text-white/30 mt-1.5">
             Texto discreto exibido no centro do vídeo. Deixe vazio para não usar.
           </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/60 mb-2">Trilha sonora</label>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              ['generate', 'Gerar com IA', 'faixa nova'],
+              ['library', 'Da biblioteca', 'reaproveita'],
+              ['none', 'Sem música', 'só narração'],
+            ] as const).map(([id, label, sub]) => (
+              <button
+                key={id}
+                onClick={() => setConfig(c => ({ ...c, music_source: id }))}
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-colors ${
+                  config.music_source === id ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                }`}
+              >
+                {label}
+                <span className="block text-[10px] opacity-60 font-normal">{sub}</span>
+              </button>
+            ))}
+          </div>
+          {config.music_source === 'generate' && (
+            <p className="text-xs text-white/30 mt-1.5">
+              A IA compõe uma trilha no clima do vídeo e salva na biblioteca pra reusar. Consome créditos do ElevenLabs.
+            </p>
+          )}
+          {config.music_source === 'library' && (
+            <p className="text-xs text-white/30 mt-1.5">
+              Usa uma trilha já existente na biblioteca (sem custo). Se estiver vazia, o vídeo sai sem música.
+            </p>
+          )}
         </div>
 
         <div>

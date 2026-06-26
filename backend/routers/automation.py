@@ -14,6 +14,7 @@ class AutomationConfig(BaseModel):
     tiktok_account_id: str = ""
     auto_publish: bool = False
     watermark: str = ""
+    music_source: str = "generate"  # generate | library | none
 
 
 @router.get("/config")

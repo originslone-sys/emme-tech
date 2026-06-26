@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from services import deepseek, ffmpeg, openrouter, pexels, pixabay, storage, tts, zernio
+from services import deepseek, ffmpeg, music, openrouter, pexels, pixabay, storage, tts, zernio
 
 log = logging.getLogger("automation")
 
@@ -28,6 +28,29 @@ async def _download_any(url: str, dest: str):
             with open(dest, "wb") as f:
                 async for chunk in r.aiter_bytes(1 << 16):
                     f.write(chunk)
+
+
+async def _resolve_music(mood: str, source: str, total_dur: float) -> str | None:
+    """Decide a trilha conforme a opção da automação.
+
+    - "generate": gera nova faixa via Eleven Music (e salva na biblioteca p/ reuso)
+    - "library": usa uma faixa já existente na biblioteca
+    - "none": sem música
+    Em qualquer falha de geração, cai para a biblioteca.
+    """
+    if source == "none":
+        return None
+    if source == "generate":
+        try:
+            length_ms = int(max(15, total_dur) * 1000)
+            track = await music.generate(mood, length_ms=length_ms)
+            if track:
+                return track
+        except Exception as e:
+            log.warning("Eleven Music falhou, tentando biblioteca: %s", e)
+        return music.pick(mood)
+    # "library" (ou padrão)
+    return music.pick(mood)
 
 
 async def _find_clip(
@@ -141,11 +164,21 @@ async def run_once(config: dict) -> dict:
         log.info("Renderizando vídeo...")
         narr_paths = [n["path"] if n else None for n in narr] if narr else None
 
+        # Trilha sonora (gerar com IA / da biblioteca / nenhuma)
+        total_dur = sum(float(sc.get("duration", 3)) for sc in scenes)
+        track = await _resolve_music(
+            script["music_mood"], config.get("music_source", "generate"), total_dur
+        )
+        if track:
+            log.info("Trilha sonora: %s", Path(track).name)
+        else:
+            log.info("Sem trilha sonora (source=%s)", config.get("music_source"))
+
         watermark = (config.get("watermark") or "").strip() or None
         await asyncio.to_thread(
             ffmpeg.render_viral,
             local_paths, scenes, width, height,
-            None,       # sem trilha sonora dedicada
+            track,      # trilha sonora de fundo
             output_path,
             None,       # sem callback de progresso
             narr_paths,
