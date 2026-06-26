@@ -13,6 +13,24 @@ log = logging.getLogger("automation")
 
 _DIMENSIONS = {"9:16": (1080, 1920)}
 
+# Duração mínima do vídeo final (TikTok favorece vídeos de 60s+).
+# Pode passar de 60s, mas nunca menos.
+_MIN_VIDEO_DURATION = 60.0
+
+
+def _ensure_min_duration(scenes: list[dict], min_total: float = _MIN_VIDEO_DURATION):
+    """Garante que a soma das cenas seja >= min_total, escalando proporcionalmente.
+
+    Se a narração ficou curta e o vídeo somou menos que o piso, estica cada cena
+    na mesma proporção. O excedente vira um pequeno trecho com a narração já
+    finalizada (o render preenche com silêncio até o fim da cena)."""
+    total = sum(float(sc.get("duration", 3)) for sc in scenes)
+    if total <= 0 or total >= min_total:
+        return
+    factor = min_total / total
+    for sc in scenes:
+        sc["duration"] = round(float(sc.get("duration", 3)) * factor, 2)
+
 # Controlador de execução única (evita sobreposição de ciclos)
 _is_running = False
 
@@ -126,6 +144,11 @@ async def run_once(config: dict) -> dict:
         except Exception as e:
             log.warning("TTS falhou, sem narração: %s", e)
             narr = None
+
+        # Garante o piso de 60s (independente do tamanho da narração)
+        _ensure_min_duration(scenes)
+        log.info("Duração total do vídeo: %.1fs",
+                 sum(float(sc.get("duration", 3)) for sc in scenes))
 
         # 3. Clipes por cena
         log.info("Buscando clipes para %d cenas...", len(scenes))
