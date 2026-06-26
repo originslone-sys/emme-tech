@@ -141,6 +141,7 @@ async def run_once(config: dict) -> dict:
         log.info("Renderizando vídeo...")
         narr_paths = [n["path"] if n else None for n in narr] if narr else None
 
+        watermark = (config.get("watermark") or "").strip() or None
         await asyncio.to_thread(
             ffmpeg.render_viral,
             local_paths, scenes, width, height,
@@ -148,7 +149,7 @@ async def run_once(config: dict) -> dict:
             output_path,
             None,       # sem callback de progresso
             narr_paths,
-            None,       # sem channel_name watermark
+            watermark,  # marca d'água centralizada (opcional)
         )
 
         # Limpeza de temporários
