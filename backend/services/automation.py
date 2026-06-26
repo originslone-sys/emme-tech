@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -16,18 +17,23 @@ _DIMENSIONS = {"9:16": (1080, 1920)}
 # Duração mínima do vídeo final (TikTok favorece vídeos de 60s+).
 # Pode passar de 60s, mas nunca menos.
 _MIN_VIDEO_DURATION = 60.0
+# Faixa-alvo quando precisa esticar: evita sair sempre cravado em 60s
+# (duração fixa parece template e não agrada o algoritmo).
+_TARGET_RANGE = (63.0, 75.0)
 
 
 def _ensure_min_duration(scenes: list[dict], min_total: float = _MIN_VIDEO_DURATION):
     """Garante que a soma das cenas seja >= min_total, escalando proporcionalmente.
 
-    Se a narração ficou curta e o vídeo somou menos que o piso, estica cada cena
-    na mesma proporção. O excedente vira um pequeno trecho com a narração já
-    finalizada (o render preenche com silêncio até o fim da cena)."""
+    Se o vídeo já passa do piso naturalmente, mantém. Se ficou curto, estica
+    cada cena na mesma proporção até um alvo ALEATÓRIO acima de 60s — assim a
+    duração varia de vídeo pra vídeo em vez de cravar sempre 1:00. O render
+    preenche cada cena estendida com silêncio após o fim da narração."""
     total = sum(float(sc.get("duration", 3)) for sc in scenes)
     if total <= 0 or total >= min_total:
         return
-    factor = min_total / total
+    target = random.uniform(*_TARGET_RANGE)
+    factor = target / total
     for sc in scenes:
         sc["duration"] = round(float(sc.get("duration", 3)) * factor, 2)
 
