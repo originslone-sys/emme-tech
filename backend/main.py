@@ -1,20 +1,28 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
 
-from routers import editor, library, clips, viral, generative
-from services.storage import init_storage, DIRS
+from routers import automation, editor, generative, library, clips, viral
+from services.storage import init_storage, DIRS, get_automation_config
+from services.scheduler import get_scheduler, update_job
 
-# Garante que os diretórios existem antes de montar os estáticos
-init_storage()
 
-app = FastAPI(title="Emme Video Editor API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_storage()
+    scheduler = get_scheduler()
+    cfg = get_automation_config()
+    if cfg.get("enabled"):
+        update_job(cfg)
+    scheduler.start()
+    yield
+    scheduler.shutdown(wait=False)
 
-# Libera CORS para qualquer origem. O app não usa autenticação por cookie,
-# então não precisamos de credenciais — e com allow_credentials=False o
-# wildcard "*" é válido para origem, métodos e headers (inclusive nos
-# preflights OPTIONS dos uploads em chunks).
+
+app = FastAPI(title="Emme Video Editor API", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,12 +36,9 @@ app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(viral.router, prefix="/api/viral", tags=["viral"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
 app.include_router(generative.router, prefix="/api/generative", tags=["generative"])
+app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
 
-# Serve os uploads para o RunPod baixar via URL pública
 app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
-# Serve os vídeos como estáticos: o StaticFiles do Starlette faz streaming
-# assíncrono com suporte nativo a Range, bem mais eficiente que servir o
-# arquivo por uma rota Python (usado para o player da Biblioteca).
 app.mount("/files/videos", StaticFiles(directory=str(DIRS["videos"])), name="videos")
 app.mount("/files/images", StaticFiles(directory=str(DIRS["images"])), name="images")
 
