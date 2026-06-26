@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,12 +24,11 @@ def update_job(config: dict):
 
     interval = max(5, int(config.get("interval_minutes", 30)))
 
-    def _trigger():
-        asyncio.create_task(automation.run_once(config))
-
+    # AsyncIOScheduler executa coroutines async nativamente — não usar create_task
     _scheduler.add_job(
-        _trigger,
+        automation.run_once,
         "interval",
+        args=[config],
         minutes=interval,
         id="tiktok_auto",
         replace_existing=True,
