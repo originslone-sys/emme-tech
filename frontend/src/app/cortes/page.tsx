@@ -11,8 +11,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || ''
 const STAGES: Record<string, string> = {
   starting: 'Iniciando...',
   downloading: 'Baixando o vídeo...',
-  transcribing: 'Transcrevendo o áudio...',
-  analyzing: 'Analisando os melhores momentos com IA...',
+  analyzing: 'Preparando os cortes...',
   rendering: 'Renderizando os cortes...',
 }
 
@@ -22,7 +21,6 @@ export default function CortesPage() {
   const [url, setUrl] = useState('')
   const [numClips, setNumClips] = useState(3)
   const [minDuration, setMinDuration] = useState(15)
-  const [language, setLanguage] = useState('pt')
   const [banner, setBanner] = useState<File | null>(null)
   const [showTitle, setShowTitle] = useState(true)
   const [channelName, setChannelName] = useState('')
@@ -101,7 +99,6 @@ export default function CortesPage() {
       if (mode === 'youtube') form.append('youtube_url', url.trim())
       form.append('num_clips', String(numClips))
       form.append('min_duration', String(minDuration))
-      if (language) form.append('language', language)
       form.append('show_title', showTitle ? '1' : '0')
       if (channelName.trim()) {
         form.append('channel_name', channelName.trim())
@@ -132,8 +129,6 @@ export default function CortesPage() {
 
   const stageLabel = stage === 'rendering' && progress.total
     ? `Renderizando cortes (${progress.done}/${progress.total})...`
-    : stage === 'analyzing' && progress.total > 1
-    ? `Analisando o vídeo (bloco ${progress.done}/${progress.total})...`
     : STAGES[stage] || 'Processando...'
 
   return (
@@ -180,28 +175,6 @@ export default function CortesPage() {
       )}
 
       <div className="bg-[#111] border border-white/10 rounded-xl p-5 mb-6 space-y-5">
-        <div>
-          <label className="block text-sm font-medium text-white/60 mb-2">Idioma do vídeo</label>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {[
-              { code: 'pt', label: 'Português' },
-              { code: 'en', label: 'Inglês' },
-              { code: 'es', label: 'Espanhol' },
-              { code: 'fr', label: 'Francês' },
-              { code: 'de', label: 'Alemão' },
-              { code: '', label: 'Auto' },
-            ].map(({ code, label }) => (
-              <button key={code} onClick={() => setLanguage(code)}
-                className={`py-2 rounded-lg text-sm font-medium transition-colors ${
-                  language === code ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
-                }`}>{label}</button>
-            ))}
-          </div>
-          <p className="text-white/30 text-xs mt-2">
-            Defina o idioma do áudio para evitar erros na transcrição. Use "Auto" só se não souber.
-          </p>
-        </div>
-
         <div>
           <label className="block text-sm font-medium text-white/60 mb-2">Quantos cortes gerar</label>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">

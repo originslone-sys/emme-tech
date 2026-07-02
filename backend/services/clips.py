@@ -2,25 +2,29 @@ import asyncio
 import uuid
 from pathlib import Path
 
-from services import storage, runpod, deepseek, ffmpeg, youtube
-
-_WHISPER_TIMEOUT = 60 * 60  # 60 min (vídeos longos, ex: filmes)
-_POLL_INTERVAL = 5
+from services import storage, ffmpeg, youtube
 
 
-async def _transcribe(audio_path: str, language: str) -> list[dict]:
-    job_id = await runpod.submit_transcribe_job(audio_path, language)
-    waited = 0
-    while waited < _WHISPER_TIMEOUT:
-        data = await runpod.get_job_status(job_id, runpod.WHISPER_ENDPOINT)
-        status = data.get("status")
-        if status == "COMPLETED":
-            return runpod.extract_segments(data)
-        if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
-            raise RuntimeError(data.get("error") or "Transcrição falhou")
-        await asyncio.sleep(_POLL_INTERVAL)
-        waited += _POLL_INTERVAL
-    raise RuntimeError("Tempo esgotado na transcrição")
+def _plan_segments(duration: float, num_clips: int, seg_len: float) -> list[tuple[float, float]]:
+    """Distribui N cortes ao longo do vídeo, sem sobreposição.
+
+    Sem transcrição, não dá pra saber "os melhores momentos" — então
+    espalhamos os cortes de forma uniforme do começo ao fim, cada um com
+    duração seg_len."""
+    if duration <= 0:
+        return []
+    seg_len = max(5.0, min(seg_len, duration))
+    if duration <= seg_len:
+        return [(0.0, round(duration, 2))]
+
+    n = max(1, num_clips)
+    step = duration / n
+    segs: list[tuple[float, float]] = []
+    for i in range(n):
+        center = step * (i + 0.5)
+        start = max(0.0, min(center - seg_len / 2, duration - seg_len))
+        segs.append((round(start, 2), round(start + seg_len, 2)))
+    return segs
 
 
 async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
@@ -29,7 +33,9 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
                        show_title: bool = True,
                        channel_name: str | None = None,
                        min_duration: int = 15):
-    audio_path: str | None = None
+    """Gera cortes verticais 100% no Railway (FFmpeg + yt-dlp), sem transcrição
+    nem GPU externa. Os cortes são distribuídos ao longo do vídeo."""
+    source_video: str | None = None
     try:
         # 0. Baixa do YouTube se for o caso
         if youtube_url:
@@ -37,56 +43,47 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
             video_path = await asyncio.to_thread(youtube.download, youtube_url)
         if not video_path:
             raise RuntimeError("Nenhum vídeo de entrada")
+        source_video = video_path
 
-        # 1. Áudio para transcrição
-        storage.update_job(job_id, {"stage": "transcribing"})
-        audio_path = str(storage.DIRS["uploads"] / f"{uuid.uuid4()}.mp3")
-        await asyncio.to_thread(ffmpeg.extract_audio, video_path, audio_path)
-
-        segments = await _transcribe(audio_path, language)
-        if not segments:
-            raise RuntimeError("Não foi possível transcrever o áudio do vídeo")
-
-        # 2. DeepSeek escolhe os melhores trechos (em blocos p/ vídeos longos)
+        # 1. Duração + planejamento dos cortes (local, sem transcrição)
         storage.update_job(job_id, {"stage": "analyzing", "done": 0, "total": 0})
+        duration = await asyncio.to_thread(ffmpeg.probe_duration, video_path)
+        # Comprimento de cada corte: entre 30 e 90s, respeitando min_duration.
+        seg_len = float(min(max(min_duration, 30), 90))
+        segments = _plan_segments(duration, num_clips, seg_len)
+        if not segments:
+            raise RuntimeError("Não foi possível determinar a duração do vídeo")
 
-        def _on_analyze(done: int, total: int):
-            storage.update_job(job_id, {"done": done, "total": total})
-
-        clips = await deepseek.select_clips(segments, num_clips,
-                                            on_progress=_on_analyze, min_dur=min_duration)
-        if not clips:
-            raise RuntimeError("A IA não encontrou bons trechos para cortes")
-
-        # 3. Renderiza cada corte em vertical com legenda
-        storage.update_job(job_id, {"stage": "rendering", "done": 0, "total": len(clips)})
-        # Banner vai no rodapé; sobe a legenda para ficar acima dele.
+        # 2. Renderiza cada corte em vertical com fundo desfocado
+        storage.update_job(job_id, {"stage": "rendering", "done": 0, "total": len(segments)})
+        # Banner vai no rodapé; sobe o título para ficar acima dele.
         sub_margin_v = 120
         if banner_path:
             sub_margin_v = 120 + ffmpeg.banner_overlay_height(banner_path)
+
         produced = []
-        for i, clip in enumerate(clips):
+        for i, (start, end) in enumerate(segments):
             out_id = str(uuid.uuid4())
             out_path = str(storage.DIRS["videos"] / f"{out_id}.mp4")
             ass_path = str(storage.DIRS["uploads"] / f"{out_id}.ass")
+            title = f"Corte {i + 1}"
 
-            clip_title = clip["title"] if show_title else None
+            # .ass só com o título (sem legendas — não há transcrição).
+            # Segmentos vazios => nenhuma legenda, apenas o título opcional no topo.
+            clip_title = title if show_title else None
             await asyncio.to_thread(
-                ffmpeg.build_ass, segments, clip["start"], clip["end"], ass_path,
+                ffmpeg.build_ass, [], 0.0, end - start, ass_path,
                 clip_title, sub_margin_v,
             )
             await asyncio.to_thread(
                 ffmpeg.render_clip, video_path, out_path,
-                clip["start"], clip["end"], ass_path, banner_path, channel_name,
+                start, end, ass_path, banner_path, channel_name,
             )
             Path(ass_path).unlink(missing_ok=True)
 
-            storage.add_video(out_id, out_path, clip["title"], meta={
+            storage.add_video(out_id, out_path, title, meta={
                 "kind": "clip",
-                "title": clip["title"],
-                "description": clip["description"],
-                "tags": clip["tags"],
-                "score": clip["score"],
+                "title": title,
             })
             produced.append(out_id)
             storage.update_job(job_id, {"done": i + 1, "clip_ids": produced})
@@ -95,9 +92,6 @@ async def run_pipeline(job_id: str, num_clips: int, banner_path: str | None,
     except Exception as e:
         storage.update_job(job_id, {"stage": "failed", "error": str(e)})
     finally:
-        # Remove arquivos intermediários (vídeo de origem e áudio extraído).
-        # Os cortes finais já estão salvos em videos/.
-        if audio_path:
-            Path(audio_path).unlink(missing_ok=True)
-        if video_path:
-            Path(video_path).unlink(missing_ok=True)
+        # Remove o vídeo de origem (os cortes finais já estão em videos/).
+        if source_video:
+            Path(source_video).unlink(missing_ok=True)
