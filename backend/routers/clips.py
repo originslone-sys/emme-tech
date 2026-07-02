@@ -7,7 +7,7 @@ import uuid
 
 import aiofiles
 
-from services import storage, runpod, clips
+from services import storage, clips
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ async def generate_clips(
         banner_path = await storage.save_upload_temp(banner)
 
     job_id = str(uuid.uuid4())
-    storage.save_job(job_id, runpod.WHISPER_ENDPOINT, "clips", {"stage": "starting"})
+    storage.save_job(job_id, "local", "clips", {"stage": "starting"})
 
     asyncio.create_task(clips.run_pipeline(
         job_id, num_clips, banner_path, language,
