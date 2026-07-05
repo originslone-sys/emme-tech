@@ -22,7 +22,8 @@ RUN git clone https://github.com/facefusion/facefusion.git \
 WORKDIR /opt/facefusion
 
 # Instalação do FaceFusion com onnxruntime CPU (sem conda).
-RUN python install.py --onnxruntime default --skip-conda
+# 'onnxruntime' é argumento POSICIONAL (não --onnxruntime): use "default".
+RUN python install.py default --skip-conda
 
 # Pré-baixa TODOS os modelos no build -> imagem self-contained, nada em runtime.
 # (Deixa a imagem grande. Se preferir enxugar, troque por um headless-run de
