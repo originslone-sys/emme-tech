@@ -4,18 +4,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import automation, editor, generative, library, clips, viral
-from services.storage import init_storage, DIRS, get_automation_config
-from services.scheduler import get_scheduler, update_job
+from routers import editor, generative, library, clips, viral
+from services.storage import init_storage, DIRS
+from services.scheduler import get_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_storage()
     scheduler = get_scheduler()
-    cfg = get_automation_config()
-    if cfg.get("enabled"):
-        update_job(cfg)
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
@@ -36,7 +33,6 @@ app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(viral.router, prefix="/api/viral", tags=["viral"])
 app.include_router(library.router, prefix="/api/library", tags=["library"])
 app.include_router(generative.router, prefix="/api/generative", tags=["generative"])
-app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
 
 app.mount("/files/uploads", StaticFiles(directory=str(DIRS["uploads"])), name="uploads")
 app.mount("/files/videos", StaticFiles(directory=str(DIRS["videos"])), name="videos")
