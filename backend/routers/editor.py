@@ -5,7 +5,7 @@ from typing import List
 import asyncio
 import uuid
 
-from services import storage, runpod, ffmpeg
+from services import storage, ffmpeg
 
 router = APIRouter()
 
@@ -33,19 +33,17 @@ async def process_video(
 
     try:
         if upscale:
-            # Estágio 1: corte + iluminação localmente, salvando num arquivo
-            # público para o RunPod baixar. Estágio 2: upscaling na GPU.
-            interm_path = str(storage.DIRS["uploads"] / f"{uuid.uuid4()}.mp4")
-            await run_in_threadpool(
-                ffmpeg.process, src, interm_path,
-                trim_start, trim_end, brightness, contrast, saturation,
-            )
-            job_id = await runpod.submit_enhance_job(interm_path, upscale)
-            storage.save_job(job_id, runpod.ENHANCE_ENDPOINT, "process", {
-                "output_id": output_id,
-                "output_path": output_path,
-                "label": label,
+            # Melhoria de qualidade (upscale + sharpen + denoise) — 100% CPU,
+            # sem GPU. Roda em background com progresso pois pode demorar.
+            job_id = str(uuid.uuid4())
+            storage.save_job(job_id, "ffmpeg", "enhance", {
+                "stage": "starting", "percent": 0,
+                "output_id": output_id, "output_path": output_path, "label": label,
             })
+            asyncio.create_task(_run_enhance(
+                job_id, src, output_id, output_path, label,
+                trim_start, trim_end, brightness, contrast, saturation, upscale,
+            ))
             return {"job_id": job_id, "status": "processing", "video_id": None}
 
         # Sem upscaling: tudo num único passe local, resultado imediato.
@@ -60,36 +58,26 @@ async def process_video(
     return {"job_id": None, "status": "COMPLETED", "video_id": output_id}
 
 
-@router.get("/jobs/{job_id}")
-async def get_status(job_id: str):
-    job = storage.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Job não encontrado")
-
-    meta = job["meta"]
-    output_path = meta["output_path"]
-
+async def _run_enhance(job_id: str, src: str, output_id: str, output_path: str,
+                       label: str, start: float, end: float,
+                       brightness: float, contrast: float, saturation: float,
+                       upscale: int):
     try:
-        data = await runpod.get_job_status(job_id)
+        def on_progress(pct: int):
+            storage.update_job(job_id, {"percent": pct})
+
+        storage.update_job(job_id, {"stage": "processing", "percent": 0})
+        await asyncio.to_thread(
+            ffmpeg.enhance, src, output_path, start, end,
+            brightness, contrast, saturation, upscale, on_progress,
+        )
+        storage.add_video(output_id, output_path, label)
+        storage.update_job(job_id, {"stage": "completed", "percent": 100,
+                                    "video_id": output_id})
     except Exception as e:
-        return {"job_id": job_id, "status": "FAILED", "video_id": None, "error": str(e)}
-
-    status = data.get("status")
-
-    if status == "COMPLETED":
-        try:
-            if not Path(output_path).exists():
-                if await runpod.save_output(data, output_path):
-                    storage.add_video(meta["output_id"], output_path, meta.get("label", ""))
-        except Exception as e:
-            return {"job_id": job_id, "status": "FAILED", "video_id": None, "error": str(e)}
-        return {"job_id": job_id, "status": "COMPLETED", "video_id": meta["output_id"], "error": None}
-
-    if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
-        return {"job_id": job_id, "status": "FAILED", "video_id": None,
-                "error": data.get("error") or "Processamento falhou"}
-
-    return {"job_id": job_id, "status": status, "video_id": None, "error": None}
+        storage.update_job(job_id, {"stage": "failed", "error": str(e)})
+    finally:
+        Path(src).unlink(missing_ok=True)
 
 
 # ---------- Linha do tempo / juntar (FFmpeg) ----------

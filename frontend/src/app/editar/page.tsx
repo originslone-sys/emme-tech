@@ -64,7 +64,7 @@ export default function EditarPage() {
         setStatus('Vídeo pronto! Acesse a Biblioteca para baixar.')
         reset(null)
       } else {
-        setStatus('Processando melhoria de qualidade... pode levar alguns minutos.')
+        setStatus('Melhorando a qualidade...')
         poll(data.job_id)
       }
     } catch {
@@ -76,7 +76,7 @@ export default function EditarPage() {
   const poll = (id: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API}/api/editor/jobs/${id}`)
+        const res = await fetch(`${API}/api/editor/local-jobs/${id}`)
         const data = await res.json()
         if (data.status === 'COMPLETED') {
           clearInterval(interval); setLoading(false)
@@ -85,6 +85,9 @@ export default function EditarPage() {
         } else if (data.status === 'FAILED') {
           clearInterval(interval); setLoading(false)
           setError(data.error || 'Processamento falhou. Tente novamente.'); setStatus('')
+        } else {
+          const pct = data.percent || 0
+          setStatus(pct > 0 ? `Melhorando a qualidade... ${pct}%` : 'Melhorando a qualidade...')
         }
       } catch { /* continua tentando */ }
     }, 3000)
@@ -155,7 +158,7 @@ export default function EditarPage() {
           {/* Qualidade */}
           <div className="bg-[#111] border border-white/10 rounded-xl p-5">
             <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">✨ Qualidade</h3>
-            <p className="text-white/30 text-xs mb-4">Upscaling com IA (usa GPU, leva mais tempo)</p>
+            <p className="text-white/30 text-xs mb-4">Aumenta resolução, nitidez e limpa ruído (rápido, sem GPU)</p>
             <div className="flex gap-2">
               {[{ v: 0, l: 'Nenhum' }, { v: 2, l: '2x' }, { v: 4, l: '4x' }].map((o) => (
                 <button key={o.v} onClick={() => setUpscale(o.v)}
