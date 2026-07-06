@@ -83,6 +83,50 @@ def process(input_path: str, output_path: str, start: float = 0.0, end: float = 
     _run(args)
 
 
+def enhance(input_path: str, output_path: str, start: float = 0.0, end: float = 0.0,
+            brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0,
+            upscale: int = 0, on_progress=None):
+    """Melhora a qualidade num único passe, 100% CPU (sem GPU).
+
+    Cadeia: corte + iluminação (eq) -> denoise (hqdn3d) -> upscale lanczos
+    (opcional) -> sharpen (unsharp). Não é super-resolução por IA — não inventa
+    detalhe — mas deixa o vídeo mais limpo, nítido e maior de forma rápida.
+    upscale: 0/1 = sem redimensionar, 2 ou 4 = fator de ampliação.
+    """
+    args: list[str] = []
+    if start > 0:
+        args += ["-ss", str(start)]
+    args += ["-i", input_path]
+    if end > 0:
+        args += ["-t", str(max(0.0, end - start))]
+
+    filters: list[str] = []
+    if brightness != 0.0 or contrast != 1.0 or saturation != 1.0:
+        filters.append(f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}")
+    # Denoise antes do upscale para não amplificar o ruído.
+    filters.append("hqdn3d=1.5:1.5:6:6")
+    if upscale and upscale > 1:
+        # Dimensões pares (exigência do yuv420p).
+        filters.append(f"scale=trunc(iw*{upscale}/2)*2:trunc(ih*{upscale}/2)*2:flags=lanczos")
+    # Sharpen sutil para recuperar nitidez percebida.
+    filters.append("unsharp=5:5:0.8:5:5:0.0")
+    vf = ",".join(filters)
+
+    full = probe_duration(input_path)
+    if end and end > 0:
+        total = max(0.1, min(end, full) - start)
+    else:
+        total = max(0.1, full - start)
+
+    args += [
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart",
+        output_path,
+    ]
+    _run_with_progress(args, total, on_progress)
+
+
 def join(input_paths: list[str], output_path: str):
     """Junta múltiplos vídeos em sequência, normalizando para um formato comum."""
     work_dir = Path(output_path).parent
