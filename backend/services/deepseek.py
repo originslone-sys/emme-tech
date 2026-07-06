@@ -427,3 +427,89 @@ async def generate_viral_script(topic: str, duration: int = 30,
         "music_mood": mood,
         "scenes": scenes,
     }
+
+
+# ---------- Legenda de persona para automação Instagram ----------
+
+def _persona_system(persona: dict) -> str:
+    name = persona.get("name", "a persona")
+    vibe = persona.get("vibe", "")
+    language = persona.get("language", "Português")
+    return (
+        f"Você é {name}, uma persona de Instagram com esta identidade e tom de voz:\n"
+        f"{vibe}\n\n"
+        f"Você escreve legendas de post no SEU tom, como se fosse você mesma postando. "
+        f"Escreva em {language}. Linguagem natural e autêntica, nunca robótica ou "
+        f"genérica de marketing. Sem inventar detalhes específicos da foto (você não "
+        f"a viu) — fale de forma que combine com qualquer imagem no seu nicho."
+    )
+
+
+async def generate_persona_caption(persona: dict, kind: str = "photo") -> dict:
+    """Gera legenda + hashtags de SEO na vibe da persona (sem ver a mídia)."""
+    themes = persona.get("themes", "")
+    kind_label = {"photo": "uma foto", "carousel": "um carrossel",
+                  "video": "um Reel"}.get(kind, "um post")
+    user_prompt = (
+        f"Crie a legenda de {kind_label} para o feed do Instagram.\n\n"
+        f"Temas/nicho da persona: {themes}\n\n"
+        "Regras:\n"
+        "1. Legenda curta e cativante — os primeiros 125 caracteres são os que "
+        "aparecem antes do 'ver mais', então o começo tem que prender.\n"
+        "2. No máximo 3 emojis, usados com naturalidade.\n"
+        "3. Termine com uma pergunta ou chamada leve pra engajamento.\n"
+        "4. Gere de 8 a 15 hashtags de SEO relevantes ao nicho (mix de populares "
+        "e de cauda longa), sem '#' no JSON — só a palavra.\n\n"
+        "Responda APENAS em JSON válido:\n"
+        '{"caption": "texto da legenda", "hashtags": ["tag1", "tag2"]}'
+    )
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": _persona_system(persona)},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.9,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            BASE_URL, json=payload,
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                     "Content-Type": "application/json"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+
+    data = json.loads(content, strict=False)
+    caption = str(data.get("caption", "")).strip()
+    hashtags = [str(t).strip().lstrip("#") for t in data.get("hashtags", []) if str(t).strip()]
+    return {"caption": caption, "hashtags": hashtags[:15]}
+
+
+async def generate_reply(persona: dict, message: str, context: str = "comment") -> str:
+    """Gera uma resposta curta na voz da persona a um comentário ou DM."""
+    where = "um comentário no seu post" if context == "comment" else "uma DM"
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": _persona_system(persona)},
+            {"role": "user", "content": (
+                f"Alguém te enviou {where}:\n\"{message}\"\n\n"
+                "Responda de forma curta, simpática e na sua vibe (1-2 frases). "
+                "Sem parecer robô, sem hashtags. Se for spam/ofensa, responda de "
+                "forma educada e breve ou apenas com um emoji amigável."
+            )},
+        ],
+        "temperature": 0.8,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            BASE_URL, json=payload,
+            headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                     "Content-Type": "application/json"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()

@@ -13,6 +13,7 @@ DIRS = {
     "uploads": STORAGE_PATH / "uploads",
     "images": STORAGE_PATH / "images",
     "videos": STORAGE_PATH / "videos",
+    "vault": STORAGE_PATH / "vault",   # cofre de mídias da automação Instagram
 }
 
 
@@ -22,6 +23,61 @@ def init_storage():
     if not DB_FILE.exists():
         DB_FILE.write_text(json.dumps({"images": [], "videos": [], "jobs": {}, "character": None}))
     cleanup_uploads()
+
+
+# ---------- Automação Instagram: config, cofre e histórico ----------
+
+def get_ig_config() -> dict:
+    db = read_db()
+    return db.get("ig_config", {})
+
+
+def save_ig_config(config: dict):
+    db = read_db()
+    db["ig_config"] = config
+    write_db(db)
+
+
+def list_vault() -> list[dict]:
+    db = read_db()
+    return db.get("vault", [])
+
+
+def add_vault_item(item: dict):
+    db = read_db()
+    vault = db.get("vault", [])
+    vault.append(item)
+    db["vault"] = vault
+    write_db(db)
+
+
+def get_vault_item(item_id: str) -> Optional[dict]:
+    return next((i for i in list_vault() if i["id"] == item_id), None)
+
+
+def remove_vault_item(item_id: str):
+    """Remove o item do cofre e apaga os arquivos do disco."""
+    db = read_db()
+    vault = db.get("vault", [])
+    item = next((i for i in vault if i["id"] == item_id), None)
+    if item:
+        for fname in item.get("files", []):
+            (DIRS["vault"] / fname).unlink(missing_ok=True)
+    db["vault"] = [i for i in vault if i["id"] != item_id]
+    write_db(db)
+
+
+def get_ig_history() -> list[dict]:
+    db = read_db()
+    return db.get("ig_history", [])
+
+
+def add_ig_history(entry: dict):
+    db = read_db()
+    hist = db.get("ig_history", [])
+    hist.insert(0, entry)
+    db["ig_history"] = hist[:100]
+    write_db(db)
 
 
 def cleanup_uploads():
