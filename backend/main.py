@@ -8,10 +8,13 @@ from routers import editor, generative, instagram, library, clips, viral
 from services.storage import init_storage, DIRS, get_ig_config
 from services.scheduler import get_scheduler, apply_ig_schedule
 
+# Cria os diretórios de storage ANTES de montar os estáticos abaixo — as
+# montagens acontecem no import e o StaticFiles exige que o diretório exista.
+init_storage()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_storage()
     scheduler = get_scheduler()
     scheduler.start()
     cfg = get_ig_config()
