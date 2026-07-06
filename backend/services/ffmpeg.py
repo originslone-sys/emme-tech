@@ -2,6 +2,7 @@ import subprocess
 import random
 import os
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -63,6 +64,18 @@ def probe_duration(path: str) -> float:
     return 0.0
 
 
+def probe_resolution(path: str) -> tuple[int, int]:
+    """Retorna (largura, altura) do vídeo em pixels, ou (0, 0) se não achar."""
+    cmd = [_ffmpeg_bin(), "-i", path]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    for line in proc.stderr.splitlines():
+        if "Video:" in line:
+            m = re.search(r"(\d{2,5})x(\d{2,5})", line)
+            if m:
+                return int(m.group(1)), int(m.group(2))
+    return 0, 0
+
+
 def process(input_path: str, output_path: str, start: float = 0.0, end: float = 0.0,
             brightness: float = 0.0, contrast: float = 1.0, saturation: float = 1.0):
     """Aplica corte + ajuste de iluminação num único passe de codificação.
@@ -106,8 +119,21 @@ def enhance(input_path: str, output_path: str, start: float = 0.0, end: float = 
     # Denoise antes do upscale para não amplificar o ruído.
     filters.append("hqdn3d=1.5:1.5:6:6")
     if upscale and upscale > 1:
-        # Dimensões pares (exigência do yuv420p).
-        filters.append(f"scale=trunc(iw*{upscale}/2)*2:trunc(ih*{upscale}/2)*2:flags=lanczos")
+        # Teto de resolução: 4K no lado maior. H.264 não codifica além de ~8K,
+        # e ampliar cegamente um vídeo já grande (ex: 4K x4 = 16K) estoura o
+        # limite do codec. Só amplia se a fonte for menor que o teto.
+        _MAX_LONG = 3840
+        w, h = probe_resolution(input_path)
+        if w and h:
+            tw, th = w * upscale, h * upscale
+            longest = max(tw, th)
+            if longest > _MAX_LONG:
+                ratio = _MAX_LONG / longest
+                tw, th = int(tw * ratio), int(th * ratio)
+            tw, th = tw - (tw % 2), th - (th % 2)  # pares (yuv420p)
+            if tw > w and th > h:  # só se realmente amplia
+                filters.append(f"scale={tw}:{th}:flags=lanczos")
+        # Se não conseguir medir, não amplia (evita estourar o codec).
     # Sharpen sutil para recuperar nitidez percebida.
     filters.append("unsharp=5:5:0.8:5:5:0.0")
     vf = ",".join(filters)
