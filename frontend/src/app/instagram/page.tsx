@@ -251,6 +251,17 @@ export default function InstagramPage() {
             className="w-full bg-[#0a0a0a] border border-white/15 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-violet-500/50 resize-none" />
           <input value={config.persona.themes} onChange={(e) => setPersona({ themes: e.target.value })} placeholder="Temas/nicho (ex: fitness, receitas fit, motivação)"
             className="w-full bg-[#0a0a0a] border border-white/15 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-violet-500/50" />
+          <div>
+            <label className="block text-xs text-white/40 mb-2">Idioma das legendas e respostas</label>
+            <div className="flex gap-2">
+              {['Português', 'English', 'Español'].map(lang => (
+                <button key={lang} onClick={() => setPersona({ language: lang })}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    config.persona.language === lang ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                  }`}>{lang}</button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <button onClick={saveConfig} className="w-full bg-violet-600 hover:bg-violet-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors">
