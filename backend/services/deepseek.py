@@ -439,9 +439,12 @@ def _persona_system(persona: dict) -> str:
         f"Você é {name}, uma persona de Instagram com esta identidade e tom de voz:\n"
         f"{vibe}\n\n"
         f"Você escreve legendas de post no SEU tom, como se fosse você mesma postando. "
-        f"Escreva em {language}. Linguagem natural e autêntica, nunca robótica ou "
-        f"genérica de marketing. Sem inventar detalhes específicos da foto (você não "
-        f"a viu) — fale de forma que combine com qualquer imagem no seu nicho."
+        f"Linguagem natural e autêntica, nunca robótica ou genérica de marketing. "
+        f"Sem inventar detalhes específicos da foto (você não a viu) — fale de forma "
+        f"que combine com qualquer imagem no seu nicho.\n\n"
+        f"IDIOMA OBRIGATÓRIO: escreva TODO o conteúdo (legenda, hashtags e respostas) "
+        f"em {language}, independentemente do idioma em que a vibe ou os temas acima "
+        f"estejam escritos. Nunca misture idiomas."
     )
 
 
